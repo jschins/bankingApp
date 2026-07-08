@@ -1,0 +1,126 @@
+{
+  "abbreviations": {
+    "Geldautomaat": "GA",
+    "Overschrijving": "OV",
+    "Betaalautomaat": "BA",
+    "iDeal": "iD",
+    "iDeal | Wero": "iW",
+    "Incasso": "Inc",
+    "Online bankieren": "OB",
+    "Diversen": "Div",
+    "Verzamelbetaling": "VB"
+  },
+  "categories": {
+    "08 Naar kas": [],
+    "09 Pension": [
+      "huur",
+      "pension"
+    ],
+    "10 Gezondheid": [
+      "vitaminstore",
+      "benu",
+      "infomedics",
+      "etos",
+      "squash",
+      "zilveren kruis"
+    ],
+    "11 Convivencias": [
+      "verblijf",
+      "bezinning",
+      "ca"
+    ],
+    "12 Vervoer": [
+      "esso",
+      "shell",
+      "argos",
+      "tinq",
+      "bp",
+      "benzine",
+      "tamoil",
+      "tankstelle",
+      "ov-chipkaart",
+      "ns",
+      "greenwheels",
+      "parkeren"
+    ],
+    "13 Kleding Fiets": [
+      "hema",
+      "laundry",
+      "fiets",
+      "zalando"
+    ],
+    "14 Gewone uitgaven": [
+      "pakket",
+      "provisie",
+      "creditcard",
+      "contributie",
+      "andere krant",
+      "smartphones",
+      "simyo",
+      "kpn",
+      "aplus",
+      "lyca",
+      "hollandsnieuwe",
+      "albert heijn",
+      "huys",
+      "losteria",
+      "papeneiland",
+      "restaurant",
+      "bakkerij",
+      "ristorante",
+      "pizza",
+      "jumbo",
+      "bier",
+      "lindeman",
+      "cup a la cake",
+      "lidl",
+      "bij robert",
+      "cafe",
+      "grill",
+      "zorg",
+      "kapsalon"
+    ],
+    "15 Buitengewone uitgaven": [
+      "happy hours",
+      "horvers",
+      "electronic",
+      "hezik",
+      "bitsandparts",
+      "elektronik",
+      "alipay",
+      "conrad",
+      "temu",
+      "tinytronics",
+      "antratek",
+      "muco",
+      "kabels",
+      "alles en meer",
+      "domoticx",
+      "gamma",
+      "praxis",
+      "isero",
+      "gunter en meuser",
+      "bol.com",
+      "amazon",
+      "bruna",
+      "overnachting",
+      "cjib",
+      "ccv*a"
+    ],
+    "16 Auto": [],
+    "17 Dienstverlening": [],
+    "18 Overige uitgaven": [],
+    "19 Giften": [
+      "gift"
+    ],
+    "20 Werk": [
+      "paypal",
+      "salaris",
+      "uwv",
+      "belastingdienst",
+      "loon"
+    ],
+    "21 Familie": [],
+    "22 Algemeen": []
+  }
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bankingApp-server"
+version = "0.1"
+description = "bankingAppouding"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+authors = [
+  { name = "juleon", email = "j.m.schins@gmail.com" }
+]
+
+dependencies = [
+  # Minimal JSON receive/transmit server
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

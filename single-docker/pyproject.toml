@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "single-docker"
+version = "0.1"
+description = "Docker-packaged single-person bookkeeping (bank fetch, categorise, totals, upload)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+authors = [
+  { name = "juleon", email = "j.m.schins@gmail.com" }
+]
+
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.6.0",
+  "requests>=2.31.0",
+  "PyJWT>=2.8.0",
+  "cryptography>=42.0.0",
+  "tzdata>=2024.1",
+]
+
+[project.scripts]
+single-docker = "app.main:run"
+
+# Build-only tooling for the Windows executable (see build_exe.ps1).
+# Install/run with:  uv run --group build pyinstaller ...
+[dependency-groups]
+build = ["pyinstaller>=6.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

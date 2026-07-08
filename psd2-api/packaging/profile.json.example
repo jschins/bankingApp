@@ -1,0 +1,8 @@
+{
+  "person": "xx",
+  "app_id": "<Enable Banking Application ID>",
+  "key_file": "<Application ID>.pem",
+  "country": "NL",
+  "aspsp": "ING",
+  "redirect_url": "https://example.com/"
+}

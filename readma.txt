@@ -1,0 +1,80 @@
+
+server-api-key  is SHA256 van "bankingAppouding dkg"
+$env:API_KEY = "e7706e74e9e5c4a9a5c5994a4cff29ca67e1d970b9c0d2483624347ef1d72a2d"
+deze heeft de server swagger nodig (authorization)
+
+na verandering pad-naam (boekh -> bankingApp):
+deactivate 2>$null
+Remove-Item -Recurse -Force .venv
+uv sync --group build
+uv run --group build python scripts/build_exe.py
+dat laatste commando is hetzelfde als
+uv run --group build python -m PyInstaller --onefile --clean --noconfirm --noupx --name bankingApp-single-docker --paths C:\Coding\bankingApp\single-docker --distpath C:\Coding\bankingApp\single-docker\dist --workpath C:\Coding\bankingApp\single-docker\build --specpath C:\Coding\bankingApp\single-docker --add-data "C:\Coding\bankingApp\single-docker\frontend\dist;frontend/dist" --collect-submodules uvicorn --collect-submodules fastapi --collect-submodules starlette --collect-submodules pydantic --copy-metadata fastapi --copy-metadata uvicorn --copy-metadata starlette --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan.on C:\Coding\bankingApp\single-docker\entry.py
+
+
+
+
+PS C:\Coding\psd2-api> python -m psd2_api link --aspsp ING
+
+Nieuwe short: app starten bij Enable banking
+
+1. ga naar pagina
+https://enablebanking.com/cp/applications
+en voeg application toe
+
+dog_js
+https://deoudegracht/
+download banking transactions
+j.m.schins@gmail.com
+https://deoudegracht/privacy_js.html
+https://deoudegracht/terms_js.html
+
+2. plaats gedownloade pem file in folder
+C:\Coding\bankingApp\psd2-api\packaging\profiles\eg
+
+3. maak in diezelfde folder ook een profile.json aan
+
+4. run PS C:\Coding\bankingApp\psd2-api> .\packaging\build_exe.ps1 -ProfileDir .\packaging\profiles\eg
+om het programmaatje te maken dat je lokaal installeert, waarmee de gebruiker een consent record kan maken
+
+
+5. de executable staat in folder C:\Coding\bankingApp\psd2-api\dist
+kopieer dat naar de laptop van de gebruiker
+run het, dan wordt de consent record doorgestuurd naar de server
+
+
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned   # allow scripts for this shell only
+& c:\Coding\psd2-api\.venv\Scripts\Activate.ps1
+
+
+NB admin draait op 8100, heeft npm nodig; server draait op 8000
+PS C:\Coding\bankingApp-admin> cd .\frontend\
+PS C:\Coding\bankingApp-admin\frontend> npm run dev
+
+
+
+
+
+
+
+
+NIEUWE INSTALLATIE
+
+0. de server hostname aanpassen in psd2-api\packaging\server.json
+1. pip install uv
+2. uv venv in alle drie de folders
+3. Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+4. \.venv\Scripts\activate
+[3+4 = (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\Coding\bankingApp\bankingApp-admin\.venv\Scripts\Activate.ps1)]
+5. check definities van $env:API_KEY en $env:bankingApp_SERVER_API_KEY in alle drie de terminals
+6. (bankingApp-server) PS C:\coding\bankingApp\bankingApp-server> .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+luistert naar alles, daarom key nodig
+swagger op http://localhost:8000/docs#
+7. schrijf LAN IPv4 adres in bankingApp-admin\frontend\vite.config.ts
+(bankingApp-admin) PS C:\coding\bankingApp\bankingApp-admin> .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 192.168.7.172 --port 8100 --reload
+luistert alleen naar LAN, geen key-beveiliging
+swagger op http://192.168.7.75:8100/docs#
+NB dit adres is het LAN adres (ipconfig), dat moet hard-gecodeerd zijn in het bestand
+bankingApp-admin\frontend\vite.config.ts

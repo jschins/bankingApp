@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: boekh-admin",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/boekh-admin",
+      "python": "${workspaceFolder}/boekh-admin/.venv/Scripts/python.exe",
+      "args": ["app.main:app", "--host", "127.0.0.1", "--port", "8100"],
+      "jinja": true,
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/boekh-admin"
+      }
+    },
+    {
+      "name": "Python: boekh-server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/boekh-server",
+      "python": "${workspaceFolder}/boekh-server/.venv/Scripts/python.exe",
+      "args": ["app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "jinja": true,
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/boekh-server"
+      }
+    },
+    {
+      "name": "Python: psd2-api",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/psd2-api/psd2_api/__main__.py",
+      "cwd": "${workspaceFolder}/psd2-api",
+      "python": "${workspaceFolder}/psd2-api/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/psd2-api"
+      }
+    }
+  ]
+}

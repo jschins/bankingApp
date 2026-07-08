@@ -1,0 +1,11 @@
+services:
+  single-docker:
+    build: .
+    image: bankingApp-single-docker:latest
+    container_name: bankingApp-single-docker
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8200}:8200"
+    volumes:
+      - ./data:/app/data
+      - ./secret:/app/secret:ro

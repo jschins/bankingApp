@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+deploy/.env
+
+# Deployment runtime artifacts
+deploy/logs/
+deploy/data/
+*.log
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Local storage blobs
+storage/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

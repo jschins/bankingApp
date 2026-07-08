@@ -1,0 +1,15 @@
+.venv/
+data/
+secret/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist_bog/
+dist_js/
+*.spec
+frontend/node_modules/
+frontend/dist/
+single-docker/dist/
+single-docker/people/
+single-person/input/

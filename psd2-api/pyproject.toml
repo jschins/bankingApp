@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psd2api"
+version = "0.1"
+description = "Fetch ING (and other EU bank) transactions as raw JSON via the Enable Banking PSD2 API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+authors = [
+  { name = "juleon", email = "j.m.schins@gmail.com" }
+]
+
+dependencies = [
+  "requests>=2.31.0",
+  "python-dotenv>=1.0.0",
+  "PyJWT>=2.8.0",
+  "cryptography>=42.0.0",
+]
+
+[project.scripts]
+psd2api = "psd2_api.__main__:main"
+
+# Build-only tooling for producing the per-person executables (see packaging/).
+# Install/run with:  uv run --group build pyinstaller ...
+[dependency-groups]
+build = ["pyinstaller>=6.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets and local consent cache
+.env
+*.pem
+*.key
+
+# Per-person build profiles (contain credentials + server keys)
+packaging/profiles/
+
+# Centralized server settings (URL + shared API key) baked in at build time
+packaging/server.json
+
+# Output data
+data/
+*.csv
+*.json
+!.*.example

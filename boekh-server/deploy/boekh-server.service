@@ -1,0 +1,25 @@
+# systemd unit for running the FastAPI app on Linux.
+# Install:
+#   sudo cp deploy/bankingApp-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bankingApp-server
+#
+# Adjust User, WorkingDirectory, and the venv path below to match your machine.
+
+[Unit]
+Description=bankingApp-server (FastAPI app / storage server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bankingAppd
+WorkingDirectory=/opt/bankingApp-server
+EnvironmentFile=/opt/bankingApp-server/deploy/.env
+# Uses the project's virtualenv. uvicorn reads HOST/PORT/etc. from the env file.
+ExecStart=/opt/bankingApp-server/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

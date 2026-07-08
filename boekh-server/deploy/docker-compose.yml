@@ -1,0 +1,15 @@
+services:
+  webapi:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: bankingApp-server:latest
+    container_name: bankingApp-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      # Persist the per-person JSON storage outside the container
+      - ./data/storage:/app/storage

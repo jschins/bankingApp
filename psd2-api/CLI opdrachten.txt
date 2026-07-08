@@ -1,0 +1,12 @@
+PS C:\Coding\psd2-api> python -m psd2_api link --aspsp ING        
+
+ga naar pagina 
+https://enablebanking.com/cp/applications?state=ebe0f623-2d70-47af-89e7-2cd48612a408&code=a1237df0-f0ab-4ae9-ab2d-a9994eba29da
+en voeg application toe
+
+PS C:\Coding\psd2-api> python -m psd2_api session --code "https://example.com/?state=9ea9389e616744aba5b9bc7e8b0b0177&code=65fcd958-71a1-4a90-a88f-f1abae4cb997"
+PS C:\Coding\psd2-api> python -m psd2_api fetch --date-from 2024-06-25    
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned   # allow scripts for this shell only
+& c:\Coding\psd2-api\.venv\Scripts\Activate.ps1  

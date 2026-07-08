@@ -1,0 +1,4 @@
+{
+  "server_url": "http://bankingApp-SERVER-HOSTNAME:8000",
+  "server_api_passphrase": "bankingAppouding dkg"
+}

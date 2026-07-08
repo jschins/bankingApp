@@ -1,0 +1,885 @@
+[
+  {
+    "entry_reference": "010305218331404810000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "184.70"
+    },
+    "creditor": {
+      "name": "Zilveren Kruis Zorgverzekeringen  NV",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL10ZZZ302086370000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL58INGB0000003050",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-29",
+    "value_date": null,
+    "transaction_date": "2026-06-29",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: Zilveren Kruis Zorgverzekeringen  NV",
+      "Omschrijving: Premie Zilveren Kruis",
+      "Relatienummer 199604282 Periode",
+      "01-07-2026 - 01-08-2026",
+      "IBAN: NL58INGB0000003050",
+      "Kenmerk: 475043079620",
+      "Machtiging ID: 1520000695444",
+      "Incassant ID: NL10ZZZ302086370000",
+      "Doorlopende incasso",
+      "Valutadatum: 29-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305214622421940000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "58.10"
+    },
+    "creditor": {
+      "name": "BCK*Fiets & Service TB",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-26",
+    "value_date": null,
+    "transaction_date": "2026-06-26",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "BCK*Fiets & Service TB TILBURG",
+      "Pasvolgnr: 007 25-06-2026 10:42",
+      "Transactie: D00077 Term: BS172056",
+      "Valutadatum: 26-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305213421590480000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "2521.80"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "Knowledge Systems Consulting B.V",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL35RABO0110341678",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Overschrijving",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-06-24",
+    "value_date": null,
+    "transaction_date": "2026-06-24",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Knowledge Systems Consulting B.V",
+      "Omschrijving: loon juli 2026",
+      "IBAN: NL35RABO0110341678",
+      "Datum/Tijd: 24-06-2026 14:49:40",
+      "Valutadatum: 24-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305213420715420000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "3673.96"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "Knowledge Systems Consulting B.V",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL35RABO0110341678",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Overschrijving",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-06-24",
+    "value_date": null,
+    "transaction_date": "2026-06-24",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Knowledge Systems Consulting B.V",
+      "Omschrijving: loon juni 2026",
+      "IBAN: NL35RABO0110341678",
+      "Datum/Tijd: 24-06-2026 14:49:00",
+      "Valutadatum: 24-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305213294007280000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "21.00"
+    },
+    "creditor": {
+      "name": "SIMYO",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL12ZZZ271247010002",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL83INGB0007811682",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-24",
+    "value_date": null,
+    "transaction_date": "2026-06-23",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: SIMYO",
+      "Omschrijving: Simyo:0628681222,",
+      "FACTUURNUMMER:96461844",
+      "IBAN: NL83INGB0007811682",
+      "Kenmerk: F904116079CE45799F22764D0A7D4A7C",
+      "Machtiging ID: 008-M210212401",
+      "Incassant ID: NL12ZZZ271247010002",
+      "Doorlopende incasso",
+      "Valutadatum: 24-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305208567806660000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "10.10"
+    },
+    "creditor": {
+      "name": "BCK*NSAdam C.119",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-20",
+    "value_date": null,
+    "transaction_date": "2026-06-20",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "BCK*NSAdam C.119 AMSTERDAM NLD",
+      "Pasvolgnr: 007 19-06-2026 19:56",
+      "Transactie: D00076 Term: CT491878",
+      "Valutadatum: 20-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305208523425530000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "44.22"
+    },
+    "creditor": {
+      "name": "BCK*SHELL OISTERWIJK",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-20",
+    "value_date": null,
+    "transaction_date": "2026-06-20",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "BCK*SHELL OISTERWIJK OISTERWIJK",
+      "Pasvolgnr: 007 19-06-2026 15:17",
+      "Transactie: D00075 Term: 02685511",
+      "Valutadatum: 20-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305206114508090000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "4.50"
+    },
+    "creditor": {
+      "name": "NS GROEP IZ NS REIZIGERS",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL03ZZZ301243580000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL14ABNA0576850675",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-17",
+    "value_date": null,
+    "transaction_date": "2026-06-17",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: NS GROEP IZ NS REIZIGERS",
+      "Omschrijving: Factuur: 433003756984",
+      "IBAN: NL14ABNA0576850675",
+      "Kenmerk: 220049140527",
+      "Machtiging ID: 220000289402",
+      "Incassant ID: NL03ZZZ301243580000",
+      "Doorlopende incasso",
+      "Valutadatum: 17-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305201397806230000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "77.88"
+    },
+    "creditor": {
+      "name": "Esso Amsterdam Utrecht",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-12",
+    "value_date": null,
+    "transaction_date": "2026-06-12",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Esso Amsterdam Utrecht AMSTERDAM",
+      "Pasvolgnr: 007 12-06-2026 11:54",
+      "Transactie: D00074 Term: 26ZY5F",
+      "Valutadatum: 12-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305201334951710000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "3.55"
+    },
+    "creditor": null,
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Diversen",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-12",
+    "value_date": null,
+    "transaction_date": "2026-06-12",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Kosten OranjePakket met korting",
+      "1 mei t/m 31 mei 2026",
+      "ING BANK N.V.",
+      "Valutadatum: 12-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305199978055720000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "50.00"
+    },
+    "creditor": {
+      "name": "TLS BV inzake OV-Chipkaart",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL03ZZZ301771260000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL12RABO0306498111",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-10",
+    "value_date": null,
+    "transaction_date": "2026-06-09",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: TLS BV inzake OV-Chipkaart",
+      "Omschrijving: Automatisch opladen",
+      "OV-chipkaart",
+      "Kaartnummer:3528053445197235",
+      "Oplaaddatum/tijd:06-06-26 15:30",
+      "IBAN: NL12RABO0306498111",
+      "Kenmerk: 30161230200045",
+      "Machtiging ID: NL03ZZZ301771260000AR45WO2002091842",
+      "Incassant ID: NL03ZZZ301771260000",
+      "Doorlopende incasso",
+      "Valutadatum: 10-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305196573587540000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "16.00"
+    },
+    "creditor": {
+      "name": "Eethuys de Lind",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-08",
+    "value_date": null,
+    "transaction_date": "2026-06-08",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Eethuys de Lind Oisterwijk NLD",
+      "Pasvolgnr: 007 07-06-2026 12:30",
+      "Transactie: C00073 Term: 07111594",
+      "Valutadatum: 08-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305193071415710000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "50.00"
+    },
+    "creditor": {
+      "name": "TLS BV inzake OV-Chipkaart",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL03ZZZ301771260000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL12RABO0306498111",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-04",
+    "value_date": null,
+    "transaction_date": "2026-06-04",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: TLS BV inzake OV-Chipkaart",
+      "Omschrijving: Automatisch opladen",
+      "OV-chipkaart",
+      "Kaartnummer:3528053445197235",
+      "Oplaaddatum/tijd:01-06-26 13:59",
+      "IBAN: NL12RABO0306498111",
+      "Kenmerk: 30161230200044",
+      "Machtiging ID: NL03ZZZ301771260000AR45WO2002091842",
+      "Incassant ID: NL03ZZZ301771260000",
+      "Doorlopende incasso",
+      "Valutadatum: 04-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305192980890340000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "49.99"
+    },
+    "creditor": {
+      "name": "Zalando Payments GmbH",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL29DEUT0319800040",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-03",
+    "value_date": null,
+    "transaction_date": "2026-06-03",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Zalando Payments GmbH",
+      "Omschrijving: 10206203407052",
+      "8152285334355909 10206203407052",
+      "IBAN: NL29DEUT0319800040",
+      "Kenmerk: 03-06-2026 13:41 8152285334355909",
+      "Valutadatum: 03-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305191818839620000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "213.79"
+    },
+    "creditor": {
+      "name": "Infomedics B.V.",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL34ABNA0243240058",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-02",
+    "value_date": null,
+    "transaction_date": "2026-06-02",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Infomedics B.V.",
+      "Omschrijving: 92293528385071",
+      "7030805331179701 92293528385071",
+      "IBAN: NL34ABNA0243240058",
+      "Kenmerk: 02-06-2026 13:44 7030805331179701",
+      "Valutadatum: 02-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305191818167360000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "25.23"
+    },
+    "creditor": {
+      "name": "Infomedics B.V.",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL34ABNA0243240058",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-02",
+    "value_date": null,
+    "transaction_date": "2026-06-02",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Infomedics B.V.",
+      "Omschrijving: 12291419013071",
+      "7030486825118744 12291419013071",
+      "IBAN: NL34ABNA0243240058",
+      "Kenmerk: 02-06-2026 13:41 7030486825118744",
+      "Valutadatum: 02-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  },
+  {
+    "entry_reference": "010305190555201230000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "800.00"
+    },
+    "creditor": {
+      "name": "STICHTING DE OUDE GRACHT",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL94INGB0006200605",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL52INGB0668979275",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Online bankieren",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-06-01",
+    "value_date": null,
+    "transaction_date": "2026-06-01",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: STICHTING DE OUDE GRACHT",
+      "Omschrijving: huur",
+      "IBAN: NL94INGB0006200605",
+      "Valutadatum: 01-06-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null
+  }
+]

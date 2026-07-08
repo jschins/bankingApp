@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authorization complete — bankingApp</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           line-height: 1.6; max-width: 640px; margin: 2.5rem auto; padding: 0 1.2rem;
+           color: #1a1a1a; text-align: center; }
+    h1 { font-size: 1.6rem; }
+    .ok { color: #16a34a; }
+    .err { color: #dc2626; }
+    p.lead { color: #444; }
+    .urlbox { width: 100%; box-sizing: border-box; font: .95rem ui-monospace, Consolas, monospace;
+              padding: .7rem .8rem; margin: 1rem 0 .6rem; border: 1px solid #ccc;
+              border-radius: 8px; background: #f7f7f7; word-break: break-all; text-align: left; }
+    button { font-size: 1rem; padding: .6rem 1.2rem; border: 0; border-radius: 8px;
+             background: #2563eb; color: #fff; cursor: pointer; }
+    button:active { transform: translateY(1px); }
+    .hint { color: #666; font-size: .9rem; margin-top: 1.4rem; }
+    .copied { color: #16a34a; font-weight: 600; min-height: 1.2em; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e5e5e5; background: #111; } p.lead { color: #bbb; }
+      .urlbox { background: #1b1b1b; border-color: #333; } .hint { color: #999; }
+    }
+  </style>
+</head>
+<body>
+  <h1 id="title" class="ok">(Re-)authorization successful</h1>
+  <p class="lead" id="lead">
+    Your bank has confirmed access. Copy the full address below and paste it into
+    the bankingApp re-authorization program when it asks for it.
+  </p>
+
+  <div class="urlbox" id="url"></div>
+  <button id="copy" type="button">Copy address</button>
+  <div class="copied" id="copied"></div>
+
+  <p class="hint">
+    Then return to the program window and paste (Ctrl+V) at the prompt, and press Enter.
+    You can close this page afterwards.
+  </p>
+
+  <script>
+    (function () {
+      var full = window.location.href;
+      var params = new URLSearchParams(window.location.search);
+      var hasCode = params.has("code");
+      var hasError = params.has("error");
+
+      var title = document.getElementById("title");
+      var lead = document.getElementById("lead");
+      var urlEl = document.getElementById("url");
+      var copied = document.getElementById("copied");
+
+      urlEl.textContent = full;
+
+      if (hasError || !hasCode) {
+        title.textContent = "Authorization not completed";
+        title.className = "err";
+        lead.textContent = hasError
+          ? "The bank reported: " + (params.get("error_description") || params.get("error"))
+          : "No authorization code was found in this address. Please restart the re-authorization in the program.";
+      }
+
+      document.getElementById("copy").addEventListener("click", function () {
+        function done() { copied.textContent = "Copied to clipboard"; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(full).then(done, selectFallback);
+        } else {
+          selectFallback();
+        }
+        function selectFallback() {
+          var r = document.createRange();
+          r.selectNodeContents(urlEl);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          try { document.execCommand("copy"); done(); } catch (e) {
+            copied.textContent = "Select the address above and copy it manually.";
+          }
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
