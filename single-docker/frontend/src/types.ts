@@ -1,3 +1,8 @@
+export interface TypeRule {
+  type: string;
+  category: string;
+}
+
 export interface SettingsResponse {
   categories: string[];
   person: string;
@@ -5,6 +10,7 @@ export interface SettingsResponse {
   personal: Record<string, Record<string, string[]>>;
   valid_category_codes: number[];
   remainder_category: string;
+  typerules: TypeRule[];
 }
 
 export type Transaction = Record<string, unknown>;

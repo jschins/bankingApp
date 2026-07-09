@@ -269,6 +269,7 @@ def get_settings() -> dict[str, Any]:
         CATEGORIES_PATH,
         PERSONAL_CATEGORIES_PATH,
         remainder_category_name,
+        type_rules_payload,
     )
     from app.paths import PERSON_SHORT
 
@@ -281,6 +282,7 @@ def get_settings() -> dict[str, Any]:
         "personal": {PERSON_SHORT: personal},
         "valid_category_codes": sorted(category_code_set()),
         "remainder_category": remainder_category_name(),
+        "typerules": type_rules_payload(),
     }
 
 

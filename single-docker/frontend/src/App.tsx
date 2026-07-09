@@ -16,10 +16,22 @@ import {
 import type { BankAccount, SettingsResponse, Transaction, TransactionsResponse } from "./types";
 
 const CHANNEL = "single-docker";
-const TERM_MATCH_HINT =
-  "Terms: # matches zero or more letters or dots within one word (e.g. car#ing → carstealing; not across spaces). " +
-  "Use && between phrases when both must match (e.g. albert && heijn). " +
-  "Use || when either phrase may match (e.g. paypal || stripe).";
+
+function formatTermMatchHint(typerules: { type: string; category: string }[]): string {
+  const priority =
+    "Priority (highest first): (1) typerules beat all keywords; " +
+    "(2) && terms beat single-phrase terms — e.g. general && beats personal single-phrase; " +
+    "(3) among single-phrase terms, longer string wins; " +
+    "(4) within && or equal-length single-phrase, personal beats general.";
+  const wildcards =
+    "# matches zero or more letters or dots within one word (not across spaces). " +
+    "Use && when both phrases must match (e.g. albert && heijn).";
+  const rules =
+    typerules.length === 0
+      ? ""
+      : ` Typerules: ${typerules.map((rule) => `${rule.type} → ${rule.category}`).join("; ")}.`;
+  return `${wildcards} ${priority}${rules}`;
+}
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: "€",
@@ -529,7 +541,8 @@ function TermsApp() {
         </div>
         <p className="win-hint">
           Term Window. Return to Overview using <kbd>Ctrl</kbd>+<kbd>Tab</kbd> or <kbd>Alt</kbd>+<kbd>M</kbd>.
-          Changes are applied when you leave this window. {TERM_MATCH_HINT}
+          Changes are applied when you leave this window.{" "}
+          {settings ? formatTermMatchHint(settings.typerules) : ""}
         </p>
       </aside>
       <main className="content">
@@ -804,7 +817,7 @@ function TermAssignDialog({
         <h2 id="term-assign-title">Assign keyword</h2>
         <p className="term-assign-hint">
           {settings.remainder_category}: pick a keyword and target category. Transactions are
-          recategorised after save. {TERM_MATCH_HINT}
+          recategorised after save. {formatTermMatchHint(settings.typerules)}
         </p>
         <label className="term-assign-field">
           Term
@@ -1152,13 +1165,10 @@ function atomicHighlightTerms(keywords: string[]): string[] {
   for (const keyword of keywords) {
     const term = keyword.trim().toLowerCase();
     if (!term) continue;
-    const orParts = term.includes(" || ") ? term.split(" || ") : [term];
-    for (const orPart of orParts) {
-      const andParts = orPart.includes(" && ") ? orPart.split(" && ") : [orPart];
-      for (const part of andParts) {
-        const cleaned = part.trim();
-        if (cleaned) atoms.add(cleaned);
-      }
+    const andParts = term.includes(" && ") ? term.split(" && ") : [term];
+    for (const part of andParts) {
+      const cleaned = part.trim();
+      if (cleaned) atoms.add(cleaned);
     }
   }
   return [...atoms];

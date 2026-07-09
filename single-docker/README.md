@@ -77,13 +77,19 @@ The tabs communicate via a `BroadcastChannel` (`single-docker`). Message
 - If you only switch **Alt+T** / **Alt+M** without changing any terms, dirty
   stays false and nothing is recalculated.
 
-**Term operators** (shown in the termen sidebar hint):
+**Term operators and match priority** (shown in the termen sidebar hint):
+
+| Priority | Rule |
+|----------|------|
+| 1 (highest) | `typerules` in `categories.json` — beat **all** keywords (personal and general) |
+| 2 | `phrase && phrase` beats any single-phrase term (e.g. general `&&` beats personal single-phrase) |
+| 3 | Among single-phrase terms, **longer** string wins |
+| 4 | Within `&&` or equal-length single-phrase, **personal** beats **general** |
 
 | Syntax | Meaning |
 |--------|---------|
 | `#` | Zero or more letters or dots within one word (not across spaces) |
 | `phrase && phrase` | Both phrases must match |
-| `phrase \|\| phrase` | Either phrase may match (or both) |
 
 #### Transacties tab
 
@@ -238,8 +244,17 @@ still accepted and mapped under `app_root`.
 | Personal keywords | `data/js_categories.json` |
 | Personal data | `data/js_consent.json`, `data/js_categorized_transactions.json`, … |
 
-`categories.json` holds shared keyword lists and transaction-type **abbreviations**
-used in the P-table. Personal overrides live in `{person}_categories.json`.
+`categories.json` holds shared keyword lists, optional **typerules** (bank
+`type` → category when no keyword matches), and transaction-type **abbreviations**
+used in the P-table. Example:
+
+```json
+"typerules": [
+  { "type": "geldautomaat", "category": "08 Naar kas" }
+]
+```
+
+Personal overrides live in `{person}_categories.json`.
 
 ---
 

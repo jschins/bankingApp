@@ -16,10 +16,7 @@ from app.paths import (
 )
 
 DEFAULT_CATEGORY = 18
-CASH_CATEGORY = 8
-CASH_TYPE = "geldautomaat"
-CATEGORIZE_LOGIC_VERSION = "2026-07-09-compound-terms-processed-recategorize"
-_TERM_OR_SEP = " || "
+CATEGORIZE_LOGIC_VERSION = "2026-07-09-typerules-highest-priority"
 _TERM_AND_SEP = " && "
 _ACCOUNT_INDEX_FIELD = "_account_index"
 
@@ -275,7 +272,7 @@ def _matches_hash_word(term: str, haystack: str) -> bool:
 
 
 def _matches_phrase(term: str, haystack: str) -> bool:
-    """Match one phrase (no `` && `` / `` || ``) against the haystack."""
+    """Match one phrase (no `` && ``) against the haystack."""
     if "#" not in term:
         return re.search(rf"\b{re.escape(term)}\b", haystack) is not None
 
@@ -300,12 +297,6 @@ def _matches_word(field: str, haystack: str) -> bool:
     term = field.lower().strip()
     if not term:
         return False
-    if _TERM_OR_SEP in term:
-        return any(
-            _matches_and_group(part.strip(), haystack)
-            for part in term.split(_TERM_OR_SEP)
-            if part.strip()
-        )
     return _matches_and_group(term, haystack)
 
 
@@ -321,28 +312,108 @@ def _haystack_for_categorization(record: dict[str, Any]) -> str:
     return f"{name} {description}".lower()
 
 
-def _cash_type_for_categorization(record: dict[str, Any]) -> str:
+def _categories_file() -> dict[str, Any]:
+    if not CATEGORIES_PATH.exists():
+        return {}
+    data = _read_json(CATEGORIES_PATH)
+    return data if isinstance(data, dict) else {}
+
+
+def type_rules_payload() -> list[dict[str, str]]:
+    """Validated ``typerules`` from ``categories.json`` (for API / UI legend)."""
+    raw = _categories_file().get("typerules")
+    if not isinstance(raw, list):
+        return []
+    rules: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        rule_type = str(item.get("type") or "").strip()
+        category_name = str(item.get("category") or "").strip()
+        if not rule_type or not category_name:
+            continue
+        if _category_code(category_name) is None:
+            continue
+        rules.append({"type": rule_type, "category": category_name})
+    return rules
+
+
+def _type_rule_category_map() -> dict[str, int]:
+    """Map lowercased bank ``type`` strings to category codes."""
+    mapping: dict[str, int] = {}
+    for rule in type_rules_payload():
+        code = _category_code(rule["category"])
+        if code is not None:
+            mapping[rule["type"].lower()] = code
+    return mapping
+
+
+def _category_from_type_rules(record: dict[str, Any]) -> int | None:
+    tx_type = _transaction_type_for_categorization(record).lower()
+    if not tx_type:
+        return None
+    return _type_rule_category_map().get(tx_type)
+
+
+def _transaction_type_for_categorization(record: dict[str, Any]) -> str:
     if _remittance_lines(record):
         return _structured_remittance_fields(record)["type"]
     return str(record.get("type") or "")
 
 
-def categorize(record: dict[str, Any], *category_groups: dict[str, list[str]]) -> int:
-    haystack = _haystack_for_categorization(record)
+def _keyword_match_rank(term: str, *, personal: bool) -> tuple[int, int, int]:
+    """Sort key for competing keyword hits when no typerule applies (higher wins).
 
-    category = DEFAULT_CATEGORY
-    if _cash_type_for_categorization(record).lower() == CASH_TYPE:
-        category = CASH_CATEGORY
+    1. ``&&`` terms (tier 2) beat single-phrase terms (tier 1).
+    2. Among single-phrase terms, longer string wins.
+    3. Within the same tier (and same length for single-phrase), personal beats general.
+    """
+    if _TERM_AND_SEP in term:
+        return (2, 0, 1 if personal else 0)
+    return (1, len(term), 1 if personal else 0)
 
-    for group in category_groups:
+
+def _best_keyword_category(
+    haystack: str,
+    general: dict[str, list[str]],
+    personal: dict[str, list[str]],
+) -> int | None:
+    best_rank = (-1, -1, -1)
+    best_code: int | None = None
+
+    for is_personal, group in ((False, general), (True, personal)):
         for name, fields in group.items():
             code = _category_code(name)
             if code is None:
                 continue
             for field in fields or []:
-                if field and _matches_word(str(field).lower(), haystack):
-                    category = code
-    return category
+                if not field:
+                    continue
+                term = str(field).lower()
+                if not _matches_word(term, haystack):
+                    continue
+                rank = _keyword_match_rank(term, personal=is_personal)
+                if rank > best_rank:
+                    best_rank = rank
+                    best_code = code
+    return best_code
+
+
+def categorize(
+    record: dict[str, Any],
+    general: dict[str, list[str]],
+    personal: dict[str, list[str]],
+) -> int:
+    type_match = _category_from_type_rules(record)
+    if type_match is not None:
+        return type_match
+
+    haystack = _haystack_for_categorization(record)
+    keyword_match = _best_keyword_category(haystack, general, personal)
+    if keyword_match is not None:
+        return keyword_match
+
+    return DEFAULT_CATEGORY
 
 
 def _account_index(transaction: dict[str, Any]) -> int:
@@ -836,7 +907,7 @@ def _category_column_key(name: str) -> str:
 
 
 def category_names() -> list[str]:
-    general = _category_map(_read_json(CATEGORIES_PATH))
+    general = _category_map(_categories_file())
     return list(general.keys())
 
 
