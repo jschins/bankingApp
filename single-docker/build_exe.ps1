@@ -1,5 +1,5 @@
 param(
-    [string]$Name = "bankingApp-single-docker"
+    [string]$Name = "myBankingApp"
 )
 
 $ErrorActionPreference = "Stop"

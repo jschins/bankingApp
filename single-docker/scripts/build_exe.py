@@ -14,7 +14,7 @@ PROJECT = app_root()
 FRONTEND = PROJECT / "frontend"
 FRONTEND_DIST = FRONTEND / "dist"
 ENTRY = PROJECT / "entry.py"
-NAME = "bankingApp"
+NAME = "myBankingApp"
 
 
 def _run(cmd: list[str], *, cwd: Path) -> None:

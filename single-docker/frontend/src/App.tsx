@@ -532,7 +532,7 @@ function TermsApp() {
   }
 
   return (
-    <div className="app">
+    <div className="app terms-app">
       <aside className="sidebar">
         <div className="winbar">
           <button className="win-link" onClick={() => openView("main")}>
@@ -545,10 +545,10 @@ function TermsApp() {
           {settings ? formatTermMatchHint(settings.typerules) : ""}
         </p>
       </aside>
-      <main className="content">
+      <main className="content terms-content">
         {error && <p className="error">{error}</p>}
         {settings ? (
-          <STable settings={settings} onUpdate={updateTerms} />
+          <TermsTables settings={settings} onUpdate={updateTerms} />
         ) : (
           <p>Loading…</p>
         )}
@@ -884,45 +884,79 @@ function TermAssignDialog({
   );
 }
 
-function STable({
+function termsTableCategories(settings: SettingsResponse): string[] {
+  return settings.categories.filter((name) => name !== settings.remainder_category);
+}
+
+function TermsTables({
   settings,
   onUpdate,
 }: {
   settings: SettingsResponse;
   onUpdate: (group: string, category: string, terms: string[]) => void;
 }) {
-  const { categories, person, general, personal } = settings;
+  const { person, general, personal } = settings;
+  const columns = termsTableCategories(settings);
+
   return (
-    <div className="s-scroll">
-      <table className="s-table">
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>General</th>
-            <th>{person}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {categories.map((name) => (
-            <tr key={name}>
-              <td>{name}</td>
-              <td>
-                <EditableCell
-                  terms={general[name] ?? []}
-                  onCommit={(terms) => onUpdate("general", name, terms)}
-                />
-              </td>
-              <td>
-                <EditableCell
-                  terms={personal[person]?.[name] ?? []}
-                  onCommit={(terms) => onUpdate(person, name, terms)}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="terms-panels">
+      <section className="terms-panel terms-panel-general" aria-label="General terms">
+        <h2 className="terms-panel-label">General</h2>
+        <div className="terms-panel-scroll">
+          <TermsColumnTable
+            columns={columns}
+            termsForCategory={(name) => general[name] ?? []}
+            onCommit={(name, terms) => onUpdate("general", name, terms)}
+          />
+        </div>
+      </section>
+      <section className="terms-panel terms-panel-personal" aria-label="Personal terms">
+        <h2 className="terms-panel-label">{person}</h2>
+        <div className="terms-panel-scroll">
+          <TermsColumnTable
+            columns={columns}
+            termsForCategory={(name) => personal[person]?.[name] ?? []}
+            onCommit={(name, terms) => onUpdate(person, name, terms)}
+          />
+        </div>
+      </section>
     </div>
+  );
+}
+
+function TermsColumnTable({
+  columns,
+  termsForCategory,
+  onCommit,
+}: {
+  columns: string[];
+  termsForCategory: (category: string) => string[];
+  onCommit: (category: string, terms: string[]) => void;
+}) {
+  return (
+    <table className="s-table s-table-terms">
+      <thead>
+        <tr>
+          {columns.map((name) => (
+            <th key={name} title={name}>
+              {name}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          {columns.map((name) => (
+            <td key={name}>
+              <EditableCell
+                terms={termsForCategory(name)}
+                onCommit={(terms) => onCommit(name, terms)}
+              />
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
   );
 }
 

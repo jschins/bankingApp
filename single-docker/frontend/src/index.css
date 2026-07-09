@@ -19,6 +19,14 @@ body {
   overflow: hidden;
 }
 
+.app.terms-app {
+  grid-template-columns: 10% 1fr;
+}
+
+.app.terms-app .sidebar {
+  padding: 0.5rem;
+}
+
 .sidebar {
   border-right: 1px solid #e3e3e6;
   background: #ffffff;
@@ -222,7 +230,71 @@ th {
   overflow: auto;
 }
 
-.s-table thead th {
+.terms-content {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.75rem;
+  overflow: hidden;
+}
+
+.terms-panels {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.35rem;
+}
+
+.terms-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terms-panel-general {
+  flex: 8 1 0;
+}
+
+.terms-panel-personal {
+  flex: 2 1 0;
+}
+
+.terms-panel-label {
+  flex: 0 0 auto;
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.terms-panel-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.s-table-terms {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.s-table-terms th {
+  font-size: 0.65rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.s-table-terms td {
+  vertical-align: top;
+}
+
+.terms-panel-scroll .s-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
