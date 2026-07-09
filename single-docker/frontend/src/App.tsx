@@ -888,6 +888,28 @@ function termsTableCategories(settings: SettingsResponse): string[] {
   return settings.categories.filter((name) => name !== settings.remainder_category);
 }
 
+function termsColumnWidths(
+  columns: string[],
+  general: Record<string, string[]>,
+  personal: Record<string, Record<string, string[]>>,
+  person: string
+): number[] {
+  const personTerms = personal[person] ?? {};
+  const measure = (text: string) => Math.max(text.length, 1);
+
+  return columns.map((category) => {
+    const texts = [
+      category,
+      ...(general[category] ?? []),
+      ...(personTerms[category] ?? []),
+      "+ term",
+    ];
+    const maxChars = Math.max(...texts.map(measure));
+    // ~0.5rem padding each side + ~0.45em per character at 0.75–0.8rem
+    return Math.ceil(maxChars * 7.5 + 20);
+  });
+}
+
 function TermsTables({
   settings,
   onUpdate,
@@ -897,44 +919,52 @@ function TermsTables({
 }) {
   const { person, general, personal } = settings;
   const columns = termsTableCategories(settings);
+  const columnWidths = termsColumnWidths(columns, general, personal, person);
 
   return (
-    <div className="terms-panels">
-      <section className="terms-panel terms-panel-general" aria-label="General terms">
-        <h2 className="terms-panel-label">General</h2>
-        <div className="terms-panel-scroll">
+    <div className="terms-scroll">
+      <div className="terms-panels">
+        <section className="terms-panel terms-panel-general" aria-label="General terms">
+          <h2 className="terms-panel-label">General</h2>
           <TermsColumnTable
             columns={columns}
+            columnWidths={columnWidths}
             termsForCategory={(name) => general[name] ?? []}
             onCommit={(name, terms) => onUpdate("general", name, terms)}
           />
-        </div>
-      </section>
-      <section className="terms-panel terms-panel-personal" aria-label="Personal terms">
-        <h2 className="terms-panel-label">{person}</h2>
-        <div className="terms-panel-scroll">
+        </section>
+        <section className="terms-panel terms-panel-personal" aria-label="Personal terms">
+          <h2 className="terms-panel-label">{person}</h2>
           <TermsColumnTable
             columns={columns}
+            columnWidths={columnWidths}
             termsForCategory={(name) => personal[person]?.[name] ?? []}
             onCommit={(name, terms) => onUpdate(person, name, terms)}
           />
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
 
 function TermsColumnTable({
   columns,
+  columnWidths,
   termsForCategory,
   onCommit,
 }: {
   columns: string[];
+  columnWidths: number[];
   termsForCategory: (category: string) => string[];
   onCommit: (category: string, terms: string[]) => void;
 }) {
   return (
     <table className="s-table s-table-terms">
+      <colgroup>
+        {columns.map((name, index) => (
+          <col key={name} style={{ width: `${columnWidths[index]}px` }} />
+        ))}
+      </colgroup>
       <thead>
         <tr>
           {columns.map((name) => (
