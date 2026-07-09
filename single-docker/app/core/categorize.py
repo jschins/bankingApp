@@ -18,7 +18,9 @@ from app.paths import (
 DEFAULT_CATEGORY = 18
 CASH_CATEGORY = 8
 CASH_TYPE = "geldautomaat"
-CATEGORIZE_LOGIC_VERSION = "2026-07-08-processed-remittance-haystack"
+CATEGORIZE_LOGIC_VERSION = "2026-07-09-compound-terms-processed-recategorize"
+_TERM_OR_SEP = " || "
+_TERM_AND_SEP = " && "
 _ACCOUNT_INDEX_FIELD = "_account_index"
 
 
@@ -272,8 +274,8 @@ def _matches_hash_word(term: str, haystack: str) -> bool:
     return False
 
 
-def _matches_word(field: str, haystack: str) -> bool:
-    term = field.lower()
+def _matches_phrase(term: str, haystack: str) -> bool:
+    """Match one phrase (no `` && `` / `` || ``) against the haystack."""
     if "#" not in term:
         return re.search(rf"\b{re.escape(term)}\b", haystack) is not None
 
@@ -282,6 +284,29 @@ def _matches_word(field: str, haystack: str) -> bool:
         return re.search(rf"\b{body}\b", haystack) is not None
 
     return _matches_hash_word(term, haystack)
+
+
+def _matches_and_group(group: str, haystack: str) -> bool:
+    if _TERM_AND_SEP in group:
+        return all(
+            _matches_phrase(part.strip(), haystack)
+            for part in group.split(_TERM_AND_SEP)
+            if part.strip()
+        )
+    return _matches_phrase(group, haystack)
+
+
+def _matches_word(field: str, haystack: str) -> bool:
+    term = field.lower().strip()
+    if not term:
+        return False
+    if _TERM_OR_SEP in term:
+        return any(
+            _matches_and_group(part.strip(), haystack)
+            for part in term.split(_TERM_OR_SEP)
+            if part.strip()
+        )
+    return _matches_and_group(term, haystack)
 
 
 def _haystack_for_categorization(record: dict[str, Any]) -> str:
@@ -564,7 +589,12 @@ def _raw_simplified_by_id() -> dict[Any, dict[str, Any]]:
 
 
 def recategorize_transactions() -> dict[str, str]:
-    """Re-fill stored transactions from raw when possible; re-categorize every stored row."""
+    """Re-categorize every row in the categorized store using its processed fields.
+
+    Matching uses ``name`` and ``description`` as stored in
+    ``{person}_categorized_transactions.json``, not unprocessed remittance from
+    ``{person}_downloaded_transactions.json``.
+    """
     general = _category_map(_read_json(CATEGORIES_PATH))
     personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
     data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
@@ -578,17 +608,7 @@ def recategorize_transactions() -> dict[str, str]:
         if isinstance(item, dict) and item.get("id") is not None
     ]
 
-    raw_by_id = _raw_simplified_by_id()
-    raw_bank_by_id = _raw_bank_by_id()
-    filled = [
-        _fill_transaction_fields(record, raw_by_id[record["id"]])
-        if record.get("id") in raw_by_id
-        else record
-        for record in records
-    ]
-    categorized = _categorize_transactions(
-        filled, general, personal, match_sources=raw_bank_by_id
-    )
+    categorized = _categorize_transactions(records, general, personal)
 
     result = dict(data) if data else {}
     result["transactions"] = sorted(categorized, key=_tx_sort_key, reverse=True)

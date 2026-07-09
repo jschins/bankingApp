@@ -11,8 +11,12 @@ uv run --group build python scripts/build_exe.py
 dat laatste commando is hetzelfde als
 uv run --group build python -m PyInstaller --onefile --clean --noconfirm --noupx --name bankingApp-single-docker --paths C:\Coding\bankingApp\single-docker --distpath C:\Coding\bankingApp\single-docker\dist --workpath C:\Coding\bankingApp\single-docker\build --specpath C:\Coding\bankingApp\single-docker --add-data "C:\Coding\bankingApp\single-docker\frontend\dist;frontend/dist" --collect-submodules uvicorn --collect-submodules fastapi --collect-submodules starlette --collect-submodules pydantic --copy-metadata fastapi --copy-metadata uvicorn --copy-metadata starlette --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan.on C:\Coding\bankingApp\single-docker\entry.py
 
+docker:
+docker compose build --no-cache
+docker compose up
 
-
+redirect code js
+https://deoudegracht.nl/?state=9b35eb1c9db84dc89b6f41b626f3478c&code=c8ae0704-3214-49cc-a723-fc3ed0382784
 
 PS C:\Coding\psd2-api> python -m psd2_api link --aspsp ING
 

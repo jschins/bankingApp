@@ -68,11 +68,22 @@ The tabs communicate via a `BroadcastChannel` (`single-docker`). Message
 - A **dirty** flag is set after a successful save.
 - When you **leave** the termen tab (hide the tab or close the window) **and**
   dirty is true:
-  1. `POST /api/recalculate` runs
+  1. `POST /api/recalculate` runs — re-categorises **every** row in
+     `{person}_categorized_transactions.json` (not only rows from the latest
+     download), matching keywords against the **processed** `name` and
+     `description` fields stored in that file
   2. dirty is cleared
   3. `recalculated` is broadcast to the transacties tab
 - If you only switch **Alt+T** / **Alt+M** without changing any terms, dirty
   stays false and nothing is recalculated.
+
+**Term operators** (shown in the termen sidebar hint):
+
+| Syntax | Meaning |
+|--------|---------|
+| `#` | Zero or more letters or dots within one word (not across spaces) |
+| `phrase && phrase` | Both phrases must match |
+| `phrase \|\| phrase` | Either phrase may match (or both) |
 
 #### Transacties tab
 

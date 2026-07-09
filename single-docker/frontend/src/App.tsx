@@ -16,8 +16,10 @@ import {
 import type { BankAccount, SettingsResponse, Transaction, TransactionsResponse } from "./types";
 
 const CHANNEL = "single-docker";
-const HASH_TERM_HINT =
-  "In terms, each # matches zero or more letters or dots within one word only (e.g. car#ing → carstealing; #ele#tron# → HobbyElectronica.nl — not across spaces).";
+const TERM_MATCH_HINT =
+  "Terms: # matches zero or more letters or dots within one word (e.g. car#ing → carstealing; not across spaces). " +
+  "Use && between phrases when both must match (e.g. albert && heijn). " +
+  "Use || when either phrase may match (e.g. paypal || stripe).";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: "€",
@@ -527,7 +529,7 @@ function TermsApp() {
         </div>
         <p className="win-hint">
           Term Window. Return to Overview using <kbd>Ctrl</kbd>+<kbd>Tab</kbd> or <kbd>Alt</kbd>+<kbd>M</kbd>.
-          Changes are applied when you leave this window. {HASH_TERM_HINT}
+          Changes are applied when you leave this window. {TERM_MATCH_HINT}
         </p>
       </aside>
       <main className="content">
@@ -802,7 +804,7 @@ function TermAssignDialog({
         <h2 id="term-assign-title">Assign keyword</h2>
         <p className="term-assign-hint">
           {settings.remainder_category}: pick a keyword and target category. Transactions are
-          recategorised after save. {HASH_TERM_HINT}
+          recategorised after save. {TERM_MATCH_HINT}
         </p>
         <label className="term-assign-field">
           Term
@@ -1145,8 +1147,25 @@ function highlightRanges(text: string, ranges: Array<[number, number]>): ReactNo
   return nodes.length === 1 ? nodes[0] : <>{nodes}</>;
 }
 
+function atomicHighlightTerms(keywords: string[]): string[] {
+  const atoms = new Set<string>();
+  for (const keyword of keywords) {
+    const term = keyword.trim().toLowerCase();
+    if (!term) continue;
+    const orParts = term.includes(" || ") ? term.split(" || ") : [term];
+    for (const orPart of orParts) {
+      const andParts = orPart.includes(" && ") ? orPart.split(" && ") : [orPart];
+      for (const part of andParts) {
+        const cleaned = part.trim();
+        if (cleaned) atoms.add(cleaned);
+      }
+    }
+  }
+  return [...atoms];
+}
+
 function highlight(text: string, keywords: string[]): ReactNode {
-  const terms = [...new Set(keywords.map((k) => k.trim().toLowerCase()).filter(Boolean))];
+  const terms = atomicHighlightTerms(keywords);
   if (terms.length === 0) return text;
 
   const hashWordTerms = terms.filter((t) => t.includes("#") && !t.includes(" "));
