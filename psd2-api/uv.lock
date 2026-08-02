@@ -12,6 +12,23 @@ wheels = [
 ]
 
 [[package]]
+name = "banking-app-shared"
+version = "0.1"
+source = { directory = "../shared" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyjwt" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -279,10 +296,8 @@ name = "psd2api"
 version = "0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "cryptography" },
-    { name = "pyjwt" },
+    { name = "banking-app-shared" },
     { name = "python-dotenv" },
-    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -292,10 +307,8 @@ build = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "pyjwt", specifier = ">=2.8.0" },
+    { name = "banking-app-shared", directory = "../shared" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
 ]
 
 [package.metadata.requires-dev]

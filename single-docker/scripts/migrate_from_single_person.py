@@ -24,19 +24,16 @@ def read_person(profile_path: Path) -> str:
     return person
 
 
-def personal_filename(person: str, stem: str) -> str:
-    return f"{person}_{stem}"
-
-
 def resolve_source_profile(input_dir: Path) -> Path:
+    plain = input_dir / "profile.json"
+    if plain.is_file():
+        return plain
     prefixed = sorted(input_dir.glob("*_profile.json"))
     if len(prefixed) == 1:
         return prefixed[0]
     if prefixed:
         raise SystemExit(f"Multiple profiles in {input_dir}; pass --person.")
-    raise SystemExit(
-        f"No {{person}}_profile.json in {input_dir}. Legacy profile.json is not supported."
-    )
+    raise SystemExit(f"No profile.json (or {{person}}_profile.json) in {input_dir}.")
 
 
 def main() -> int:
@@ -75,33 +72,44 @@ def main() -> int:
     print(f"  secret -> {secret}")
     print(f"  data   -> {data}")
 
-    copy_file(profile_src, secret / personal_filename(person, "profile.json"))
+    copy_file(profile_src, secret / "profile.json")
     for pem in sorted(input_dir.glob("*.pem")):
         copy_file(pem, secret / pem.name)
 
-    prefixed_consent = input_dir / personal_filename(person, "consent.json")
-    if prefixed_consent.exists():
-        copy_file(prefixed_consent, data / personal_filename(person, "consent.json"))
+    for consent_src in (
+        input_dir / "consent.json",
+        input_dir / f"{person}_consent.json",
+    ):
+        if consent_src.exists():
+            copy_file(consent_src, data / "consent.json")
+            break
 
     copy_file(both_dir / "categories.json", data / "categories.json")
-    copy_file(
-        both_dir / personal_filename(person, "categories.json"),
-        data / personal_filename(person, "categories.json"),
-    )
-    copy_file(
-        both_dir / personal_filename(person, "categorized_transactions.json"),
-        data / personal_filename(person, "categorized_transactions.json"),
-    )
-    copy_file(
-        output_dir / personal_filename(person, "downloaded_transactions.json"),
-        data / personal_filename(person, "downloaded_transactions.json"),
-    )
-    copy_file(
-        output_dir / personal_filename(person, "category_totals.json"),
-        data / personal_filename(person, "category_totals.json"),
-    )
+    for personal_src in (
+        both_dir / "personal_categories.json",
+        both_dir / f"{person}_categories.json",
+        both_dir / "js_categories.json",
+    ):
+        if personal_src.exists():
+            copy_file(personal_src, data / "personal_categories.json")
+            break
 
-    print(f"Done. Add secret/{person}_profile.json and the .pem key beside data/.")
+    for stem, dest_name in (
+        ("categorized_transactions.json", "categorized_transactions.json"),
+        ("downloaded_transactions.json", "downloaded_transactions.json"),
+        ("category_totals.json", "category_totals.json"),
+    ):
+        for src in (
+            both_dir / stem,
+            both_dir / f"{person}_{stem}",
+            output_dir / stem,
+            output_dir / f"{person}_{stem}",
+        ):
+            if src.exists():
+                copy_file(src, data / dest_name)
+                break
+
+    print("Done. Place secret/profile.json and the .pem key beside data/.")
     return 0
 
 

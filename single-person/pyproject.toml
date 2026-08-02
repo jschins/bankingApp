@@ -15,10 +15,8 @@ authors = [
 ]
 
 dependencies = [
-  "requests>=2.31.0",
+  "banking-app-shared",
   "python-dotenv>=1.0.0",
-  "PyJWT>=2.8.0",
-  "cryptography>=42.0.0",
   "textual>=8.0.0",
 ]
 
@@ -29,6 +27,9 @@ psd2api = "psd2_api.__main__:main"
 # Install/run with:  uv run --group build pyinstaller ...
 [dependency-groups]
 build = ["pyinstaller>=6.0"]
+
+[tool.uv.sources]
+banking-app-shared = { path = "../shared" }
 
 [tool.setuptools.packages.find]
 where = ["."]

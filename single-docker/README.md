@@ -8,9 +8,10 @@ Same logic as [`../single-person/`](../single-person/), but with a **FastAPI
 backend** and **React web UI** (styled like `bankingApp-admin`, without the
 multi-person O-table). Runtime layout:
 
-- **`secret/`** — profile + `.pem` (outside the container mount; never in git)
-- **`data/`** — `{person}_config.json`, shared `categories.json`, and all other
-  `{person}_*` JSON files
+- **`secret/`** — `profile.json` + `.pem` (outside the container mount; never in git)
+- **`data/`** — shared `categories.json`, personal overrides in
+  `personal_categories.json`, plus `consent.json`, transaction JSON, etc.
+  (no person-prefix on filenames; person comes from `profile.json`)
 
 The project has its **own `pyproject.toml` and virtual environment** (`.venv/`),
 but stays in the central **`bankingApp` git repository**.
@@ -33,7 +34,7 @@ Open each in its own browser tab; fixed window names reuse the same tab.
 **Transacties sidebar**
 
 - **date-from / date-to** — passed to the bank API for the fetch
-- **new year** — when checked, `{person}_categorized_transactions.json` is
+- **new year** — when checked, `categorized_transactions.json` is
   **replaced** with only this fetch (no merge, modifications cleared). When
   unchecked, new transactions are **appended** (deduped by `id`) and existing
   modifications are kept
@@ -69,7 +70,7 @@ The tabs communicate via a `BroadcastChannel` (`single-docker`). Message
 - When you **leave** the termen tab (hide the tab or close the window) **and**
   dirty is true:
   1. `POST /api/recalculate` runs — re-categorises **every** row in
-     `{person}_categorized_transactions.json` (not only rows from the latest
+     `categorized_transactions.json` (not only rows from the latest
      download), matching keywords against the **processed** `name` and
      `description` fields stored in that file
   2. dirty is cleared
@@ -122,7 +123,7 @@ API reference: http://localhost:8200/docs
 
 ## Consent renewal
 
-When `{person}_consent.json` is missing or expired (~90 days), the UI shows a
+When `consent.json` is missing or expired (~90 days), the UI shows a
 consent banner.
 
 1. Click **Authorisatie-URL** (or open the URL printed at startup in
@@ -131,7 +132,7 @@ consent banner.
 3. Copy the **full redirect URL** from the browser (must contain `?code=...`)
 4. Paste into **redirect-code**
 5. Click **Fetch bank data** — this exchanges the code for a session and writes
-   `{person}_consent.json`
+   `consent.json`
 
 Each redirect URL is **single-use**. If exchange fails with
 `WRONG_AUTHORIZATION_CODE`, request a fresh authorisation URL and complete the
@@ -149,16 +150,15 @@ Enable Banking Control Panel. Country must be ISO 3166-1 alpha-2 (`NL`, not
 ```
 single-docker/
 ├─ secret/                     # credentials (git-ignored, mounted outside container)
-│  ├─ js_profile.json
+│  ├─ profile.json
 │  └─ *.pem
-├─ data/                       # config + runtime JSON (git-ignored)
-│  ├─ js_config.json           # {person}_config.json
-│  ├─ categories.json          # shared general keywords + abbreviations
-│  ├─ js_consent.json
-│  ├─ js_categories.json         # personal keyword overrides
-│  ├─ js_categorized_transactions.json
-│  ├─ js_downloaded_transactions.json
-│  └─ js_category_totals.json
+├─ data/                       # runtime JSON (git-ignored)
+│  ├─ categories.json          # shared general keywords + abbreviations + typerules
+│  ├─ personal_categories.json # personal keyword overrides
+│  ├─ consent.json
+│  ├─ categorized_transactions.json
+│  ├─ downloaded_transactions.json
+│  └─ category_totals.json
 ├─ app/
 │  ├─ main.py                  # FastAPI
 │  ├─ settings.py
@@ -169,80 +169,23 @@ single-docker/
 └─ docker-compose.yml
 ```
 
-**Legacy unprefixed names are rejected** (`consent.json`, `profile.json`,
-`categorized_transactions.json`, etc.). The app exits with an error if any are
-present in `data/`.
+Person identity comes from `secret/profile.json` (`"person"` field), or from
+`data/consent.json`, or from `bankingApp_PERSON`. Filenames are **not** prefixed.
 
 ---
 
-## Configuration (`data/{person}_config.json`)
+## Runtime files
 
-Each person has a config file named `{person}_config.json` inside `data/`.
-The `{person}` prefix must match `"person"` in the profile JSON.
-
-Example `data/js_config.json` for **local development**:
-
-```json
-{
-  "profile": "C:/Coding/bankingApp/single-docker/secret/js_profile.json",
-  "private_key": "C:/Coding/bankingApp/single-docker/secret/317e65d7-9fdb-48d3-862b-58f0357bf152.pem",
-  "data_dir": "data",
-  "server_url": "",
-  "server_api_key": ""
-}
-```
-
-| Field | Resolution |
-|-------|------------|
-| `profile` | Path to `{person}_profile.json` in `secret/` |
-| `private_key` | Path to the `.pem` file in `secret/` |
-| `data_dir` | Path to the data directory |
-| `server_url` / `server_api_key` | Optional upload target |
-
-Path rules:
-
-- `profile`, `private_key`, and `data_dir` may be absolute or relative to the
-  **`single-docker/` project root** (the same directory that contains `data/`).
-  Example: `"data"` → `single-docker/data/`, `"secret/foo.pem"` →
-  `single-docker/secret/foo.pem`, even when the config file lives inside `data/`.
-
-### Config discovery
-
-1. `bankingApp_CONFIG` environment variable (full path), if set
-2. Otherwise exactly one `data/*_config.json`
-3. If several exist, set `bankingApp_PERSON=js` or `bankingApp_CONFIG`
-
-### Docker config
-
-Mount `secret/` **outside** the app tree. The same relative paths work in Docker
-and locally:
-
-```json
-{
-  "profile": "secret/js_profile.json",
-  "private_key": "secret/317e65d7-9fdb-48d3-862b-58f0357bf152.pem",
-  "data_dir": "data",
-  "server_url": "",
-  "server_api_key": ""
-}
-```
-
-`docker-compose.yml` mounts `./data` → `/app/data` and `./secret` → `/app/secret`.
-All project-relative paths resolve under `/app` in the container, the same as
-locally under `single-docker/`. Windows absolute paths (`C:/.../secret/...`) are
-still accepted and mapped under `app_root`.
-
----
-
-## Personal file naming
-
-| File | Example for `js` |
-|------|------------------|
-| Config | `data/js_config.json` |
-| Profile / key | `secret/js_profile.json`, `secret/*.pem` |
-| Shared categories | `data/categories.json` |
-| Personal keywords | `data/js_categories.json` |
-| Personal data | `data/js_consent.json`, `data/js_categorized_transactions.json`, … |
+| File | Role |
+|------|------|
+| `secret/profile.json` | Enable Banking profile (`person`, `app_id`, `key_file`, bank, redirect) |
+| `secret/*.pem` | Exactly one Enable Banking private key |
+| `data/categories.json` | Shared keywords, typerules, abbreviations |
+| `data/personal_categories.json` | Personal keyword overrides |
+| `data/consent.json` | Bank session / accounts |
+| `data/categorized_transactions.json` | Processed + categorised transactions |
+| `data/downloaded_transactions.json` | Raw bank download |
+| `data/category_totals.json` | Sidebar totals |
 
 `categories.json` holds shared keyword lists, optional **typerules** (bank
 `type` → category when no keyword matches), and transaction-type **abbreviations**
@@ -254,7 +197,10 @@ used in the P-table. Example:
 ]
 ```
 
-Personal overrides live in `{person}_categories.json`.
+Personal overrides live in `personal_categories.json`.
+
+`docker-compose.yml` mounts `./data` → `/app/data` and `./secret` → `/app/secret`.
+Paths resolve under the app root (project folder or folder beside the exe).
 
 ---
 
@@ -285,8 +231,7 @@ npm run dev
 
 Open http://localhost:5173 (Vite proxies `/api` to `:8200`).
 
-With a single `data/js_config.json`, no env vars are needed. For multiple people,
-set `bankingApp_PERSON=bog` or `bankingApp_CONFIG=...`.
+Person is read from `secret/profile.json`. Optional override: `bankingApp_PERSON`.
 
 ---
 
@@ -306,53 +251,46 @@ powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
 cd single-docker
 chmod +x build_exe.sh
 ./build_exe.sh
-# or: uv run --group build python scripts/build_exe.py
+# or: uv run --group build python scripts/build_onedir.py
 ```
 
-The script builds the frontend if needed, then runs PyInstaller. Output is a
-**single file**:
+The script builds the frontend if needed, then runs PyInstaller in **onedir**
+mode (a folder with the exe + `_internal/`, not a single fat `.exe` — fewer
+antivirus false positives).
 
 | OS | Output |
 |----|--------|
-| Windows | `dist/bankingApp-single-docker.exe` |
-| macOS | `dist/bankingApp-single-docker` |
+| Windows | `dist/boekh_onedir/boekh_onedir.exe` (+ `_internal/`) |
+| macOS | `dist/boekh_onedir/boekh_onedir` (+ `_internal/`) |
 
-No `input/`, `output/`, or other folders are created by the build.
-
-**Build on the target OS** — a Windows `.exe` does not run on Mac, and vice versa.
+**Build on the target OS** — a Windows build does not run on Mac, and vice versa.
 
 ### Deploy
 
-Copy the binary to a folder on the target machine. Beside it, create **`data/`**
-and **`secret/`** (same layout as local development):
+Copy the **whole** `dist/boekh_onedir/` folder to the target machine. Beside the
+executable (inside that folder), create **`data/`** and **`secret/`**:
+
+```
+boekh_onedir/
+  boekh_onedir.exe
+  _internal/          # required — do not omit
+  data/
+  secret/
+```
 
 | Path | Purpose |
 |------|---------|
-| `secret/js_profile.json` | Enable Banking profile |
-| `secret/*.pem` | Private key |
-| `data/js_config.json` | Paths (see below) |
+| `secret/profile.json` | Enable Banking profile |
+| `secret/*.pem` | Private key (exactly one) |
 | `data/categories.json` | Shared keyword lists |
+| `data/personal_categories.json` | Personal keyword overrides (optional) |
+| `data/consent.json` | Created after bank consent |
 
-Use [`config.example.json`](config.example.json) as a template for
-`data/js_config.json`.
-
-Example `data/js_config.json` (paths relative to the binary):
-
-```json
-{
-  "profile": "secret/js_profile.json",
-  "private_key": "secret/YOUR-APP-ID.pem",
-  "data_dir": "data",
-  "server_url": "",
-  "server_api_key": ""
-}
-```
-
-Start the binary — it listens on **http://127.0.0.1:8200** and opens your
-browser. Consent and transactions live in `data/` next to the binary.
+Start by double-clicking `boekh_onedir.exe`. It listens on **http://127.0.0.1:8200**
+and opens your browser.
 
 On macOS, if Gatekeeper blocks an unsigned build: right-click → Open, or
-`xattr -cr dist/bankingApp-single-docker`.
+`xattr -cr dist/boekh_onedir`.
 
 To change port: set environment variable `PORT` before starting (default `8200`).
 
@@ -363,7 +301,7 @@ The API is running but the **React UI was not bundled** into the executable
 `;` on Windows, `:` on macOS).
 
 1. Open **http://127.0.0.1:8200/api/health** — check `"frontend_ok": true`
-2. Rebuild with `scripts/build_exe.py` (not a hand-rolled `pyinstaller` command)
+2. Rebuild with `scripts/build_onedir.py` (not a hand-rolled `pyinstaller` command)
 3. As a workaround, copy `frontend/dist/` next to the binary:
    `MybankingApp/frontend/dist/index.html` (and assets) — the app will pick it up
 
@@ -381,8 +319,8 @@ docker compose up --build
 | `./data` | `/app/data` |
 | `./secret` | `/app/secret` (read-only) |
 
-Change `bankingApp_CONFIG` in `docker-compose.yml` when switching person
-(e.g. `/app/data/bog_config.json`).
+Swap the contents of `data/` and `secret/` when switching person (one person per
+deployment folder).
 
 ---
 
@@ -427,11 +365,9 @@ Upload sends standard server filenames (`consent.json`, etc.) under
 uv run python scripts/migrate_from_single_person.py
 ```
 
-Copies `{person}_*` files into `data/` and profile/pem into `secret/`. Then create
-`data/{person}_config.json` with absolute paths into `secret/`.
-
-Source must already use `{person}_profile.json` — legacy `profile.json` is not
-accepted.
+Copies profile/pem into `secret/` and data JSON into `data/` using the
+unprefixed layout (`profile.json`, `personal_categories.json`, `consent.json`, …).
+Accepts either legacy `{person}_*` names or plain names in the source.
 
 ---
 
@@ -453,13 +389,13 @@ Never commit `.pem` files, consent, or transaction data.
 
 
 
-Pyinstaller executable:
+Pyinstaller executable (onedir):
 
 single-docker > powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
 
-Copy the whole dist/ folder and add the two folders (data and secret)
-
-double-click the executable
+Copy the whole ``dist/boekh_onedir/`` folder (exe + ``_internal/``).
+Add ``data/`` and ``secret/`` next to the exe inside that folder.
+Double-click ``boekh_onedir.exe``.
 
 
 

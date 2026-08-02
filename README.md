@@ -82,10 +82,16 @@ All three live components currently run on one PC. From each project folder:
 
 ```powershell
 # bankingApp-server (the JSON / consent store)
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+PS C:\Coding\bankingApp\boekh-server> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& .venv\Scripts\Activate.ps1)
+(boekh-server) PS C:\Coding\bankingApp\boekh-server> uv sync   
+(boekh-server) PS C:\Coding\bankingApp\boekh-server> .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
 
 # bankingApp-admin back-end
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
+PS C:\Coding\bankingApp\boekh-admin> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& .venv\Scripts\Activate.ps1)
+(boekh-admin) PS C:\Coding\bankingApp\boekh-admin> uv sync   
+(boekh-admin) PS C:\Coding\bankingApp\boekh-admin> .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
 
 # bankingApp-admin front-end (dev)
 cd bankingApp-admin\frontend; npm install; npm run dev    # http://localhost:5173

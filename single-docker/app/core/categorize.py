@@ -663,8 +663,8 @@ def recategorize_transactions() -> dict[str, str]:
     """Re-categorize every row in the categorized store using its processed fields.
 
     Matching uses ``name`` and ``description`` as stored in
-    ``{person}_categorized_transactions.json``, not unprocessed remittance from
-    ``{person}_downloaded_transactions.json``.
+    ``categorized_transactions.json``, not unprocessed remittance from
+    ``downloaded_transactions.json``.
     """
     general = _category_map(_read_json(CATEGORIES_PATH))
     personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
@@ -790,7 +790,7 @@ def append_category_term(
     group: str,
     person: str,
 ) -> list[str]:
-    """Append one keyword to general (categories.json) or personal ({person}_categories.json)."""
+    """Append one keyword to general (categories.json) or personal (personal_categories.json)."""
     cleaned = _normalize_term(term)
     if not cleaned:
         raise ValueError("term must not be empty")
@@ -1008,7 +1008,7 @@ def record_category_change(transaction: dict[str, Any], category_name: str) -> d
 
 
 def process_transactions(raw_transactions: list[dict[str, Any]], new_year: bool) -> dict[str, str]:
-    """Distill raw bank JSON into ``{person}_categorized_transactions.json``.
+    """Distill raw bank JSON into ``categorized_transactions.json``.
 
     When *new_year* is false, append any transaction whose ``id`` is not already
     present and keep existing ``modifications``. When *new_year* is true,

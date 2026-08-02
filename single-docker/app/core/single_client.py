@@ -9,68 +9,41 @@ from dataclasses import dataclass, field
 import argparse
 import json
 import sys
-import time
-import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs, urlparse
 
-import jwt
-import requests
+from shared.enable_banking import EnableBankingClient, EnableBankingError
+from shared.enable_banking.transactions import (
+    parse_iso_date,
+    date_period_chunks,
+    dedupe_transactions,
+    fetch_transactions_pages,
+    fetch_transactions_period,
+)
 
 from app.paths import CONSENT_PATH, PRIVATE_KEY_PATH, PROFILE_PATH
 
-BASE_URL = "https://api.enablebanking.com"
-TRANSACTIONS_PAGE_LIMIT = 250
-DATE_CHUNK_DAYS = 30
-MAX_TRANSACTION_PAGES = 500
-AIB_HISTORICAL_START = "2024-01-01"
+AIB_HISTORICAL_YEARS = 2
 AIB_ROLLING_DAYS = 90
 AIB_TZ = ZoneInfo("Europe/Dublin")
-
-
-def _parse_iso_date(value: str) -> date:
-    return date.fromisoformat(str(value)[:10])
-
-
-def _date_period_chunks(date_from: str, date_to: str, *, chunk_days: int = DATE_CHUNK_DAYS) -> list[tuple[str, str]]:
-    start = _parse_iso_date(date_from)
-    end = _parse_iso_date(date_to)
-    if start > end:
-        raise EnableBankingError(f"Invalid transaction period: {date_from} > {date_to}")
-    chunks: list[tuple[str, str]] = []
-    cursor = start
-    while cursor <= end:
-        chunk_end = min(cursor + timedelta(days=chunk_days - 1), end)
-        chunks.append((cursor.isoformat(), chunk_end.isoformat()))
-        cursor = chunk_end + timedelta(days=1)
-    return chunks
-
-
-def _transaction_key(tx: dict[str, Any]) -> str:
-    ref = tx.get("entry_reference") or tx.get("transaction_id") or tx.get("id")
-    if ref is not None and str(ref).strip():
-        return str(ref).strip()
-    return json.dumps(tx, sort_keys=True, default=str)
-
-
-def _dedupe_transactions(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
-    for tx in transactions:
-        key = _transaction_key(tx)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(tx)
-    return unique
 
 
 def _aib_today() -> date:
     """Calendar today in Ireland (AIB consent renewal day)."""
     return datetime.now(AIB_TZ).date()
+
+
+def _historical_start(today: date | None = None) -> date:
+    """Earliest allowed history date: calendar date two years before today."""
+    ref = today or _aib_today()
+    try:
+        return ref.replace(year=ref.year - AIB_HISTORICAL_YEARS)
+    except ValueError:
+        # 29 Feb → 28 Feb in a non-leap year
+        return ref.replace(year=ref.year - AIB_HISTORICAL_YEARS, day=28)
 
 
 def _is_aspsp_error(exc: EnableBankingError) -> bool:
@@ -103,20 +76,21 @@ def _resolve_fetch_dates(
     """Clamp AIB fetch window: full history only on consent renewal day."""
     warnings: list[str] = []
     today = _aib_today()
-    end = _parse_iso_date(date_to) if date_to else today
+    end = parse_iso_date(date_to) if date_to else today
     if end > today:
         end = today
         warnings.append(f"date_to clamped to today ({today.isoformat()}).")
 
     rolling_start = today - timedelta(days=AIB_ROLLING_DAYS - 1)
-    historical_start = _parse_iso_date(AIB_HISTORICAL_START)
+    historical_start = _historical_start(today)
+    historical_start_s = historical_start.isoformat()
 
     if date_from:
-        start = _parse_iso_date(date_from)
+        start = parse_iso_date(date_from)
     elif renewal_day:
         start = historical_start
         warnings.append(
-            f"No date_from provided; using {AIB_HISTORICAL_START} on consent renewal day."
+            f"No date_from provided; using {historical_start_s} on consent renewal day."
         )
     else:
         start = rolling_start
@@ -128,7 +102,7 @@ def _resolve_fetch_dates(
     if renewal_day:
         if start < historical_start:
             warnings.append(
-                f"date_from {start.isoformat()} raised to {AIB_HISTORICAL_START} "
+                f"date_from {start.isoformat()} raised to {historical_start_s} "
                 "(earliest allowed on renewal day)."
             )
             start = historical_start
@@ -144,7 +118,7 @@ def _resolve_fetch_dates(
     if start > end:
         raise EnableBankingError(
             "No transactions can be fetched for the requested period. "
-            f"AIB allows history back to {AIB_HISTORICAL_START} only on the day you "
+            f"AIB allows history back to {historical_start_s} only on the day you "
             "renew consent: complete bank login, paste the redirect code, and fetch "
             f"on that same day. Outside renewal day only the last {AIB_ROLLING_DAYS} "
             f"days are available (from {rolling_start.isoformat()})."
@@ -163,67 +137,23 @@ class FetchResult:
     account_errors: list[str] = field(default_factory=list)
 
 
-class EnableBankingError(RuntimeError):
-    """Raised when the Enable Banking API returns an error response."""
-
-
-class EnableBankingClient:
-    def __init__(self, application_id: str, private_key: bytes, timeout: float = 30) -> None:
-        if not application_id or not private_key:
-            raise EnableBankingError("Missing Enable Banking application id or private key.")
-        self._app_id = application_id
-        self._private_key = private_key
-        self._timeout = timeout
+class SingleDockerClient(EnableBankingClient):
+    """Enable Banking client extended with AIB-aware transaction fetching."""
 
     @classmethod
-    def from_profile(cls, profile: dict[str, Any]) -> EnableBankingClient:
+    def from_profile(cls, profile: dict[str, Any]) -> SingleDockerClient:
         app_id = str(profile.get("app_id") or "")
         if not PRIVATE_KEY_PATH.exists():
             raise EnableBankingError(f"Private key file not found: {PRIVATE_KEY_PATH}")
         return cls(app_id, PRIVATE_KEY_PATH.read_bytes())
 
-    def _jwt(self) -> str:
-        now = int(time.time())
-        headers = {"typ": "JWT", "alg": "RS256", "kid": self._app_id}
-        payload = {
-            "iss": "enablebanking.com",
-            "aud": "api.enablebanking.com",
-            "iat": now,
-            "exp": now + 3600,
-        }
-        return jwt.encode(payload, self._private_key, algorithm="RS256", headers=headers)
-
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = requests.request(
-            method,
-            f"{BASE_URL}{path}",
-            headers={
-                "Authorization": f"Bearer {self._jwt()}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            timeout=self._timeout,
-            **kwargs,
-        )
-        if not response.ok:
-            raise EnableBankingError(f"{method} {path} failed: {response.status_code} {response.text}")
-        return response.json() if response.content else None
-
     def start_authorization(self, profile: dict[str, Any], valid_until: str) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/auth",
-            json={
-                "access": {"valid_until": valid_until},
-                "aspsp": {"name": profile["aspsp"], "country": profile["country"]},
-                "redirect_url": profile["redirect_url"],
-                "psu_type": "personal",
-                "state": uuid.uuid4().hex,
-            },
+        return super().start_authorization(
+            aspsp_name=profile["aspsp"],
+            country=profile["country"],
+            redirect_url=profile["redirect_url"],
+            valid_until=valid_until,
         )
-
-    def create_session(self, code: str) -> dict[str, Any]:
-        return self._request("POST", "/sessions", json={"code": code})
 
     def _fetch_transactions_pages(
         self,
@@ -231,46 +161,7 @@ class EnableBankingClient:
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """Fetch one API period, following ``continuation_key`` until exhausted."""
-        all_transactions: list[dict[str, Any]] = []
-        continuation_key: str | None = None
-        base_params: dict[str, str] = {}
-        if date_from:
-            base_params["date_from"] = date_from
-        if date_to:
-            base_params["date_to"] = date_to
-
-        pages = 0
-        last_batch_len = 0
-        while True:
-            pages += 1
-            if pages > MAX_TRANSACTION_PAGES:
-                raise EnableBankingError(
-                    f"Transaction pagination exceeded {MAX_TRANSACTION_PAGES} pages "
-                    f"for account {account_uid} ({date_from} .. {date_to})."
-                )
-            params = dict(base_params)
-            if continuation_key:
-                params["continuation_key"] = continuation_key
-            resp = self._request("GET", f"/accounts/{account_uid}/transactions", params=params)
-            if not isinstance(resp, dict):
-                resp = {}
-            batch = resp.get("transactions")
-            if not isinstance(batch, list):
-                batch = []
-            all_transactions.extend(item for item in batch if isinstance(item, dict))
-            last_batch_len = len(batch)
-            continuation_key = resp.get("continuation_key")
-            if not continuation_key:
-                break
-
-        truncated = (
-            last_batch_len >= TRANSACTIONS_PAGE_LIMIT
-            and date_from is not None
-            and date_to is not None
-            and _parse_iso_date(date_from) < _parse_iso_date(date_to)
-        )
-        return all_transactions, truncated
+        return fetch_transactions_pages(self, account_uid, date_from, date_to)
 
     def _fetch_transactions_period(
         self,
@@ -278,37 +169,7 @@ class EnableBankingClient:
         date_from: str,
         date_to: str,
     ) -> list[dict[str, Any]]:
-        """Fetch a date range; split on truncation or ASPSP errors."""
-        start = _parse_iso_date(date_from)
-        end = _parse_iso_date(date_to)
-        try:
-            transactions, truncated = self._fetch_transactions_pages(account_uid, date_from, date_to)
-        except EnableBankingError as exc:
-            if not _is_aspsp_error(exc) or start >= end:
-                raise
-            midpoint = start + (end - start) // 2
-            left = self._fetch_transactions_period(account_uid, date_from, midpoint.isoformat())
-            right = self._fetch_transactions_period(
-                account_uid,
-                (midpoint + timedelta(days=1)).isoformat(),
-                date_to,
-            )
-            return _dedupe_transactions(left + right)
-
-        if not truncated:
-            return transactions
-
-        if start >= end:
-            return transactions
-
-        midpoint = start + (end - start) // 2
-        left = self._fetch_transactions_period(account_uid, date_from, midpoint.isoformat())
-        right = self._fetch_transactions_period(
-            account_uid,
-            (midpoint + timedelta(days=1)).isoformat(),
-            date_to,
-        )
-        return _dedupe_transactions(left + right)
+        return fetch_transactions_period(self, account_uid, date_from, date_to)
 
     def get_transactions(
         self,
@@ -318,22 +179,12 @@ class EnableBankingClient:
     ) -> list[dict[str, Any]]:
         if date_from and date_to:
             merged: list[dict[str, Any]] = []
-            for chunk_from, chunk_to in _date_period_chunks(date_from, date_to):
+            for chunk_from, chunk_to in date_period_chunks(date_from, date_to):
                 merged.extend(self._fetch_transactions_period(account_uid, chunk_from, chunk_to))
-            return _dedupe_transactions(merged)
+            return dedupe_transactions(merged)
 
         transactions, _truncated = self._fetch_transactions_pages(account_uid, date_from, date_to)
         return transactions
-
-    def get_account_balances(self, account_uid: str) -> list[dict[str, Any]]:
-        data = self._request("GET", f"/accounts/{account_uid}/balances")
-        if isinstance(data, dict):
-            balances = data.get("balances")
-            if isinstance(balances, list):
-                return [item for item in balances if isinstance(item, dict)]
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-        return []
 
 
 def _read_json(path: Path) -> Any:
@@ -860,7 +711,7 @@ def ensure_consent_credit_card_labels() -> None:
         _save_consent(record)
 
 
-def _refresh_account_balances(client: EnableBankingClient, account_uids: list[str]) -> None:
+def _refresh_account_balances(client: SingleDockerClient, account_uids: list[str]) -> None:
     """Refresh balance fields from GET /accounts/{uid}/balances only."""
     if not account_uids:
         return
@@ -906,7 +757,7 @@ def _is_already_authorized_error(exc: EnableBankingError) -> bool:
 
 def get_authorization_url() -> str:
     profile = load_profile()
-    client = EnableBankingClient.from_profile(profile)
+    client = SingleDockerClient.from_profile(profile)
     valid_until = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
     auth = client.start_authorization(profile, valid_until)
     url = auth.get("url", "")
@@ -916,7 +767,7 @@ def get_authorization_url() -> str:
 
 
 def _linked_accounts(
-    profile: dict[str, Any], client: EnableBankingClient, redirect_code: str | None
+    profile: dict[str, Any], client: SingleDockerClient, redirect_code: str | None
 ) -> tuple[list[dict[str, Any]], bool]:
     """Return linked accounts and whether consent was renewed in this call."""
     renewed = False
@@ -924,11 +775,8 @@ def _linked_accounts(
     if fetchable:
         return fetchable, _connection_created_today(profile)
 
-    if _load_stored_accounts():
-        raise EnableBankingError(
-            "No accounts enabled for fetch. Enable at least one account in the sidebar."
-        )
-
+    # Expired consent still leaves accounts in consent.json; those must not block
+    # redirect-code exchange when renewing.
     if redirect_code:
         try:
             session = client.create_session(_extract_code(redirect_code))
@@ -959,6 +807,11 @@ def _linked_accounts(
     if needs_consent_renewal():
         raise EnableBankingError("Redirect code is required to renew bank consent.")
 
+    if _load_stored_accounts():
+        raise EnableBankingError(
+            "No accounts enabled for fetch. Enable at least one account in the sidebar."
+        )
+
     raise EnableBankingError("No linked accounts available.")
 
 
@@ -969,7 +822,7 @@ def fetch_transactions(
 ) -> FetchResult:
     """Download raw transactions from the bank and return them."""
     profile = load_profile()
-    client = EnableBankingClient.from_profile(profile)
+    client = SingleDockerClient.from_profile(profile)
     accounts, renewed_session = _linked_accounts(profile, client, redirect_code)
     renewal_day = renewed_session or _connection_created_today(profile)
     resolved_from, resolved_to, warnings = _resolve_fetch_dates(

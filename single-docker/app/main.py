@@ -429,7 +429,7 @@ def _mount_frontend() -> None:
 
     print(
         f"WARNING: UI not bundled — {dist / 'index.html'} missing.\n"
-        "Rebuild with: uv run --group build python scripts/build_exe.py\n"
+        "Rebuild with: uv run --group build python scripts/build_onedir.py\n"
         "API still works at /api/health",
         file=sys.stderr,
     )

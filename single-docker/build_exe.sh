@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-uv run --group build python scripts/build_exe.py
+uv run --group build python scripts/build_onedir.py

@@ -26,48 +26,27 @@ def get_app_settings() -> AppSettings:
     return _runtime
 
 
+def _person_from_json(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read {path.name}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path.name} must be a JSON object")
+    person = str(payload.get("person") or "").strip()
+    return person or None
+
+
 def person_from_consent(data_root: Path) -> str | None:
-    """Return person short name from a single ``{short}_consent.json`` in *data_root*."""
-    persons: list[str] = []
-    for path in sorted(data_root.glob("*_consent.json")):
-        short = path.name[: -len("_consent.json")].strip()
-        if not short:
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Could not read {path.name}: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise ValueError(f"{path.name} must be a JSON object")
-        person = str(payload.get("person") or "").strip()
-        if person != short:
-            raise ValueError(
-                f"{path.name}: person field is {person!r}, expected {short!r} from filename"
-            )
-        persons.append(short)
-
-    if len(persons) == 1:
-        return persons[0]
-    if len(persons) > 1:
-        names = ", ".join(f"{p}_consent.json" for p in persons)
-        raise FileNotFoundError(
-            f"Multiple consent files in {data_root}: {names}. Set bankingApp_PERSON."
-        )
-    return None
+    """Return person short name from ``data/consent.json`` if present."""
+    return _person_from_json(data_root / "consent.json")
 
 
-def person_from_secret_profiles() -> str | None:
-    profiles = sorted(secret_dir().glob("*_profile.json"))
-    persons = [path.name[: -len("_profile.json")].strip() for path in profiles]
-    persons = [person for person in persons if person]
-    if len(persons) == 1:
-        return persons[0]
-    if len(persons) > 1:
-        names = ", ".join(path.name for path in profiles)
-        raise FileNotFoundError(
-            f"Multiple profile files in {secret_dir()}: {names}. Set bankingApp_PERSON."
-        )
-    return None
+def person_from_secret_profile() -> str | None:
+    """Return person short name from ``secret/profile.json`` if present."""
+    return _person_from_json(secret_dir() / "profile.json")
 
 
 def resolve_person_short(explicit: str | None = None) -> str:
@@ -78,18 +57,18 @@ def resolve_person_short(explicit: str | None = None) -> str:
     if env_person:
         return env_person
 
-    data_root = data_dir()
-    consent_person = person_from_consent(data_root)
-    if consent_person:
-        return consent_person
-
-    profile_person = person_from_secret_profiles()
+    profile_person = person_from_secret_profile()
     if profile_person:
         return profile_person
 
+    consent_person = person_from_consent(data_dir())
+    if consent_person:
+        return consent_person
+
     raise FileNotFoundError(
-        f"Could not determine person short name. Set bankingApp_PERSON or add exactly one "
-        f"{{person}}_consent.json in {data_root} or {{person}}_profile.json in {secret_dir()}."
+        f"Could not determine person short name. Set bankingApp_PERSON or add "
+        f"secret/profile.json (with a person field) or data/consent.json under "
+        f"{data_dir().parent}."
     )
 
 
@@ -110,7 +89,7 @@ def init_app_settings(person_short: str | None = None) -> AppSettings:
     global _runtime
 
     person = resolve_person_short(person_short)
-    profile_path = project_path("secret", f"{person}_profile.json")
+    profile_path = project_path("secret", "profile.json")
     if not profile_path.is_file():
         raise FileNotFoundError(f"Profile not found: {profile_path}")
 

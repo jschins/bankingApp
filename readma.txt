@@ -1,5 +1,5 @@
 
-server-api-key  is SHA256 van "bankingAppouding dkg"
+server-api-key  is SHA256 van "bankingApp"
 $env:API_KEY = "e7706e74e9e5c4a9a5c5994a4cff29ca67e1d970b9c0d2483624347ef1d72a2d"
 deze heeft de server swagger nodig (authorization)
 
@@ -7,7 +7,7 @@ na verandering pad-naam (boekh -> bankingApp):
 deactivate 2>$null
 Remove-Item -Recurse -Force .venv
 uv sync --group build
-uv run --group build python scripts/build_exe.py
+uv run --group build python scripts/build_onedir.py
 dat laatste commando is hetzelfde als
 uv run --group build python -m PyInstaller --onefile --clean --noconfirm --noupx --name bankingApp-single-docker --paths C:\Coding\bankingApp\single-docker --distpath C:\Coding\bankingApp\single-docker\dist --workpath C:\Coding\bankingApp\single-docker\build --specpath C:\Coding\bankingApp\single-docker --add-data "C:\Coding\bankingApp\single-docker\frontend\dist;frontend/dist" --collect-submodules uvicorn --collect-submodules fastapi --collect-submodules starlette --collect-submodules pydantic --copy-metadata fastapi --copy-metadata uvicorn --copy-metadata starlette --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan.on C:\Coding\bankingApp\single-docker\entry.py
 
@@ -26,6 +26,11 @@ Nieuwe short: app starten bij Enable banking
 https://enablebanking.com/cp/applications
 en voeg application toe
 
+
+
+
+# single-docker
+
 dog_js
 https://deoudegracht/
 download banking transactions
@@ -38,13 +43,17 @@ C:\Coding\bankingApp\psd2-api\packaging\profiles\eg
 
 3. maak in diezelfde folder ook een profile.json aan
 
-4. run PS C:\Coding\bankingApp\psd2-api> .\packaging\build_exe.ps1 -ProfileDir .\packaging\profiles\eg
-om het programmaatje te maken dat je lokaal installeert, waarmee de gebruiker een consent record kan maken
+4. maak executable
+## rebuild frontend if needed:
+PS C:\Coding\bankingApp\single-docker> cd frontend  
+PS C:\Coding\bankingApp\single-docker\frontend> npm run build   
+## build backend:
+cd C:\Coding\bankingApp\single-docker
+uv run --group build python scripts/build_onedir.py
+## levert boekh_onder.exe
+uv run --group build python scripts/build_onefile.py
+## levert boeh.exe
 
-
-5. de executable staat in folder C:\Coding\bankingApp\psd2-api\dist
-kopieer dat naar de laptop van de gebruiker
-run het, dan wordt de consent record doorgestuurd naar de server
 
 
 
@@ -82,3 +91,9 @@ luistert alleen naar LAN, geen key-beveiliging
 swagger op http://192.168.7.75:8100/docs#
 NB dit adres is het LAN adres (ipconfig), dat moet hard-gecodeerd zijn in het bestand
 bankingApp-admin\frontend\vite.config.ts
+
+
+kill task running on port 8000:
+(boekh-server) PS C:\Coding\bankingApp\boekh-server> netstat -ano | findstr :8000
+  TCP    0.0.0.0:8000           0.0.0.0:0              LISTENING       20148
+(boekh-server) PS C:\Coding\bankingApp\boekh-server> taskkill /PID 20148 /F

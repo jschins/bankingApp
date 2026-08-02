@@ -8,107 +8,21 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-import jwt
-import requests
+from shared.enable_banking import EnableBankingClient, EnableBankingError
 
 from paths import CONSENT_PATH, INPUT_DIR, PROFILE_PATH
 
-BASE_URL = "https://api.enablebanking.com"
 
-
-class EnableBankingError(RuntimeError):
-    """Raised when the Enable Banking API returns an error response."""
-
-
-class EnableBankingClient:
-    def __init__(self, application_id: str, private_key: bytes, timeout: float = 30) -> None:
-        if not application_id or not private_key:
-            raise EnableBankingError("Missing Enable Banking application id or private key.")
-        self._app_id = application_id
-        self._private_key = private_key
-        self._timeout = timeout
-
-    @classmethod
-    def from_profile(cls, profile: dict[str, Any]) -> EnableBankingClient:
-        app_id = str(profile.get("app_id") or "")
-        key_file = str(profile.get("key_file") or "")
-        key_path = INPUT_DIR / key_file
-        if not key_path.exists():
-            raise EnableBankingError(f"Private key file not found: {key_path}")
-        return cls(app_id, key_path.read_bytes())
-
-    def _jwt(self) -> str:
-        now = int(time.time())
-        headers = {"typ": "JWT", "alg": "RS256", "kid": self._app_id}
-        payload = {
-            "iss": "enablebanking.com",
-            "aud": "api.enablebanking.com",
-            "iat": now,
-            "exp": now + 3600,
-        }
-        return jwt.encode(payload, self._private_key, algorithm="RS256", headers=headers)
-
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = requests.request(
-            method,
-            f"{BASE_URL}{path}",
-            headers={
-                "Authorization": f"Bearer {self._jwt()}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            timeout=self._timeout,
-            **kwargs,
-        )
-        if not response.ok:
-            raise EnableBankingError(f"{method} {path} failed: {response.status_code} {response.text}")
-        return response.json() if response.content else None
-
-    def start_authorization(self, profile: dict[str, Any], valid_until: str) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/auth",
-            json={
-                "access": {"valid_until": valid_until},
-                "aspsp": {"name": profile["aspsp"], "country": profile["country"]},
-                "redirect_url": profile["redirect_url"],
-                "psu_type": "personal",
-                "state": uuid.uuid4().hex,
-            },
-        )
-
-    def create_session(self, code: str) -> dict[str, Any]:
-        return self._request("POST", "/sessions", json={"code": code})
-
-    def get_transactions(
-        self,
-        account_uid: str,
-        date_from: str | None = None,
-        date_to: str | None = None,
-    ) -> list[dict[str, Any]]:
-        all_transactions: list[dict[str, Any]] = []
-        continuation_key: str | None = None
-        while True:
-            params: dict[str, str] = {}
-            if date_from:
-                params["date_from"] = date_from
-            if date_to:
-                params["date_to"] = date_to
-            if continuation_key:
-                params["continuation_key"] = continuation_key
-            resp = self._request("GET", f"/accounts/{account_uid}/transactions", params=params)
-            all_transactions.extend(resp.get("transactions", []))
-            continuation_key = resp.get("continuation_key")
-            if not continuation_key:
-                break
-        return all_transactions
+def _client_from_profile(profile: dict[str, Any]) -> EnableBankingClient:
+    app_id = str(profile.get("app_id") or "")
+    key_file = str(profile.get("key_file") or "")
+    key_path = INPUT_DIR / key_file
+    return EnableBankingClient.from_key_file(app_id, key_path)
 
 
 def _read_json(path: Path) -> Any:
@@ -209,9 +123,14 @@ def _is_already_authorized_error(exc: EnableBankingError) -> bool:
 
 def get_authorization_url() -> str:
     profile = load_profile()
-    client = EnableBankingClient.from_profile(profile)
+    client = _client_from_profile(profile)
     valid_until = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
-    auth = client.start_authorization(profile, valid_until)
+    auth = client.start_authorization(
+        aspsp_name=profile["aspsp"],
+        country=profile["country"],
+        redirect_url=profile["redirect_url"],
+        valid_until=valid_until,
+    )
     url = auth.get("url", "")
     if not url:
         raise EnableBankingError("Enable Banking did not return an authorization URL.")
@@ -256,7 +175,7 @@ def fetch_transactions(
 ) -> list[dict[str, Any]]:
     """Download raw transactions from the bank and return them."""
     profile = load_profile()
-    client = EnableBankingClient.from_profile(profile)
+    client = _client_from_profile(profile)
     accounts = _linked_accounts(profile, client, redirect_code)
 
     raw_transactions: list[dict[str, Any]] = []

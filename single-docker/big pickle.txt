@@ -1,0 +1,69 @@
+PS C:\Coding\bankingApp> npm i -g opencode-ai
+PS C:\Coding\bankingApp> opencode.cmd
+
+# Todos
+[✓] Create shared/ package directory with pyproject.toml
+[✓] Create shared/enable_banking/__init__.py (core client)
+[✓] Create shared/enable_banking/transactions.py (chunking, dedup, pagination)
+[✓] Create shared/server_client/__init__.py
+[✓] Update psd2-api to import from shared (pyproject.toml + client.py + uploader.py + __main__.py)
+[✓] BuildUpdate single-person to import from shared (pyproject.toml + single_client.py)·Big PickleOpenCode Zen
+[✓] Update single-docker to import from shared (pyproject.toml + single_client.py + server_client.py + main.py)
+C:\Coding\bankingApp[•] Verify imports are correct across all consumers
++ Thought: 2.8s
+Let me do a comprehensive check that no stale imports remain:
+✱Grep "class EnableBankingClient|class EnableBankingError|class ServerError|class bankingAppServerClient" in . (3 matches)
++ Thought: 1.1s
+✱Grep "^BASE_URL\s*=" in . (1 match)
++ Thought: 897ms
+✱Grep "^TRANSACTIONS_PAGE_LIMIT|^DATE_CHUNK_DAYS|^MAX_TRANSACTION_PAGES" in . (3 matches)
++ Thought: 18ms
+All definitions are consolidated. Let me verify the final file structure:
+$ Get-ChildItem -Path "C:\Coding\bankingApp\shared" -Recurse -File | Select-Object -ExpandProperty FullName
+C:\Coding\bankingApp\shared\pyproject.toml
+C:\Coding\bankingApp\shared\enable_banking\transactions.py
+C:\Coding\bankingApp\shared\enable_banking\__init__.py
+C:\Coding\bankingApp\shared\server_client\__init__.py
++ Thought: 393ms
+# Todos
+[✓] Create shared/ package directory with pyproject.toml
+[✓] Create shared/enable_banking/__init__.py (core client)
+[✓] Create shared/enable_banking/transactions.py (chunking, dedup, pagination)
+[✓] Create shared/server_client/__init__.py
+[✓] Update psd2-api to import from shared (pyproject.toml + client.py + uploader.py + __main__.py)
+[✓] Update single-person to import from shared (pyproject.toml + single_client.py)
+[✓] Update single-docker to import from shared (pyproject.toml + single_client.py + server_client.py + main.py)
+[✓] Verify imports are correct across all consumers
++ Thought: 189ms
+Done. Here's a summary of all changes:
+New files created
+File
+shared/pyproject.toml
+shared/enable_banking/__init__.py
+shared/enable_banking/transactions.py
+shared/server_client/__init__.py
+Modified files
+psd2-api:
+- client.py → thin re-export shim (from shared.enable_banking import ...)
+- uploader.py → thin re-export shim with bankingAppServerClient = ServerClient alias
+- pyproject.toml → depends on banking-app-shared via path dependency
+- packaging/build_exe.ps1 → added --collect-submodules shared
+single-person:
+- single_client.py → imports EnableBankingClient/EnableBankingError from shared; from_profile() replaced with local _client_from_profile() function
+- pyproject.toml → depends on banking-app-shared via path dependency
+- build_exe.ps1 → added --collect-submodules shared
+single-docker:
+- single_client.py → SingleDockerClient subclasses shared EnableBankingClient; uses shared.enable_banking.transactions for pagination/chunking/dedup
+- server_client.py → thin re-export shim
+- pyproject.toml → depends on banking-app-shared via path dependency
+- scripts/build_exe.py → added --collect-submodules shared
+- Dockerfile → build context changed to project root; copies shared/ and installs it
+- docker-compose.yml → context: .. with dockerfile: single-docker/Dockerfile
+What was deduplicated
+- EnableBankingClient class (JWT auth, request handling, API methods) — was copy-pasted 3x, now 1 definition
+- EnableBankingError — was defined 3x, now 1
+- ServerError / server client — was defined 2x, now 1
+- Transaction pagination/chunking/dedup — was inline in single-docker, now shared utilities
+- BASE_URL, TRANSACTIONS_PAGE_LIMIT, DATE_CHUNK_DAYS, MAX_TRANSACTION_PAGES — each defined once
+Note: After these changes, run uv sync in each project directory (psd2-api, single-person, single-docker) to install the shared package into each venv.
+▣  Build · Big Pickle · 9m 58s

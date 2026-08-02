@@ -70,6 +70,7 @@ try {
         --name $Name `
         --paths "$repoRoot" `
         --collect-submodules psd2_api `
+        --collect-submodules shared `
         --add-data "$mergedProfile;." `
         --add-data "$keyPath;." `
         "packaging\entry.py"

@@ -74,10 +74,19 @@ function isPlainAlt(e: KeyboardEvent): boolean {
   );
 }
 
-const AIB_HISTORICAL_START = "2024-01-01";
+const AIB_HISTORICAL_YEARS = 2;
 
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function historicalStartDate(ref: Date = new Date()): string {
+  const start = new Date(ref);
+  start.setFullYear(start.getFullYear() - AIB_HISTORICAL_YEARS);
+  return isoDate(start);
 }
 
 function previousMonthRange(): { from: string; to: string } {
@@ -90,7 +99,7 @@ function previousMonthRange(): { from: string; to: string } {
 }
 
 function renewalHistoryRange(): { from: string; to: string } {
-  return { from: AIB_HISTORICAL_START, to: isoDate(new Date()) };
+  return { from: historicalStartDate(), to: isoDate(new Date()) };
 }
 
 export default function App() {
@@ -364,11 +373,22 @@ function MainApp() {
         <div className="fetch-form">
           <label>
             date-from
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <input
+              type="date"
+              value={dateFrom}
+              min={historicalStartDate()}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
           </label>
           <label>
             date-to
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <input
+              type="date"
+              value={dateTo}
+              min={historicalStartDate()}
+              max={isoDate(new Date())}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
           </label>
           {(needsConsent || redirectCode) && (
             <label>
@@ -399,7 +419,7 @@ function MainApp() {
           <div className="consent-banner">
             <p>
               Refresh bank consent. On the day you complete bank login and paste the
-              redirect code, both accounts can fetch history back to {AIB_HISTORICAL_START}.
+              redirect code, both accounts can fetch history back to {historicalStartDate()}.
             </p>
             <button type="button" className="refresh-button" onClick={startConsent}>
               Authorization URL

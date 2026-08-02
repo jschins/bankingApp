@@ -1,6 +1,8 @@
 services:
   single-docker:
-    build: .
+    build:
+      context: ..
+      dockerfile: single-docker/Dockerfile
     image: bankingApp-single-docker:latest
     container_name: bankingApp-single-docker
     restart: unless-stopped

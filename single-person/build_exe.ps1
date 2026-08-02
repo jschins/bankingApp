@@ -18,6 +18,7 @@ $pyinstallerArgs = @(
     "--workpath", $workDir,
     "--specpath", $projectDir,
     "--collect-submodules", "textual",
+    "--collect-submodules", "shared",
     "--copy-metadata", "textual",
     $entryPoint
 )

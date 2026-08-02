@@ -253,7 +253,7 @@ function SettingsApp() {
 
   useEffect(() => {
     window.name = "bankingApp-settings";
-     = "bankingApp — Settings";
+    document.title = "BankingApp — Settings";
     getSettings()
       .then(setSettings)
       .catch((e: Error) => setError(e.message));

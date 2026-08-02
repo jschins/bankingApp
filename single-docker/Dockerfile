@@ -1,9 +1,9 @@
 # Build frontend
 FROM node:20-alpine AS frontend
 WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json* ./
+COPY single-docker/frontend/package.json single-docker/frontend/package-lock.json* ./
 RUN npm install
-COPY frontend/ ./
+COPY single-docker/frontend/ ./
 RUN npm run build
 
 # Python app
@@ -16,9 +16,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
-COPY app ./app
-RUN pip install --upgrade pip && pip install .
+COPY shared /shared
+COPY single-docker/pyproject.toml single-docker/README.md ./
+COPY single-docker/app ./app
+RUN pip install --upgrade pip && pip install /shared && pip install .
 
 COPY --from=frontend /frontend/dist ./frontend/dist
 
