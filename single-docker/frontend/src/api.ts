@@ -84,6 +84,14 @@ export function getAuthorizationUrl(): Promise<{ url: string }> {
   return sendJson("/api/consent/authorize", "POST", {});
 }
 
+export function getPendingRedirectCode(): Promise<{
+  redirect_code: string | null;
+  error?: string | null;
+  consent_saved?: boolean;
+}> {
+  return getJson("/api/consent/pending");
+}
+
 export function getBankAccounts(): Promise<AccountsResponse> {
   return getJson<AccountsResponse>("/api/accounts");
 }

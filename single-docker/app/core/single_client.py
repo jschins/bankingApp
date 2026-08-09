@@ -771,12 +771,9 @@ def _linked_accounts(
 ) -> tuple[list[dict[str, Any]], bool]:
     """Return linked accounts and whether consent was renewed in this call."""
     renewed = False
-    fetchable = _load_fetch_accounts()
-    if fetchable:
-        return fetchable, _connection_created_today(profile)
 
-    # Expired consent still leaves accounts in consent.json; those must not block
-    # redirect-code exchange when renewing.
+    # A fresh redirect code must always create/save a session — do not skip when
+    # an older still-fetchable connection exists in consent.json.
     if redirect_code:
         try:
             session = client.create_session(_extract_code(redirect_code))
@@ -797,9 +794,12 @@ def _linked_accounts(
             raise EnableBankingError("No accounts were linked during authorization.")
         _save_session_connection(profile, session)
         renewed = True
-        fetchable = _load_fetch_accounts()
-        if fetchable:
-            return fetchable, renewed
+
+    fetchable = _load_fetch_accounts()
+    if fetchable:
+        return fetchable, renewed or _connection_created_today(profile)
+
+    if renewed:
         raise EnableBankingError(
             "No accounts enabled for fetch. Enable at least one account in the sidebar."
         )
@@ -813,6 +813,28 @@ def _linked_accounts(
         )
 
     raise EnableBankingError("No linked accounts available.")
+
+
+def complete_authorization(redirect_code: str) -> dict[str, Any]:
+    """Exchange a redirect code for a session and overwrite consent.json."""
+    profile = load_profile()
+    client = SingleDockerClient.from_profile(profile)
+    try:
+        session = client.create_session(_extract_code(redirect_code))
+    except EnableBankingError as exc:
+        if _is_already_authorized_error(exc):
+            if _load_fetch_accounts():
+                return list_bank_accounts()
+            raise EnableBankingError(
+                "This redirect URL was already used. Start Authorization URL again."
+            ) from exc
+        raise
+    accounts = session.get("accounts", [])
+    if not accounts:
+        raise EnableBankingError("No accounts were linked during authorization.")
+    _store_last_redirect_code(redirect_code)
+    _save_session_connection(profile, session)
+    return list_bank_accounts()
 
 
 def fetch_transactions(

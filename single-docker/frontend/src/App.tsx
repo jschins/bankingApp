@@ -5,6 +5,7 @@ import {
   getAuthorizationUrl,
   getBankAccounts,
   getConsentStatus,
+  getPendingRedirectCode,
   getSettings,
   getTotals,
   getTransactions,
@@ -130,6 +131,29 @@ function MainApp() {
   );
   const selectedRef = useRef<string | null>(null);
   const dirtyRef = useRef(false);
+  const authPollRef = useRef<number | null>(null);
+  const waitingForAuthRef = useRef(false);
+
+  function stopAuthPoll() {
+    if (authPollRef.current !== null) {
+      window.clearInterval(authPollRef.current);
+      authPollRef.current = null;
+    }
+    waitingForAuthRef.current = false;
+  }
+
+  function applyCapturedRedirectCode(code: string, consentSaved = false) {
+    stopAuthPoll();
+    if (consentSaved) {
+      setRedirectCode("");
+      setNeedsConsent(false);
+      setFetchStatus("Bank consent renewed — consent.json updated.");
+      loadBankAccounts();
+      return;
+    }
+    setRedirectCode(code);
+    setFetchStatus("Redirect code captured — click Fetch bank data.");
+  }
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -202,6 +226,9 @@ function MainApp() {
       .then((res) => {
         setBankAccounts(res.accounts);
         setNeedsConsent(res.needs_renewal);
+        if (!res.needs_renewal) {
+          setRedirectCode("");
+        }
       })
       .catch((e: Error) => setError(e.message));
   }
@@ -235,8 +262,22 @@ function MainApp() {
     loadTotals();
     loadBankAccounts();
     getConsentStatus()
-      .then((s) => setNeedsConsent(s.needs_renewal))
+      .then((s) => {
+        setNeedsConsent(s.needs_renewal);
+        if (!s.needs_renewal) return;
+        return getPendingRedirectCode().then((pending) => {
+          if (pending.error) {
+            setError(pending.error);
+            return;
+          }
+          const code = pending.redirect_code?.trim();
+          if (code || pending.consent_saved) {
+            applyCapturedRedirectCode(code || "", Boolean(pending.consent_saved));
+          }
+        });
+      })
       .catch((e: Error) => setError(e.message));
+    return () => stopAuthPoll();
   }, []);
 
   useEffect(() => {
@@ -244,6 +285,8 @@ function MainApp() {
       const range = renewalHistoryRange();
       setDateFrom(range.from);
       setDateTo(range.to);
+    } else {
+      stopAuthPoll();
     }
   }, [needsConsent]);
 
@@ -257,6 +300,22 @@ function MainApp() {
     };
     const onFocus = () => {
       void applyIfDirty(selectedRef.current);
+      if (!waitingForAuthRef.current) return;
+      getPendingRedirectCode()
+        .then((pending) => {
+          if (pending.error) {
+            setError(pending.error);
+            stopAuthPoll();
+            return;
+          }
+          const code = pending.redirect_code?.trim();
+          if (code || pending.consent_saved) {
+            applyCapturedRedirectCode(code || "", Boolean(pending.consent_saved));
+          }
+        })
+        .catch(() => {
+          /* ignore */
+        });
     };
     window.addEventListener("focus", onFocus);
     return () => {
@@ -354,6 +413,8 @@ function MainApp() {
         setSelected(null);
         setDetail(null);
         setNeedsConsent(false);
+        setRedirectCode("");
+        stopAuthPoll();
         loadBankAccounts();
       })
       .catch((e: Error) => setError(e.message))
@@ -361,16 +422,58 @@ function MainApp() {
   }
 
   function startConsent() {
+    setError(null);
+    setFetchStatus("Waiting for bank authorization…");
+    stopAuthPoll();
+    // Open during the click (before await) so the browser does not block the tab.
+    const authTab = window.open("about:blank", "bankingApp-auth");
     getAuthorizationUrl()
       .then((res) => {
-        const opened = window.open(res.url, "_blank", "noopener,noreferrer");
-        if (!opened) {
-          setError(
-            "Could not open the authorization page. Allow pop-ups for this app, then try again."
-          );
+        if (authTab && !authTab.closed) {
+          authTab.location.replace(res.url);
+        } else {
+          // Popup blocked — continue in this tab; code is still captured via callback.
+          window.location.assign(res.url);
+          return;
         }
+        waitingForAuthRef.current = true;
+        const started = Date.now();
+        const maxMs = 15 * 60 * 1000;
+        authPollRef.current = window.setInterval(() => {
+          if (!waitingForAuthRef.current) {
+            stopAuthPoll();
+            return;
+          }
+          if (Date.now() - started > maxMs) {
+            stopAuthPoll();
+            setFetchStatus(null);
+            setError("Timed out waiting for bank authorization. Try Authorization URL again.");
+            return;
+          }
+          getPendingRedirectCode()
+            .then((pending) => {
+              if (pending.error) {
+                stopAuthPoll();
+                setFetchStatus(null);
+                setError(pending.error);
+                return;
+              }
+              const code = pending.redirect_code?.trim();
+              if (code || pending.consent_saved) {
+                applyCapturedRedirectCode(code || "", Boolean(pending.consent_saved));
+              }
+            })
+            .catch(() => {
+              /* keep polling while the auth tab is open */
+            });
+        }, 2000);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        if (authTab && !authTab.closed) authTab.close();
+        stopAuthPoll();
+        setFetchStatus(null);
+        setError(e.message);
+      });
   }
 
   return (
@@ -421,11 +524,12 @@ function MainApp() {
           <AccountChecklist accounts={bankAccounts} onToggle={toggleAccount} />
         )}
 
-        {needsConsent && (
+        {needsConsent && !redirectCode.trim() && (
           <div className="consent-banner">
             <p>
-              Refresh bank consent. On the day you complete bank login and paste the
-              redirect code, both accounts can fetch history back to {historicalStartDate()}.
+              Refresh bank consent. Click Authorization URL, approve in your bank app,
+              then return here — the redirect code is filled in automatically. On that
+              same day you can fetch history back to {historicalStartDate()}.
             </p>
             <button type="button" className="refresh-button" onClick={startConsent}>
               Authorization URL

@@ -4,13 +4,16 @@ import json
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.paths import configure
 from app.settings import get_app_settings
 
 _settings = None
+_pending_redirect_code: str | None = None
+_pending_consent_error: str | None = None
 
 
 def _init_app() -> None:
@@ -129,6 +132,92 @@ def consent_status() -> dict[str, Any]:
     from app.core.single_client import needs_consent_renewal
 
     return {"needs_renewal": needs_consent_renewal()}
+
+
+@app.get("/api/consent/callback")
+def consent_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> HTMLResponse:
+    """Enable Banking redirect target — exchanges code and overwrites consent.json."""
+    global _pending_redirect_code, _pending_consent_error
+    _ = state  # correlation id from POST /auth; unused locally
+
+    if error:
+        detail = error_description or error
+        _pending_consent_error = str(detail)
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Bank consent failed</title></head><body>"
+                f"<h1>Bank consent failed</h1><p>{detail}</p>"
+                "<p>You can close this tab and return to BankingApp.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    if not code or not str(code).strip():
+        _pending_consent_error = "No authorization code received"
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Missing code</title></head><body>"
+                "<h1>No authorization code received</h1>"
+                "<p>You can close this tab and try Authorization URL again.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    from app.core.single_client import EnableBankingError, complete_authorization
+
+    raw_code = str(code).strip()
+    try:
+        complete_authorization(raw_code)
+    except EnableBankingError as exc:
+        _pending_consent_error = str(exc)
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Bank consent failed</title></head><body>"
+                f"<h1>Bank consent failed</h1><p>{exc}</p>"
+                "<p>You can close this tab and return to BankingApp.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    _pending_redirect_code = raw_code
+    _pending_consent_error = None
+    return HTMLResponse(
+        content=(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>Bank consent received</title></head><body>"
+            "<h1>Bank consent received</h1>"
+            "<p>Return to BankingApp — consent.json was updated.</p>"
+            "<p>You can close this tab.</p>"
+            "<script>window.close();</script>"
+            "</body></html>"
+        )
+    )
+
+
+@app.get("/api/consent/pending")
+def consent_pending() -> dict[str, str | None | bool]:
+    """Return status of a callback exchange; clears pending state."""
+    global _pending_redirect_code, _pending_consent_error
+    code = _pending_redirect_code
+    err = _pending_consent_error
+    _pending_redirect_code = None
+    _pending_consent_error = None
+    return {
+        "redirect_code": code,
+        "error": err,
+        "consent_saved": bool(code) and not err,
+    }
 
 
 @app.post("/api/consent/authorize")
