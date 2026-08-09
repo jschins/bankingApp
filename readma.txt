@@ -29,34 +29,6 @@ en voeg application toe
 
 
 
-# single-docker
-
-dog_js
-https://deoudegracht/
-download banking transactions
-j.m.schins@gmail.com
-https://deoudegracht/privacy_js.html
-https://deoudegracht/terms_js.html
-
-2. plaats gedownloade pem file in folder
-C:\Coding\bankingApp\psd2-api\packaging\profiles\eg
-
-3. maak in diezelfde folder ook een profile.json aan
-
-4. maak executable
-## rebuild frontend if needed:
-PS C:\Coding\bankingApp\single-docker> cd frontend  
-PS C:\Coding\bankingApp\single-docker\frontend> npm run build   
-## build backend:
-cd C:\Coding\bankingApp\single-docker
-uv run --group build python scripts/build_onedir.py
-## levert boekh_onder.exe
-uv run --group build python scripts/build_onefile.py
-## levert boeh.exe
-
-
-
-
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned   # allow scripts for this shell only
 & c:\Coding\psd2-api\.venv\Scripts\Activate.ps1
@@ -97,3 +69,35 @@ kill task running on port 8000:
 (boekh-server) PS C:\Coding\bankingApp\boekh-server> netstat -ano | findstr :8000
   TCP    0.0.0.0:8000           0.0.0.0:0              LISTENING       20148
 (boekh-server) PS C:\Coding\bankingApp\boekh-server> taskkill /PID 20148 /F
+
+
+
+
+
+# single-docker
+
+dog_js
+https://deoudegracht/
+download banking transactions
+j.m.schins@gmail.com
+https://deoudegracht/privacy_js.html
+https://deoudegracht/terms_js.html
+
+2. plaats gedownloade pem file in folder
+C:\Coding\bankingApp\psd2-api\packaging\profiles\eg
+
+3. maak in diezelfde folder ook een profile.json aan
+
+4. maak executable
+## rebuild frontend if needed:
+PS C:\Coding\bankingApp\single-docker> cd frontend  
+PS C:\Coding\bankingApp\single-docker\frontend> npm run build   
+## build backend:
+cd C:\Coding\bankingApp\single-docker
+uv run --group build python scripts/build_onedir.py
+## levert boekh_onder.exe
+uv run --group build python scripts/build_onefile.py
+## levert boekh.exe
+
+
+

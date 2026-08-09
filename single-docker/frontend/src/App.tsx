@@ -115,7 +115,6 @@ function MainApp() {
   const [fetching, setFetching] = useState(false);
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
   const [needsConsent, setNeedsConsent] = useState(false);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const range = previousMonthRange();
   const [dateFrom, setDateFrom] = useState(range.from);
   const [dateTo, setDateTo] = useState(range.to);
@@ -363,7 +362,14 @@ function MainApp() {
 
   function startConsent() {
     getAuthorizationUrl()
-      .then((res) => setAuthUrl(res.url))
+      .then((res) => {
+        const opened = window.open(res.url, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          setError(
+            "Could not open the authorization page. Allow pop-ups for this app, then try again."
+          );
+        }
+      })
       .catch((e: Error) => setError(e.message));
   }
 
@@ -424,13 +430,6 @@ function MainApp() {
             <button type="button" className="refresh-button" onClick={startConsent}>
               Authorization URL
             </button>
-            {authUrl && (
-              <p>
-                <a href={authUrl} target="_blank" rel="noreferrer">
-                  {authUrl}
-                </a>
-              </p>
-            )}
           </div>
         )}
 
