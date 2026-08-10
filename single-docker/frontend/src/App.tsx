@@ -780,6 +780,8 @@ function PTable({
   onTermContextMenu?: (e: MouseEvent, cellText: string) => void;
 }) {
   const validCategoryCodes = new Set(detail.valid_category_codes ?? []);
+  const descriptionModified = new Set(detail.description_modified_ids ?? []);
+  const categoryModified = new Set(detail.category_modified_ids ?? []);
   const columns =
     detail.columns.length > 0
       ? detail.columns
@@ -815,10 +817,11 @@ function PTable({
     }
     if (column === "description") {
       const text = formatCell(t.description);
+      const descModified = descriptionModified.has(String(t.id));
       return (
         <td
           key={column}
-          className="desc term-source"
+          className={`desc term-source${descModified ? " desc-modified" : ""}`}
           onContextMenu={
             onTermContextMenu ? (e) => onTermContextMenu(e, text) : undefined
           }
@@ -832,8 +835,9 @@ function PTable({
       );
     }
     if (column === "category") {
+      const catModified = categoryModified.has(String(t.id));
       return (
-        <td key={column} className="num">
+        <td key={column} className={`num${catModified ? " category-modified" : ""}`}>
           <EditableField
             value={formatCell(t.category)}
             onCommit={(v) => {
@@ -880,12 +884,7 @@ function PTable({
           </thead>
           <tbody>
             {detail.transactions.map((t, i) => (
-              <tr
-                key={i}
-                className={
-                  detail.modified_ids.includes(String(t.id)) ? "modified" : ""
-                }
-              >
+              <tr key={i}>
                 {columns.map((c) => renderCell(t, c))}
               </tr>
             ))}
@@ -1288,10 +1287,11 @@ function headerLabel(column: string): string {
 }
 
 function ptableColumns(transactions: Transaction[]): string[] {
+  const hidden = new Set(["id", "currency", "category_locked"]);
   const columns: string[] = [];
   for (const t of transactions) {
     for (const key of Object.keys(t)) {
-      if (key !== "id" && key !== "currency" && !columns.includes(key)) {
+      if (!hidden.has(key) && !columns.includes(key)) {
         columns.push(key);
       }
     }

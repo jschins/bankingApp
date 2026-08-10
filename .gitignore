@@ -12,6 +12,9 @@ dist_as/
 frontend/node_modules/
 frontend/dist/
 single-docker/people/
-single-docker/dist/
-single-person/input/
-single-person/dist/
+single-docker/dist/boekh_onedir/
+boekhouding/anton_schins
+boekhouding/eugen_graas
+boekhouding/juleon_schins
+
+

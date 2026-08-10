@@ -308,6 +308,7 @@ def transactions_for_category(category_name: str) -> dict[str, Any]:
         category_code_set,
         CATEGORIZED_TRANSACTIONS_PATH,
         CATEGORIES_PATH,
+        modification_style_ids,
         remainder_category_name,
         terms_for_category,
         transaction_display_column_keys,
@@ -317,19 +318,16 @@ def transactions_for_category(category_name: str) -> dict[str, Any]:
 
     rows = load_transactions(category_name)
     cat_data = _read_json(CATEGORIES_PATH)
-    modifications = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH).get("modifications")
-    modified_ids = [
-        str(item.get("id"))
-        for item in (modifications if isinstance(modifications, list) else [])
-        if isinstance(item, dict) and item.get("id") is not None
-    ]
+    payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    description_modified_ids, category_modified_ids = modification_style_ids(payload)
     return {
         "person": PERSON_SHORT,
         "category": category_name,
         "columns": transaction_display_column_keys(rows),
         "transactions": rows,
         "keywords": terms_for_category(category_name),
-        "modified_ids": modified_ids,
+        "description_modified_ids": description_modified_ids,
+        "category_modified_ids": category_modified_ids,
         "abbreviations": cat_data.get("abbreviations", {}) if isinstance(cat_data, dict) else {},
         "valid_category_codes": sorted(category_code_set()),
         "remainder_category": remainder_category_name(),

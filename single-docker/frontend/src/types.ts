@@ -20,7 +20,8 @@ export interface TransactionsResponse {
   category: string;
   columns: string[];
   transactions: Transaction[];
-  modified_ids: string[];
+  description_modified_ids: string[];
+  category_modified_ids: string[];
   keywords: string[];
   abbreviations: Record<string, string>;
   valid_category_codes: number[];

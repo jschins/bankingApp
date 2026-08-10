@@ -518,6 +518,11 @@ def _categorize_transactions(
     categorized: list[dict[str, Any]] = []
     for record in records:
         updated = dict(record)
+        # Manual category edits (C column) set category_locked so recalculate
+        # does not overwrite them after record_modification → refreshMainView.
+        if updated.get("category_locked"):
+            categorized.append(updated)
+            continue
         source = record
         if match_sources is not None:
             source = match_sources.get(record.get("id"), record)
@@ -719,11 +724,11 @@ def transactions_for_category(category_name: str) -> list[dict[str, Any]]:
             continue
         effective = _canonical_transaction(mods_by_id.get(transaction.get("id"), transaction))
         if effective.get("category") == code:
-            transactions.append(effective)
+            transactions.append(_public_transaction(effective))
     return transactions
 
 
-_HIDDEN_TABLE_COLUMNS = frozenset({"id", "currency"})
+_HIDDEN_TABLE_COLUMNS = frozenset({"id", "currency", "category_locked"})
 _DESCRIPTION_COLUMN = "description"
 _CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£"}
 
@@ -743,6 +748,48 @@ def transaction_display_column_keys(transactions: list[dict[str, Any]]) -> list[
         keys.remove(_DESCRIPTION_COLUMN)
         keys.append(_DESCRIPTION_COLUMN)
     return keys
+
+
+def _public_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
+    """Strip internal overlay flags from API payloads."""
+    public = _canonical_transaction(transaction)
+    public.pop("category_locked", None)
+    return public
+
+
+def modification_style_ids(payload: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
+    """Return (description_modified_ids, category_modified_ids) vs base rows."""
+    data = payload if payload is not None else _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    bases = {
+        str(item.get("id")): item
+        for item in data.get("transactions", [])
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    description_ids: list[str] = []
+    category_ids: list[str] = []
+    modifications = data.get("modifications")
+    if not isinstance(modifications, list):
+        return description_ids, category_ids
+    for mod in modifications:
+        if not isinstance(mod, dict) or mod.get("id") is None:
+            continue
+        tid = str(mod.get("id"))
+        base = bases.get(tid)
+        if base is None:
+            continue
+        if str(mod.get("description", "")) != str(base.get("description", "")):
+            description_ids.append(tid)
+        mod_cat = mod.get("category")
+        base_cat = base.get("category")
+        category_changed = bool(mod.get("category_locked"))
+        if not category_changed and mod_cat is not None and base_cat is not None:
+            try:
+                category_changed = int(mod_cat) != int(base_cat)
+            except (TypeError, ValueError):
+                category_changed = str(mod_cat) != str(base_cat)
+        if category_changed:
+            category_ids.append(tid)
+    return description_ids, category_ids
 
 
 def format_transaction_amount(transaction: dict[str, Any]) -> str:
@@ -969,6 +1016,9 @@ def record_modification(transaction: dict[str, Any]) -> dict[str, Any]:
     """Store a full modified transaction under ``modifications``, keyed by ``id``.
 
     If an entry with the same ``id`` already exists, it is replaced in place.
+
+    When the saved ``category`` differs from the base row in ``transactions``,
+    set ``category_locked`` so later ``recategorize_transactions`` keeps it.
     """
     data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
     if not data:
@@ -985,6 +1035,24 @@ def record_modification(transaction: dict[str, Any]) -> dict[str, Any]:
 
     if "category" in modified and modified.get("category") is not None:
         modified["category"] = _validate_category_code(modified.get("category"))
+
+    base: dict[str, Any] | None = None
+    for item in data.get("transactions", []):
+        if isinstance(item, dict) and str(item.get("id", "")) == transaction_id:
+            base = item
+            break
+
+    base_cat = base.get("category") if isinstance(base, dict) else None
+    new_cat = modified.get("category")
+    if (
+        base is not None
+        and new_cat is not None
+        and base_cat is not None
+        and int(new_cat) != int(base_cat)
+    ):
+        modified["category_locked"] = True
+    else:
+        modified.pop("category_locked", None)
 
     for index, existing in enumerate(modifications):
         if isinstance(existing, dict) and str(existing.get("id", "")) == transaction_id:
@@ -1012,6 +1080,7 @@ def record_category_change(transaction: dict[str, Any], category_name: str) -> d
     source = _source_transaction_by_id(transaction_id, data) or dict(transaction)
     modified = dict(source)
     modified["category"] = code
+    modified["category_locked"] = True
     return record_modification(modified)
 
 
