@@ -664,7 +664,8 @@ def recategorize_transactions() -> dict[str, str]:
 
     Matching uses ``name`` and ``description`` as stored in
     ``categorized_transactions.json``, not unprocessed remittance from
-    ``downloaded_transactions.json``.
+    ``downloaded_transactions.json``. Both ``transactions`` and
+    ``modifications`` are re-scored so edited overlays stay in sync.
     """
     general = _category_map(_read_json(CATEGORIES_PATH))
     personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
@@ -684,7 +685,14 @@ def recategorize_transactions() -> dict[str, str]:
     result = dict(data) if data else {}
     result["transactions"] = sorted(categorized, key=_tx_sort_key, reverse=True)
     if isinstance(modifications, list):
-        result["modifications"] = modifications
+        mod_records = [
+            _canonical_transaction(item)
+            for item in modifications
+            if isinstance(item, dict) and item.get("id") is not None
+        ]
+        result["modifications"] = _categorize_transactions(
+            mod_records, general, personal
+        )
 
     result = _migrate_categorized_store(result)
     _write_json(CATEGORIZED_TRANSACTIONS_PATH, result)
