@@ -461,7 +461,116 @@ def _canonical_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
     legacy_iban = record.pop("IBAN", None)
     if legacy_iban is not None and not record.get("iban"):
         record["iban"] = legacy_iban
+    record.pop("category_locked", None)
     return record
+
+
+_MODIFICATION_FIELDS = frozenset({"category", "description"})
+
+
+def _as_category_code(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _modifications_by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    modifications = payload.get("modifications")
+    if not isinstance(modifications, list):
+        return {}
+    by_id: dict[str, dict[str, Any]] = {}
+    for item in modifications:
+        if isinstance(item, dict) and item.get("id") is not None:
+            by_id[str(item.get("id"))] = item
+    return by_id
+
+
+def _effective_transaction(
+    base: dict[str, Any],
+    mods_by_id: dict[str, dict[str, Any]] | None = None,
+    *,
+    modification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Base transaction with sparse modification overlays (category / description)."""
+    effective = _canonical_transaction(base)
+    mod = modification
+    if mod is None and mods_by_id is not None and base.get("id") is not None:
+        mod = mods_by_id.get(str(base.get("id")))
+    if not isinstance(mod, dict):
+        return effective
+    for key in _MODIFICATION_FIELDS:
+        if key in mod:
+            effective[key] = mod[key]
+    return effective
+
+
+def _values_equal(key: str, left: Any, right: Any) -> bool:
+    if key == "category":
+        a = _as_category_code(left)
+        b = _as_category_code(right)
+        if a is not None and b is not None:
+            return a == b
+    return str(left if left is not None else "") == str(right if right is not None else "")
+
+
+def _sparse_modification_from_full(
+    full: dict[str, Any], base: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Build ``{id, …changed fields}`` from a full or partial modification vs base."""
+    transaction_id = str(full.get("id", ""))
+    if not transaction_id:
+        return None
+    patch: dict[str, Any] = {"id": full.get("id")}
+    for key in _MODIFICATION_FIELDS:
+        if key not in full:
+            continue
+        value = full[key]
+        if key == "category" and value is not None:
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                pass
+        if base is None or not _values_equal(key, value, base.get(key)):
+            patch[key] = value
+    if len(patch) == 1:
+        return None
+    return patch
+
+
+def _migrate_modifications(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize modifications to sparse overlays; drop ``category_locked`` everywhere."""
+    bases = {
+        str(item.get("id")): _canonical_transaction(item)
+        for item in data.get("transactions", [])
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    for item in data.get("transactions", []):
+        if isinstance(item, dict):
+            item.pop("category_locked", None)
+
+    modifications = data.get("modifications")
+    if not isinstance(modifications, list):
+        data.pop("modifications", None)
+        return data
+
+    sparse: list[dict[str, Any]] = []
+    for item in modifications:
+        if not isinstance(item, dict) or item.get("id") is None:
+            continue
+        tid = str(item.get("id"))
+        base = bases.get(tid)
+        patch = _sparse_modification_from_full(item, base)
+        if patch is not None:
+            sparse.append(patch)
+
+    if sparse:
+        data["modifications"] = sparse
+    else:
+        data.pop("modifications", None)
+    return data
 
 
 def _migrate_categorized_store(data: dict[str, Any]) -> dict[str, Any]:
@@ -472,7 +581,7 @@ def _migrate_categorized_store(data: dict[str, Any]) -> dict[str, Any]:
                 _canonical_transaction(item) if isinstance(item, dict) else item
                 for item in items
             ]
-    return data
+    return _migrate_modifications(data)
 
 
 def _merge_simplified(existing: dict[str, Any], new_records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -518,11 +627,7 @@ def _categorize_transactions(
     categorized: list[dict[str, Any]] = []
     for record in records:
         updated = dict(record)
-        # Manual category edits (C column) set category_locked so recalculate
-        # does not overwrite them after record_modification → refreshMainView.
-        if updated.get("category_locked"):
-            categorized.append(updated)
-            continue
+        updated.pop("category_locked", None)
         source = record
         if match_sources is not None:
             source = match_sources.get(record.get("id"), record)
@@ -561,25 +666,19 @@ def _amount_str(cents: int) -> str:
 def build_category_totals(
     transactions_payload: dict[str, Any], general_names: list[str]
 ) -> dict[str, str]:
-    """Per-category signed totals, honoring modifications overlays by id."""
+    """Per-category signed totals, honoring sparse modification overlays by id."""
     name_by_code = {
         code: name for name in general_names if (code := _category_code(name)) is not None
     }
     totals: dict[str, int] = {name: 0 for name in general_names}
-
-    modifications = transactions_payload.get("modifications")
-    mods_by_id = {
-        item.get("id"): item
-        for item in (modifications if isinstance(modifications, list) else [])
-        if isinstance(item, dict)
-    }
+    mods_by_id = _modifications_by_id(transactions_payload)
 
     for transaction in transactions_payload.get("transactions", []):
         if not isinstance(transaction, dict):
             continue
-        effective = mods_by_id.get(transaction.get("id"), transaction)
-        code = effective.get("category")
-        name = name_by_code.get(code, str(code))
+        effective = _effective_transaction(transaction, mods_by_id)
+        code = _as_category_code(effective.get("category"))
+        name = name_by_code.get(code, str(code)) if code is not None else str(effective.get("category"))
         totals[name] = totals.get(name, 0) + _amount_to_cents(effective.get("amount"))
 
     return {name: _amount_str(cents) for name, cents in totals.items()}
@@ -665,17 +764,18 @@ def _raw_simplified_by_id() -> dict[Any, dict[str, Any]]:
 
 
 def recategorize_transactions() -> dict[str, str]:
-    """Re-categorize every row in the categorized store using its processed fields.
+    """Re-categorize every base row under ``transactions``.
 
-    Matching uses ``name`` and ``description`` as stored in
-    ``categorized_transactions.json``, not unprocessed remittance from
-    ``downloaded_transactions.json``. Both ``transactions`` and
-    ``modifications`` are re-scored so edited overlays stay in sync.
+    Keyword matching uses each row's fields, with a sparse ``description``
+    modification applied when present. Calculated categories are always written
+    onto ``transactions``. Sparse ``modifications`` are kept (not re-scored);
+    a ``category`` overlay that matches the newly calculated value is dropped.
     """
     general = _category_map(_read_json(CATEGORIES_PATH))
     personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
     data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-    modifications = data.get("modifications")
+    data = _migrate_categorized_store(data)
+    mods_by_id = _modifications_by_id(data)
 
     existing_tx = data.get("transactions")
     existing_tx = existing_tx if isinstance(existing_tx, list) else []
@@ -685,19 +785,41 @@ def recategorize_transactions() -> dict[str, str]:
         if isinstance(item, dict) and item.get("id") is not None
     ]
 
-    categorized = _categorize_transactions(records, general, personal)
+    match_sources: dict[Any, dict[str, Any]] = {}
+    for record in records:
+        tid = record.get("id")
+        if tid is None:
+            continue
+        mod = mods_by_id.get(str(tid))
+        if isinstance(mod, dict) and "description" in mod:
+            match_sources[tid] = _effective_transaction(record, modification=mod)
+            match_sources[str(tid)] = match_sources[tid]
+
+    categorized = _categorize_transactions(
+        records, general, personal, match_sources=match_sources or None
+    )
+
+    # Drop category overlays that now equal the calculated category.
+    bases_by_id = {str(item.get("id")): item for item in categorized if item.get("id") is not None}
+    pruned_mods: list[dict[str, Any]] = []
+    for mod in mods_by_id.values():
+        tid = str(mod.get("id"))
+        base = bases_by_id.get(tid)
+        if base is None:
+            continue
+        patch = dict(mod)
+        if "category" in patch and _values_equal("category", patch.get("category"), base.get("category")):
+            patch.pop("category", None)
+        if set(patch.keys()) <= {"id"}:
+            continue
+        pruned_mods.append(patch)
 
     result = dict(data) if data else {}
     result["transactions"] = sorted(categorized, key=_tx_sort_key, reverse=True)
-    if isinstance(modifications, list):
-        mod_records = [
-            _canonical_transaction(item)
-            for item in modifications
-            if isinstance(item, dict) and item.get("id") is not None
-        ]
-        result["modifications"] = _categorize_transactions(
-            mod_records, general, personal
-        )
+    if pruned_mods:
+        result["modifications"] = pruned_mods
+    else:
+        result.pop("modifications", None)
 
     result = _migrate_categorized_store(result)
     _write_json(CATEGORIZED_TRANSACTIONS_PATH, result)
@@ -706,29 +828,51 @@ def recategorize_transactions() -> dict[str, str]:
 
 def transactions_for_category(category_name: str) -> list[dict[str, Any]]:
     """Return effective transactions for a category display name (e.g. ``09 Pension``)."""
+    from app.category_table_log import log
+
     code = _category_code(category_name)
+    log(
+        "filter.start",
+        category_name=category_name,
+        parsed_code=code,
+        store=CATEGORIZED_TRANSACTIONS_PATH,
+        store_exists=CATEGORIZED_TRANSACTIONS_PATH.exists(),
+    )
     if code is None:
+        log("filter.abort", reason="category_name_has_no_numeric_prefix")
         return []
 
     payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-    modifications = payload.get("modifications")
-    mods_by_id = {
-        item.get("id"): item
-        for item in (modifications if isinstance(modifications, list) else [])
-        if isinstance(item, dict)
-    }
+    raw_list = payload.get("transactions")
+    raw_count = len(raw_list) if isinstance(raw_list, list) else 0
+    mods_by_id = _modifications_by_id(payload)
+    mod_count = len(mods_by_id)
 
+    code_counts: dict[int | str, int] = {}
     transactions: list[dict[str, Any]] = []
-    for transaction in payload.get("transactions", []):
+    for transaction in raw_list if isinstance(raw_list, list) else []:
         if not isinstance(transaction, dict):
             continue
-        effective = _canonical_transaction(mods_by_id.get(transaction.get("id"), transaction))
-        if effective.get("category") == code:
+        effective = _effective_transaction(transaction, mods_by_id)
+        effective_code = _as_category_code(effective.get("category"))
+        bucket: int | str = effective_code if effective_code is not None else repr(effective.get("category"))
+        code_counts[bucket] = code_counts.get(bucket, 0) + 1
+        if effective_code == code:
             transactions.append(_public_transaction(effective))
+
+    log(
+        "filter.done",
+        category_name=category_name,
+        parsed_code=code,
+        raw_transactions=raw_count,
+        modifications=mod_count,
+        matched=len(transactions),
+        code_histogram=dict(sorted(code_counts.items(), key=lambda item: str(item[0]))),
+    )
     return transactions
 
 
-_HIDDEN_TABLE_COLUMNS = frozenset({"id", "currency", "category_locked"})
+_HIDDEN_TABLE_COLUMNS = frozenset({"id", "currency"})
 _DESCRIPTION_COLUMN = "description"
 _CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£"}
 
@@ -751,43 +895,19 @@ def transaction_display_column_keys(transactions: list[dict[str, Any]]) -> list[
 
 
 def _public_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
-    """Strip internal overlay flags from API payloads."""
-    public = _canonical_transaction(transaction)
-    public.pop("category_locked", None)
-    return public
+    return _canonical_transaction(transaction)
 
 
 def modification_style_ids(payload: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
-    """Return (description_modified_ids, category_modified_ids) vs base rows."""
+    """Return (description_modified_ids, category_modified_ids) from sparse mods."""
     data = payload if payload is not None else _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-    bases = {
-        str(item.get("id")): item
-        for item in data.get("transactions", [])
-        if isinstance(item, dict) and item.get("id") is not None
-    }
     description_ids: list[str] = []
     category_ids: list[str] = []
-    modifications = data.get("modifications")
-    if not isinstance(modifications, list):
-        return description_ids, category_ids
-    for mod in modifications:
-        if not isinstance(mod, dict) or mod.get("id") is None:
-            continue
+    for mod in _modifications_by_id(data).values():
         tid = str(mod.get("id"))
-        base = bases.get(tid)
-        if base is None:
-            continue
-        if str(mod.get("description", "")) != str(base.get("description", "")):
+        if "description" in mod:
             description_ids.append(tid)
-        mod_cat = mod.get("category")
-        base_cat = base.get("category")
-        category_changed = bool(mod.get("category_locked"))
-        if not category_changed and mod_cat is not None and base_cat is not None:
-            try:
-                category_changed = int(mod_cat) != int(base_cat)
-            except (TypeError, ValueError):
-                category_changed = str(mod_cat) != str(base_cat)
-        if category_changed:
+        if "category" in mod:
             category_ids.append(tid)
     return description_ids, category_ids
 
@@ -997,90 +1117,80 @@ def _validate_category_code(code: Any) -> int:
 def _source_transaction_by_id(
     transaction_id: str, payload: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
-    """Return the modification for ``id`` if present, otherwise the base transaction."""
+    """Return the effective transaction (base + sparse modification) for ``id``."""
     data = payload if payload is not None else _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-
-    modifications = data.get("modifications")
-    if isinstance(modifications, list):
-        for transaction in modifications:
-            if isinstance(transaction, dict) and str(transaction.get("id", "")) == transaction_id:
-                return dict(transaction)
-
+    mods_by_id = _modifications_by_id(data)
     for transaction in data.get("transactions", []):
         if isinstance(transaction, dict) and str(transaction.get("id", "")) == transaction_id:
-            return dict(transaction)
+            return _effective_transaction(transaction, mods_by_id)
     return None
 
 
 def record_modification(transaction: dict[str, Any]) -> dict[str, Any]:
-    """Store a full modified transaction under ``modifications``, keyed by ``id``.
+    """Store a sparse modification: ``id`` plus changed ``category`` / ``description`` only.
 
-    If an entry with the same ``id`` already exists, it is replaced in place.
-
-    When the saved ``category`` differs from the base row in ``transactions``,
-    set ``category_locked`` so later ``recategorize_transactions`` keeps it.
+    ``transaction`` is the edited effective row from the UI. Diffed against the
+    base row in ``transactions``. Replaces any existing modification for the same id.
     """
     data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
     if not data:
         data = {"transactions": []}
 
-    modifications = data.get("modifications")
-    if not isinstance(modifications, list):
-        modifications = []
-
-    modified = _canonical_transaction(transaction)
-    transaction_id = str(modified.get("id", ""))
+    submitted = _canonical_transaction(transaction)
+    transaction_id = str(submitted.get("id", ""))
     if not transaction_id:
         raise ValueError("Transaction id is required for a modification")
 
-    if "category" in modified and modified.get("category") is not None:
-        modified["category"] = _validate_category_code(modified.get("category"))
+    if "category" in submitted and submitted.get("category") is not None:
+        submitted["category"] = _validate_category_code(submitted.get("category"))
 
     base: dict[str, Any] | None = None
     for item in data.get("transactions", []):
         if isinstance(item, dict) and str(item.get("id", "")) == transaction_id:
-            base = item
+            base = _canonical_transaction(item)
             break
+    if base is None:
+        raise ValueError(f"Transaction not found: {transaction_id}")
 
-    base_cat = base.get("category") if isinstance(base, dict) else None
-    new_cat = modified.get("category")
-    if (
-        base is not None
-        and new_cat is not None
-        and base_cat is not None
-        and int(new_cat) != int(base_cat)
-    ):
-        modified["category_locked"] = True
+    # Only consider category / description vs the base row.
+    candidate = {"id": submitted.get("id")}
+    for key in _MODIFICATION_FIELDS:
+        if key in submitted:
+            candidate[key] = submitted[key]
+
+    patch = _sparse_modification_from_full(candidate, base)
+
+    modifications = [
+        item
+        for item in (data.get("modifications") if isinstance(data.get("modifications"), list) else [])
+        if isinstance(item, dict) and str(item.get("id", "")) != transaction_id
+    ]
+    if patch is not None:
+        modifications.append(patch)
+
+    if modifications:
+        data["modifications"] = modifications
     else:
-        modified.pop("category_locked", None)
+        data.pop("modifications", None)
 
-    for index, existing in enumerate(modifications):
-        if isinstance(existing, dict) and str(existing.get("id", "")) == transaction_id:
-            modifications[index] = modified
-            break
-    else:
-        modifications.append(modified)
-
-    data["modifications"] = modifications
     data = _migrate_categorized_store(data)
     _write_json(CATEGORIZED_TRANSACTIONS_PATH, data)
     general = _category_map(_read_json(CATEGORIES_PATH))
     _write_category_totals(data, general)
-    return modified
+    return _public_transaction(_effective_transaction(base, _modifications_by_id(data)))
 
 
 def record_category_change(transaction: dict[str, Any], category_name: str) -> dict[str, Any]:
-    """Copy the source transaction into ``modifications`` with a new category code."""
+    """Record a sparse category override for this transaction id."""
     code = _category_code(category_name)
     if code is None:
         raise ValueError(f"Unknown category: {category_name!r}")
 
     transaction_id = str(transaction.get("id", ""))
     data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-    source = _source_transaction_by_id(transaction_id, data) or dict(transaction)
-    modified = dict(source)
+    effective = _source_transaction_by_id(transaction_id, data) or dict(transaction)
+    modified = dict(effective)
     modified["category"] = code
-    modified["category_locked"] = True
     return record_modification(modified)
 
 

@@ -428,11 +428,6 @@ tr.modified td:not(.amount) {
   color: #2563eb;
 }
 
-.p-table td.desc-modified,
-.p-table td.desc-modified .editable {
-  color: #2563eb;
-}
-
 .p-table td.category-modified,
 .p-table td.category-modified .editable {
   color: #0f172a;

@@ -9,8 +9,17 @@ def is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
+def _has_data_and_secret(root: Path) -> bool:
+    return (root / "data").is_dir() and (root / "secret").is_dir()
+
+
 def app_root() -> Path:
-    """Directory beside which ``data/`` and ``secret/`` are expected when frozen."""
+    """Directory that contains ``data/`` and ``secret/``.
+
+    When frozen, that is always the folder that contains the executable. The
+    name of that folder does not matter — only that ``data/`` and ``secret/``
+    sit beside the ``.exe``.
+    """
     if is_frozen():
         exe = Path(sys.executable).resolve()
         candidates: list[Path] = []
@@ -20,9 +29,13 @@ def app_root() -> Path:
         else:
             candidates.append(exe.parent)
         for root in candidates:
-            if (root / "data").is_dir():
+            if _has_data_and_secret(root):
                 return root
-        return candidates[0]
+        tried = ", ".join(str(path) for path in candidates)
+        raise FileNotFoundError(
+            "Frozen app requires folders 'data' and 'secret' next to the executable "
+            f"(looked in: {tried})."
+        )
     return Path(__file__).resolve().parents[1]
 
 
@@ -61,6 +74,7 @@ def frontend_dist_dir() -> Path:
                 bundle / "dist",
             ]
         )
+    # Dev / optional loose UI next to data+secret; frozen UI normally lives in _MEIPASS.
     root = app_root()
     candidates.extend(
         [

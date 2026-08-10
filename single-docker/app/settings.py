@@ -67,8 +67,8 @@ def resolve_person_short(explicit: str | None = None) -> str:
 
     raise FileNotFoundError(
         f"Could not determine person short name. Set bankingApp_PERSON or add "
-        f"secret/profile.json (with a person field) or data/consent.json under "
-        f"{data_dir().parent}."
+        f"secret/profile.json (with a person field) or data/consent.json next to "
+        f"the app (looked under {data_dir().parent})."
     )
 
 

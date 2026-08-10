@@ -13,8 +13,8 @@ frontend/node_modules/
 frontend/dist/
 single-docker/people/
 single-docker/dist/boekh_onedir/
-boekhouding/anton_schins
-boekhouding/eugen_graas
-boekhouding/juleon_schins
+boekh-multiperson/boekhouding/anton_schins/
+boekh-multiperson/boekhouding/eugen_graas/
+boekh-multiperson/boekhouding/juleon_schins/
 
 

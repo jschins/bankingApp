@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.runtime import app_root
 from app.settings import AppSettings, init_app_settings
 
-DATA_DIR: Path = app_root() / "data"
+# Placeholders until configure() runs; never derive from folder names.
+DATA_DIR: Path = Path("data")
 PERSON_SHORT: str = ""
 PROFILE_PATH: Path = Path("profile.json")
 PRIVATE_KEY_PATH: Path = Path("key.pem")
@@ -27,7 +27,11 @@ def _read_person_short(profile_path: Path) -> str:
 
 
 def configure(person_short: str | None = None) -> AppSettings:
-    """Resolve person, secret, and data paths from app_root (called once at startup)."""
+    """Resolve person, secret, and data paths from app_root (called once at startup).
+
+    Person identity comes from secret/profile.json (or consent/env), never from
+    the name of the folder that contains the executable.
+    """
     global DATA_DIR, PERSON_SHORT, PROFILE_PATH, PRIVATE_KEY_PATH, CONSENT_PATH
     global CATEGORIES_PATH, PERSONAL_CATEGORIES_PATH, CATEGORIZED_TRANSACTIONS_PATH
     global RAW_TRANSACTIONS_PATH, CATEGORY_TOTALS_PATH

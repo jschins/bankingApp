@@ -300,8 +300,23 @@ def list_categories() -> dict[str, Any]:
     }
 
 
+class ClientLogRequest(BaseModel):
+    step: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/debug/client-log")
+def client_category_table_log(body: ClientLogRequest) -> dict[str, str]:
+    """Append a UI-side step to ``data/category_table.log``."""
+    from app.category_table_log import log, log_path
+
+    log(f"ui.{body.step}", **body.detail)
+    return {"log": str(log_path())}
+
+
 @app.get("/api/transactions/{category_name}")
 def transactions_for_category(category_name: str) -> dict[str, Any]:
+    from app.category_table_log import log, log_exception, log_path
     from app.core.categorize import (
         _load_json_object,
         _read_json,
@@ -315,23 +330,48 @@ def transactions_for_category(category_name: str) -> dict[str, Any]:
         transactions_for_category as load_transactions,
     )
     from app.paths import PERSON_SHORT
+    from app.runtime import app_root
 
-    rows = load_transactions(category_name)
-    cat_data = _read_json(CATEGORIES_PATH)
-    payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
-    description_modified_ids, category_modified_ids = modification_style_ids(payload)
-    return {
-        "person": PERSON_SHORT,
-        "category": category_name,
-        "columns": transaction_display_column_keys(rows),
-        "transactions": rows,
-        "keywords": terms_for_category(category_name),
-        "description_modified_ids": description_modified_ids,
-        "category_modified_ids": category_modified_ids,
-        "abbreviations": cat_data.get("abbreviations", {}) if isinstance(cat_data, dict) else {},
-        "valid_category_codes": sorted(category_code_set()),
-        "remainder_category": remainder_category_name(),
-    }
+    log(
+        "api.transactions.request",
+        category_name=category_name,
+        person=PERSON_SHORT,
+        app_root=app_root(),
+        log_file=log_path(),
+    )
+    try:
+        rows = load_transactions(category_name)
+        cat_data = _read_json(CATEGORIES_PATH)
+        payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+        description_modified_ids, category_modified_ids = modification_style_ids(payload)
+        columns = transaction_display_column_keys(rows)
+        keywords = terms_for_category(category_name)
+        response = {
+            "person": PERSON_SHORT,
+            "category": category_name,
+            "columns": columns,
+            "transactions": rows,
+            "keywords": keywords,
+            "description_modified_ids": description_modified_ids,
+            "category_modified_ids": category_modified_ids,
+            "abbreviations": cat_data.get("abbreviations", {}) if isinstance(cat_data, dict) else {},
+            "valid_category_codes": sorted(category_code_set()),
+            "remainder_category": remainder_category_name(),
+        }
+        log(
+            "api.transactions.response",
+            category_name=category_name,
+            row_count=len(rows),
+            column_count=len(columns),
+            columns=columns,
+            keyword_count=len(keywords),
+            description_modified=len(description_modified_ids),
+            category_modified=len(category_modified_ids),
+        )
+        return response
+    except Exception as exc:
+        log_exception("api.transactions.failed", exc, category_name=category_name)
+        raise
 
 
 @app.put("/api/transactions/modification")
@@ -533,11 +573,22 @@ def run() -> None:
 
     import uvicorn
 
-    from app.runtime import is_frozen
+    from app.category_table_log import clear_log, log, log_path
+    from app.runtime import app_root, is_frozen
 
     host = os.environ.get("HOST", "127.0.0.1" if is_frozen() else "0.0.0.0")
     port = int(os.environ.get("PORT", "8200"))
     _init_app()
+
+    clear_log()
+    log(
+        "app.start",
+        frozen=is_frozen(),
+        app_root=app_root(),
+        host=host,
+        port=port,
+        log_file=log_path(),
+    )
 
     if is_frozen():
 

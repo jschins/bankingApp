@@ -48,6 +48,20 @@ export function getTransactions(category: string): Promise<TransactionsResponse>
   );
 }
 
+/** Append a UI step to ``data/category_table.log`` (best-effort; never throws). */
+export function logCategoryTableStep(
+  step: string,
+  detail: Record<string, unknown> = {}
+): void {
+  void fetch("/api/debug/client-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step, detail }),
+  }).catch(() => {
+    /* ignore logging failures */
+  });
+}
+
 export function getSettings(): Promise<SettingsResponse> {
   return getJson<SettingsResponse>("/api/settings");
 }

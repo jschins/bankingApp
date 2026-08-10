@@ -9,6 +9,7 @@ import {
   getSettings,
   getTotals,
   getTransactions,
+  logCategoryTableStep,
   recalculate,
   recordModification,
   updateBankAccounts,
@@ -168,9 +169,25 @@ function MainApp() {
 
   function loadCategoryDetail(category: string): Promise<void> {
     setDetail(null);
+    logCategoryTableStep("loadCategoryDetail.start", { category });
     return getTransactions(category)
-      .then(setDetail)
-      .catch((e: Error) => setError(e.message));
+      .then((payload) => {
+        logCategoryTableStep("loadCategoryDetail.ok", {
+          category,
+          row_count: payload.transactions?.length ?? -1,
+          column_count: payload.columns?.length ?? -1,
+          keyword_count: payload.keywords?.length ?? -1,
+          columns: payload.columns ?? null,
+        });
+        setDetail(payload);
+      })
+      .catch((e: Error) => {
+        logCategoryTableStep("loadCategoryDetail.error", {
+          category,
+          message: e.message,
+        });
+        setError(e.message);
+      });
   }
 
   /** Reload totals and optional detail from server (no recategorisation). */
@@ -193,6 +210,7 @@ function MainApp() {
     setError(null);
     if (category) {
       setDetail(null);
+      logCategoryTableStep("refreshMainView.start", { category });
     }
     return recalculate()
       .then((totals) => {
@@ -202,9 +220,19 @@ function MainApp() {
           setDetail(null);
           return;
         }
-        return getTransactions(category).then(setDetail);
+        return getTransactions(category).then((payload) => {
+          logCategoryTableStep("refreshMainView.detail.ok", {
+            category,
+            row_count: payload.transactions?.length ?? -1,
+          });
+          setDetail(payload);
+        });
       })
       .catch((e: Error) => {
+        logCategoryTableStep("refreshMainView.error", {
+          category,
+          message: e.message,
+        });
         setError(e.message);
       });
   }
@@ -325,6 +353,11 @@ function MainApp() {
 
   function selectCategory(category: string) {
     setSelected(category);
+    setError(null);
+    logCategoryTableStep("selectCategory", {
+      category,
+      dirty: dirtyRef.current,
+    });
     if (dirtyRef.current) {
       void refreshMainView(category);
       return;
@@ -567,7 +600,10 @@ function MainApp() {
             onTermContextMenu={openTermMenu}
           />
         )}
-        {selected && !detail && <p>Loading…</p>}
+        {selected && !detail && !error && <p>Loading…</p>}
+        {selected && !detail && error && (
+          <p className="error">Could not load category table. See data/category_table.log</p>
+        )}
         {termMenu && termMenuSettings && (
           <TermContextMenu
             settings={termMenuSettings}
@@ -779,13 +815,37 @@ function PTable({
   onCategoryError?: (message: string | null) => void;
   onTermContextMenu?: (e: MouseEvent, cellText: string) => void;
 }) {
+  const transactions = Array.isArray(detail.transactions) ? detail.transactions : [];
+  const keywords = Array.isArray(detail.keywords) ? detail.keywords : [];
   const validCategoryCodes = new Set(detail.valid_category_codes ?? []);
   const descriptionModified = new Set(detail.description_modified_ids ?? []);
   const categoryModified = new Set(detail.category_modified_ids ?? []);
   const columns =
-    detail.columns.length > 0
+    Array.isArray(detail.columns) && detail.columns.length > 0
       ? detail.columns
-      : ptableColumns(detail.transactions);
+      : ptableColumns(transactions);
+
+  useEffect(() => {
+    logCategoryTableStep("PTable.render", {
+      categoryName,
+      row_count: transactions.length,
+      column_count: columns.length,
+      columns,
+    });
+  }, [categoryName, transactions.length, columns.join("|")]);
+
+  function safeHighlight(text: string): ReactNode {
+    try {
+      return highlight(text, keywords);
+    } catch (err) {
+      logCategoryTableStep("PTable.highlight.error", {
+        categoryName,
+        message: err instanceof Error ? err.message : String(err),
+        text_preview: text.slice(0, 80),
+      });
+      return text;
+    }
+  }
 
   function renderCell(t: Transaction, column: string) {
     if (column === "amount") {
@@ -811,24 +871,23 @@ function PTable({
             onTermContextMenu ? (e) => onTermContextMenu(e, text) : undefined
           }
         >
-          {highlight(text, detail.keywords)}
+          {safeHighlight(text)}
         </td>
       );
     }
     if (column === "description") {
       const text = formatCell(t.description);
-      const descModified = descriptionModified.has(String(t.id));
       return (
         <td
           key={column}
-          className={`desc term-source${descModified ? " desc-modified" : ""}`}
+          className="desc term-source"
           onContextMenu={
             onTermContextMenu ? (e) => onTermContextMenu(e, text) : undefined
           }
         >
           <EditableField
             value={text}
-            display={highlight(text, detail.keywords)}
+            display={safeHighlight(text)}
             onCommit={(v) => onModify({ ...t, description: v })}
           />
         </td>
@@ -864,7 +923,7 @@ function PTable({
           {detail.person} / {categoryName}
         </strong>
       </div>
-      {detail.transactions.length === 0 ? (
+      {transactions.length === 0 ? (
         <p>No transactions in this category</p>
       ) : (
         <table className="p-table">
@@ -883,11 +942,14 @@ function PTable({
             </tr>
           </thead>
           <tbody>
-            {detail.transactions.map((t, i) => (
-              <tr key={i}>
-                {columns.map((c) => renderCell(t, c))}
-              </tr>
-            ))}
+            {transactions.map((t, i) => {
+              const descModified = descriptionModified.has(String(t.id));
+              return (
+                <tr key={i} className={descModified ? "modified" : undefined}>
+                  {columns.map((c) => renderCell(t, c))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -1287,7 +1349,7 @@ function headerLabel(column: string): string {
 }
 
 function ptableColumns(transactions: Transaction[]): string[] {
-  const hidden = new Set(["id", "currency", "category_locked"]);
+  const hidden = new Set(["id", "currency"]);
   const columns: string[] = [];
   for (const t of transactions) {
     for (const key of Object.keys(t)) {
