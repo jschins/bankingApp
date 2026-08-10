@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   addCategoryTerm,
   fetchBankData,
@@ -122,13 +122,12 @@ function MainApp() {
   const [redirectCode, setRedirectCode] = useState("");
   const [newYear, setNewYear] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [termAssign, setTermAssign] = useState<{
-    transaction: Transaction;
-    description: string;
+  const [termMenu, setTermMenu] = useState<{
+    term: string;
+    x: number;
+    y: number;
   } | null>(null);
-  const [termAssignSettings, setTermAssignSettings] = useState<SettingsResponse | null>(
-    null
-  );
+  const [termMenuSettings, setTermMenuSettings] = useState<SettingsResponse | null>(null);
   const selectedRef = useRef<string | null>(null);
   const dirtyRef = useRef(false);
   const authPollRef = useRef<number | null>(null);
@@ -343,29 +342,33 @@ function MainApp() {
       .catch((e: Error) => setError(e.message));
   }
 
-  function openTermAssign(transaction: Transaction, description: string) {
+  function openTermMenu(e: MouseEvent, cellText: string) {
+    e.preventDefault();
+    e.stopPropagation();
     setError(null);
+    const word = wordAtClick(e.currentTarget, e.clientX, e.clientY) || cellText.trim();
+    if (!word) return;
     getSettings()
       .then((settings) => {
-        setTermAssignSettings(settings);
-        setTermAssign({ transaction, description });
+        setTermMenuSettings(settings);
+        setTermMenu({ term: word, x: e.clientX, y: e.clientY });
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((err: Error) => setError(err.message));
   }
 
-  function closeTermAssign() {
-    setTermAssign(null);
-    setTermAssignSettings(null);
+  function closeTermMenu() {
+    setTermMenu(null);
+    setTermMenuSettings(null);
   }
 
-  function saveTermAssign(term: string, targetCategory: string, general: boolean) {
-    return addCategoryTerm({ category_name: targetCategory, term, general })
+  function saveTermMenu(term: string, targetCategory: string) {
+    return addCategoryTerm({ category_name: targetCategory, term, general: false })
       .then(() => {
-        closeTermAssign();
+        closeTermMenu();
         clearDirty();
         return loadDisplay(selectedRef.current);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((err: Error) => setError(err.message));
   }
 
   useEffect(() => {
@@ -561,18 +564,18 @@ function MainApp() {
             detail={detail}
             onModify={modifyTransaction}
             onCategoryError={setError}
-            onAssignTerm={
-              selected === detail.remainder_category ? openTermAssign : undefined
-            }
+            onTermContextMenu={openTermMenu}
           />
         )}
         {selected && !detail && <p>Loading…</p>}
-        {termAssign && termAssignSettings && (
-          <TermAssignDialog
-            settings={termAssignSettings}
-            initialTerm={termAssign.description}
-            onClose={closeTermAssign}
-            onSave={saveTermAssign}
+        {termMenu && termMenuSettings && (
+          <TermContextMenu
+            settings={termMenuSettings}
+            initialTerm={termMenu.term}
+            x={termMenu.x}
+            y={termMenu.y}
+            onClose={closeTermMenu}
+            onPickCategory={saveTermMenu}
           />
         )}
       </main>
@@ -768,13 +771,13 @@ function PTable({
   detail,
   onModify,
   onCategoryError,
-  onAssignTerm,
+  onTermContextMenu,
 }: {
   categoryName: string;
   detail: TransactionsResponse;
   onModify: (transaction: Transaction) => void;
   onCategoryError?: (message: string | null) => void;
-  onAssignTerm?: (transaction: Transaction, description: string) => void;
+  onTermContextMenu?: (e: MouseEvent, cellText: string) => void;
 }) {
   const validCategoryCodes = new Set(detail.valid_category_codes ?? []);
   const columns =
@@ -799,28 +802,27 @@ function PTable({
     if (column === "name") {
       const text = formatCell(t.name);
       return (
-        <td key={column} className="name">
+        <td
+          key={column}
+          className="name term-source"
+          onContextMenu={
+            onTermContextMenu ? (e) => onTermContextMenu(e, text) : undefined
+          }
+        >
           {highlight(text, detail.keywords)}
         </td>
       );
     }
     if (column === "description") {
       const text = formatCell(t.description);
-      if (onAssignTerm) {
-        return (
-          <td key={column} className="desc">
-            <span
-              className="editable assign-term"
-              title="Assign keyword to a category"
-              onClick={() => onAssignTerm(t, text)}
-            >
-              {highlight(text, detail.keywords)}
-            </span>
-          </td>
-        );
-      }
       return (
-        <td key={column} className="desc">
+        <td
+          key={column}
+          className="desc term-source"
+          onContextMenu={
+            onTermContextMenu ? (e) => onTermContextMenu(e, text) : undefined
+          }
+        >
           <EditableField
             value={text}
             display={highlight(text, detail.keywords)}
@@ -894,21 +896,25 @@ function PTable({
   );
 }
 
-function TermAssignDialog({
+function TermContextMenu({
   settings,
   initialTerm,
+  x,
+  y,
   onClose,
-  onSave,
+  onPickCategory,
 }: {
   settings: SettingsResponse;
   initialTerm: string;
+  x: number;
+  y: number;
   onClose: () => void;
-  onSave: (term: string, targetCategory: string, general: boolean) => void;
+  onPickCategory: (term: string, targetCategory: string) => void | Promise<void>;
 }) {
   const [term, setTerm] = useState(initialTerm);
-  const [targetCategory, setTargetCategory] = useState<string | null>(null);
-  const [personal, setPersonal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
 
   const categories = settings.categories.filter(
     (name) => name !== settings.remainder_category
@@ -916,95 +922,154 @@ function TermAssignDialog({
 
   useEffect(() => {
     setTerm(initialTerm);
-    setTargetCategory(null);
-    setPersonal(false);
   }, [initialTerm]);
 
-  function submit() {
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pad = 8;
+    setPos({
+      left: Math.min(x, window.innerWidth - rect.width - pad),
+      top: Math.min(y, window.innerHeight - rect.height - pad),
+    });
+  }, [x, y, categories.length, initialTerm]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function pick(category: string) {
     const cleaned = term.trim();
-    if (!cleaned || !targetCategory || saving) return;
+    if (!cleaned || saving) return;
     setSaving(true);
-    Promise.resolve(onSave(cleaned, targetCategory, !personal)).finally(() =>
-      setSaving(false)
-    );
+    Promise.resolve(onPickCategory(cleaned, category)).finally(() => setSaving(false));
   }
 
   return (
-    <div className="term-assign-overlay" onClick={onClose}>
+    <div
+      className="term-context-backdrop"
+      onClick={onClose}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
       <div
-        className="term-assign-dialog"
-        role="dialog"
-        aria-labelledby="term-assign-title"
+        ref={menuRef}
+        className="term-context-menu"
+        style={{ left: Math.max(8, pos.left), top: Math.max(8, pos.top) }}
+        role="menu"
         onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.preventDefault()}
       >
-        <h2 id="term-assign-title">Assign keyword</h2>
-        <p className="term-assign-hint">
-          {settings.remainder_category}: pick a keyword and target category. Transactions are
-          recategorised after save. {formatTermMatchHint(settings.typerules)}
-        </p>
-        <label className="term-assign-field">
-          Term
-          <textarea
-            value={term}
-            rows={Math.min(8, Math.max(2, term.split("\n").length, Math.ceil(term.length / 72)))}
-            autoFocus
-            onChange={(e) => setTerm(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && targetCategory) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          />
-        </label>
-        <div className="term-assign-categories">
-          <div className="term-assign-label">Category</div>
-          <div className="term-assign-category-list">
-            {categories.map((name) => (
-              <button
-                key={name}
-                type="button"
-                className={
-                  targetCategory === name
-                    ? "term-assign-category selected"
-                    : "term-assign-category"
-                }
-                onClick={() => setTargetCategory(name)}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
-        <label className="term-assign-field checkbox">
-          <input
-            type="checkbox"
-            checked={personal}
-            onChange={(e) => setPersonal(e.target.checked)}
-          />
-          {settings.person} ({settings.person}_categories.json)
-        </label>
-        <p className="term-assign-target">
-          {personal
-            ? `Saved to ${settings.person}_categories.json`
-            : "Saved to shared categories.json"}
-        </p>
-        <div className="term-assign-actions">
-          <button type="button" className="refresh-button" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
+        <input
+          className="term-context-title"
+          value={term}
+          autoFocus
+          spellCheck={false}
+          onChange={(e) => setTerm(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+        />
+        <div className="term-context-items">
+          {categories.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className="term-context-item"
+              role="menuitem"
+              disabled={saving || !term.trim()}
+              onClick={() => pick(name)}
+            >
+              {name}
+            </button>
+          ))}
           <button
             type="button"
-            className="refresh-button"
-            onClick={submit}
-            disabled={!term.trim() || !targetCategory || saving}
+            className="term-context-item term-context-cancel"
+            role="menuitem"
+            onClick={onClose}
+            disabled={saving}
           >
-            {saving ? "Saving…" : "Save term"}
+            cancel
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function charOffsetFromPoint(root: EventTarget & Element, clientX: number, clientY: number): number | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (
+      x: number,
+      y: number
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  let node: Node | null = null;
+  let offset = 0;
+  if (typeof doc.caretRangeFromPoint === "function") {
+    const range = doc.caretRangeFromPoint(clientX, clientY);
+    if (!range) return null;
+    node = range.startContainer;
+    offset = range.startOffset;
+  } else if (typeof doc.caretPositionFromPoint === "function") {
+    const pos = doc.caretPositionFromPoint(clientX, clientY);
+    if (!pos) return null;
+    node = pos.offsetNode;
+    offset = pos.offset;
+  } else {
+    return null;
+  }
+  if (!root.contains(node)) return null;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let total = 0;
+  let current: Node | null;
+  while ((current = walker.nextNode())) {
+    if (current === node) return total + offset;
+    total += (current.textContent || "").length;
+  }
+  return null;
+}
+
+function wordAtIndex(text: string, index: number): string {
+  if (!text) return "";
+  if (index < 0) index = 0;
+  if (index >= text.length) index = text.length - 1;
+  if (index < 0) return "";
+
+  const isWordChar = (ch: string) => /[0-9A-Za-zÀ-ÿ_&-]/.test(ch);
+  if (!isWordChar(text[index])) {
+    let left = index - 1;
+    while (left >= 0 && !isWordChar(text[left])) left--;
+    if (left < 0) return "";
+    index = left;
+  }
+  let start = index;
+  let end = index + 1;
+  while (start > 0 && isWordChar(text[start - 1])) start--;
+  while (end < text.length && isWordChar(text[end])) end++;
+  return text.slice(start, end);
+}
+
+function wordAtClick(root: EventTarget, clientX: number, clientY: number): string {
+  if (!(root instanceof Element)) return "";
+  const text = root.textContent || "";
+  const offset = charOffsetFromPoint(root, clientX, clientY);
+  if (offset === null) return text.trim();
+  return wordAtIndex(text, offset);
 }
 
 function termsTableCategories(settings: SettingsResponse): string[] {
