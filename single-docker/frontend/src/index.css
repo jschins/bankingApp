@@ -500,6 +500,61 @@ textarea.cell-edit {
   background: #f8fafc;
 }
 
+.term-context-table-wrap {
+  overflow: auto;
+  max-height: min(55vh, 22rem);
+  margin-bottom: 0.2rem;
+}
+
+.term-context-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.term-context-table th,
+.term-context-table td {
+  padding: 0.2rem 0.35rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.term-context-cat-head {
+  font-weight: 600;
+  color: #64748b;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.term-context-gp-head {
+  width: 1.6rem;
+  text-align: center !important;
+  font-weight: 700;
+  color: #334155;
+}
+
+.term-context-cat {
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.term-context-gp {
+  width: 1.6rem;
+  text-align: center !important;
+}
+
+.term-context-gp input[type="checkbox"] {
+  cursor: pointer;
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.term-context-gp input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .term-context-items {
   overflow-y: auto;
   display: flex;

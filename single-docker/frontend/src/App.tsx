@@ -361,8 +361,8 @@ function MainApp() {
     setTermMenuSettings(null);
   }
 
-  function saveTermMenu(term: string, targetCategory: string) {
-    return addCategoryTerm({ category_name: targetCategory, term, general: false })
+  function saveTermMenu(term: string, targetCategory: string, general: boolean) {
+    return addCategoryTerm({ category_name: targetCategory, term, general })
       .then(() => {
         closeTermMenu();
         clearDirty();
@@ -909,7 +909,11 @@ function TermContextMenu({
   x: number;
   y: number;
   onClose: () => void;
-  onPickCategory: (term: string, targetCategory: string) => void | Promise<void>;
+  onPickCategory: (
+    term: string,
+    targetCategory: string,
+    general: boolean
+  ) => void | Promise<void>;
 }) {
   const [term, setTerm] = useState(initialTerm);
   const [saving, setSaving] = useState(false);
@@ -943,11 +947,13 @@ function TermContextMenu({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function pick(category: string) {
+  function pick(category: string, general: boolean) {
     const cleaned = term.trim();
     if (!cleaned || saving) return;
     setSaving(true);
-    Promise.resolve(onPickCategory(cleaned, category)).finally(() => setSaving(false));
+    Promise.resolve(onPickCategory(cleaned, category, general)).finally(() =>
+      setSaving(false)
+    );
   }
 
   return (
@@ -981,29 +987,53 @@ function TermContextMenu({
             }
           }}
         />
-        <div className="term-context-items">
-          {categories.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className="term-context-item"
-              role="menuitem"
-              disabled={saving || !term.trim()}
-              onClick={() => pick(name)}
-            >
-              {name}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="term-context-item term-context-cancel"
-            role="menuitem"
-            onClick={onClose}
-            disabled={saving}
-          >
-            cancel
-          </button>
+        <div className="term-context-table-wrap">
+          <table className="term-context-table">
+            <thead>
+              <tr>
+                <th className="term-context-cat-head">Category</th>
+                <th className="term-context-gp-head" title="General">
+                  G
+                </th>
+                <th className="term-context-gp-head" title="Personal">
+                  P
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {categories.map((name) => (
+                <tr key={name}>
+                  <td className="term-context-cat">{name}</td>
+                  <td className="term-context-gp">
+                    <input
+                      type="checkbox"
+                      aria-label={`${name} general`}
+                      disabled={saving || !term.trim()}
+                      onChange={() => pick(name, true)}
+                    />
+                  </td>
+                  <td className="term-context-gp">
+                    <input
+                      type="checkbox"
+                      aria-label={`${name} personal`}
+                      disabled={saving || !term.trim()}
+                      onChange={() => pick(name, false)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+        <button
+          type="button"
+          className="term-context-item term-context-cancel"
+          role="menuitem"
+          onClick={onClose}
+          disabled={saving}
+        >
+          cancel
+        </button>
       </div>
     </div>
   );
