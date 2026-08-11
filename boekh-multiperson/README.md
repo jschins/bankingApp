@@ -21,10 +21,11 @@ boekh-multiperson/                 # this project (source)
   README.md
   boekhouding/                     # deploy folder (exe + person packs)
     boekhouding.exe                # admin onefile — place/build here
+    categories.json                # shared general categories (all persons)
     anton_schins/
       boekh.exe                    # optional personal app
       data/
-      secret/
+      secret/                      # profile, pem, consent.json
     eugen_graas/
       data/
       secret/
@@ -60,13 +61,13 @@ Scan immediate children of `app_root()` (`boekhouding/`):
 
    | Path | Role |
    |------|------|
+   | `categories.json` (beside `boekhouding.exe`) | shared general keywords + typerules + abbreviations |
    | `secret/profile.json` | person short, Enable Banking profile |
    | `secret/*.pem` | private key (exactly one) |
-   | `data/categories.json` | general keywords + typerules + abbreviations |
+   | `secret/consent.json` | bank consent |
    | `data/personal_categories.json` | personal keywords |
    | `data/categorized_transactions.json` | transactions + modifications |
    | `data/category_totals.json` | per-category totals |
-   | `data/consent.json` | bank consent (read-only for admin refresh) |
    | `data/downloaded_transactions.json` | last raw fetch |
 
 ---
@@ -116,9 +117,8 @@ New module `app/people.py`:
 
 ### General categories
 
-Treat `categories.json` as shared. On load, use the first discovered person’s
-file as the schema source. On save of general terms, **write the same
-`categories.json` into every person folder**. Personal terms stay in each
+Treat `categories.json` as shared at the `boekhouding/` deploy root (sibling of
+`boekhouding.exe` and of the person folders). Personal terms stay in each
 `personal_categories.json`.
 
 ### Refresh fetch

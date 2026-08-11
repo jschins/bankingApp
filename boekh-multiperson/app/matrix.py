@@ -25,13 +25,14 @@ def _category_map(data: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def general_categories_source(people: list[PersonPack] | None = None) -> Path:
-    packs = people if people is not None else get_people()
-    if not packs:
-        raise FileNotFoundError("No person packs available")
-    for pack in packs:
-        if pack.categories_path.is_file():
-            return pack.categories_path
-    raise FileNotFoundError("No categories.json found in any person pack")
+    from app.paths import shared_categories_path
+
+    path = shared_categories_path()
+    if path.is_file():
+        return path
+    raise FileNotFoundError(
+        f"No categories.json found beside the admin root ({path})."
+    )
 
 
 def category_names(people: list[PersonPack] | None = None) -> list[str]:
@@ -41,10 +42,10 @@ def category_names(people: list[PersonPack] | None = None) -> list[str]:
 
 
 def sync_general_categories(payload: dict[str, Any], people: list[PersonPack] | None = None) -> None:
-    """Write the same categories.json into every person folder."""
-    packs = people if people is not None else get_people()
-    for pack in packs:
-        _write_json(pack.categories_path, payload)
+    """Write the shared ``categories.json`` at the boekhouding deploy root."""
+    from app.paths import shared_categories_path
+
+    _write_json(shared_categories_path(), payload)
 
 
 def load_general_file(people: list[PersonPack] | None = None) -> dict[str, Any]:

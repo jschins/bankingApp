@@ -6,14 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.paths import (
-    CATEGORIES_PATH,
-    CATEGORIZED_TRANSACTIONS_PATH,
-    CATEGORY_TOTALS_PATH,
-    DATA_DIR,
-    PERSONAL_CATEGORIES_PATH,
-    RAW_TRANSACTIONS_PATH,
-)
+import app.paths as paths
 
 DEFAULT_CATEGORY = 18
 CATEGORIZE_LOGIC_VERSION = "2026-07-09-typerules-highest-priority"
@@ -141,7 +134,7 @@ def _remittance_lines(transaction: dict[str, Any]) -> list[str]:
 def _debug_remittance_log(payload: dict[str, Any]) -> None:
     """Append one JSON line to ``data/debug.log`` (best-effort)."""
     try:
-        path = DATA_DIR / "debug.log"
+        path = paths.DATA_DIR / "debug.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         entry = {"ts": datetime.now(timezone.utc).isoformat(), **payload}
         with path.open("a", encoding="utf-8") as handle:
@@ -313,9 +306,9 @@ def _haystack_for_categorization(record: dict[str, Any]) -> str:
 
 
 def _categories_file() -> dict[str, Any]:
-    if not CATEGORIES_PATH.exists():
+    if not paths.CATEGORIES_PATH.exists():
         return {}
-    data = _read_json(CATEGORIES_PATH)
+    data = _read_json(paths.CATEGORIES_PATH)
     return data if isinstance(data, dict) else {}
 
 
@@ -697,17 +690,17 @@ def _write_category_totals(merged: dict[str, Any], general: dict[str, list[str]]
         }
     except Exception:
         payload = {"categories": totals}
-    _write_json(CATEGORY_TOTALS_PATH, payload)
+    _write_json(paths.CATEGORY_TOTALS_PATH, payload)
     return totals
 
 
 def refresh_category_totals_balances() -> dict[str, str]:
     """Update balance fields in the category totals file from consent (no recategorization)."""
-    data = _load_json_object(CATEGORY_TOTALS_PATH)
+    data = _load_json_object(paths.CATEGORY_TOTALS_PATH)
     categories = data.get("categories")
     if not isinstance(categories, dict):
-        general = _category_map(_read_json(CATEGORIES_PATH))
-        merged = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+        general = _category_map(_read_json(paths.CATEGORIES_PATH))
+        merged = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
         categories = build_category_totals(merged, list(general.keys()))
     try:
         from app.core.single_client import current_balance_payload, ensure_consent_credit_card_labels
@@ -716,12 +709,12 @@ def refresh_category_totals_balances() -> dict[str, str]:
         payload = {"categories": categories, **current_balance_payload()}
     except Exception:
         payload = {"categories": categories}
-    _write_json(CATEGORY_TOTALS_PATH, payload)
+    _write_json(paths.CATEGORY_TOTALS_PATH, payload)
     return {str(name): str(amount) for name, amount in categories.items()}
 
 
 def load_category_totals() -> dict[str, str]:
-    data = _load_json_object(CATEGORY_TOTALS_PATH)
+    data = _load_json_object(paths.CATEGORY_TOTALS_PATH)
     categories = data.get("categories")
     if not isinstance(categories, dict):
         return {}
@@ -729,10 +722,10 @@ def load_category_totals() -> dict[str, str]:
 
 
 def _load_raw_transactions() -> list[dict[str, Any]]:
-    if not RAW_TRANSACTIONS_PATH.exists():
+    if not paths.RAW_TRANSACTIONS_PATH.exists():
         return []
     try:
-        raw = _read_json(RAW_TRANSACTIONS_PATH)
+        raw = _read_json(paths.RAW_TRANSACTIONS_PATH)
     except (OSError, json.JSONDecodeError):
         return []
     if isinstance(raw, list):
@@ -771,9 +764,9 @@ def recategorize_transactions() -> dict[str, str]:
     onto ``transactions``. Sparse ``modifications`` are kept (not re-scored);
     a ``category`` overlay that matches the newly calculated value is dropped.
     """
-    general = _category_map(_read_json(CATEGORIES_PATH))
-    personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
-    data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
+    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
+    data = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     data = _migrate_categorized_store(data)
     mods_by_id = _modifications_by_id(data)
 
@@ -822,7 +815,7 @@ def recategorize_transactions() -> dict[str, str]:
         result.pop("modifications", None)
 
     result = _migrate_categorized_store(result)
-    _write_json(CATEGORIZED_TRANSACTIONS_PATH, result)
+    _write_json(paths.CATEGORIZED_TRANSACTIONS_PATH, result)
     return _write_category_totals(result, general)
 
 
@@ -835,14 +828,14 @@ def transactions_for_category(category_name: str) -> list[dict[str, Any]]:
         "filter.start",
         category_name=category_name,
         parsed_code=code,
-        store=CATEGORIZED_TRANSACTIONS_PATH,
-        store_exists=CATEGORIZED_TRANSACTIONS_PATH.exists(),
+        store=paths.CATEGORIZED_TRANSACTIONS_PATH,
+        store_exists=paths.CATEGORIZED_TRANSACTIONS_PATH.exists(),
     )
     if code is None:
         log("filter.abort", reason="category_name_has_no_numeric_prefix")
         return []
 
-    payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    payload = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     raw_list = payload.get("transactions")
     raw_count = len(raw_list) if isinstance(raw_list, list) else 0
     mods_by_id = _modifications_by_id(payload)
@@ -900,7 +893,7 @@ def _public_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
 
 def modification_style_ids(payload: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
     """Return (description_modified_ids, category_modified_ids) from sparse mods."""
-    data = payload if payload is not None else _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    data = payload if payload is not None else _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     description_ids: list[str] = []
     category_ids: list[str] = []
     for mod in _modifications_by_id(data).values():
@@ -921,8 +914,8 @@ def format_transaction_amount(transaction: dict[str, Any]) -> str:
 
 def terms_for_category(category_name: str) -> list[str]:
     """General + personal keyword terms for a category display name."""
-    general = _category_map(_read_json(CATEGORIES_PATH))
-    personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
+    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
     return [*general.get(category_name, []), *personal.get(category_name, [])]
 
 
@@ -942,20 +935,20 @@ def _cleaned_terms(terms: list[str]) -> list[str]:
 
 
 def _save_general_category_terms(category_name: str, terms: list[str]) -> None:
-    data = _read_json(CATEGORIES_PATH)
+    data = _read_json(paths.CATEGORIES_PATH)
     categories = data.setdefault("categories", {})
     categories[category_name] = _cleaned_terms(terms)
-    _write_json(CATEGORIES_PATH, data)
+    _write_json(paths.CATEGORIES_PATH, data)
 
 
 def _save_personal_category_terms(category_name: str, terms: list[str]) -> None:
-    data = _load_json_object(PERSONAL_CATEGORIES_PATH)
+    data = _load_json_object(paths.PERSONAL_CATEGORIES_PATH)
     cleaned = _cleaned_terms(terms)
     if cleaned:
         data[category_name] = cleaned
     else:
         data.pop(category_name, None)
-    _write_json(PERSONAL_CATEGORIES_PATH, data)
+    _write_json(paths.PERSONAL_CATEGORIES_PATH, data)
 
 
 def append_category_term(
@@ -976,13 +969,13 @@ def append_category_term(
         raise ValueError(f"Cannot add terms to category {category_name!r}")
 
     if group == "general":
-        general = _category_map(_read_json(CATEGORIES_PATH))
+        general = _category_map(_read_json(paths.CATEGORIES_PATH))
         terms = list(general.get(category_name, []))
         if cleaned not in _cleaned_terms(terms):
             terms.append(cleaned)
         _save_general_category_terms(category_name, terms)
     elif group == person:
-        personal = _category_map(_load_json_object(PERSONAL_CATEGORIES_PATH))
+        personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
         terms = list(personal.get(category_name, []))
         if cleaned not in _cleaned_terms(terms):
             terms.append(cleaned)
@@ -1000,7 +993,7 @@ def add_category_term(category_name: str, term: str) -> list[str]:
     if cleaned_term in _cleaned_terms(terms_for_category(category_name)):
         return terms_for_category(category_name)
 
-    personal = _category_map(_load_json_object(PERSONAL_CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     personal_terms = list(personal.get(category_name, []))
     personal_terms.append(cleaned_term)
     _save_personal_category_terms(category_name, personal_terms)
@@ -1010,8 +1003,8 @@ def add_category_term(category_name: str, term: str) -> list[str]:
 def remove_category_term(category_name: str, term: str) -> list[str]:
     """Remove a term from personal keywords, otherwise from general keywords."""
     needle = _normalize_term(term)
-    personal = _category_map(_load_json_object(PERSONAL_CATEGORIES_PATH))
-    general = _category_map(_read_json(CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
     personal_terms = list(personal.get(category_name, []))
     general_terms = list(general.get(category_name, []))
 
@@ -1030,8 +1023,8 @@ def remove_category_term(category_name: str, term: str) -> list[str]:
 
 def category_terms_table(extra_rows: int = 0) -> tuple[list[tuple[str, str]], list[list[str]]]:
     """Column (name, key) pairs and term rows for the keywords overview table."""
-    general = _category_map(_read_json(CATEGORIES_PATH))
-    personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
+    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
     category_names = list(general.keys())
     terms_by_category = {
         name: [*general.get(name, []), *personal.get(name, [])] for name in category_names
@@ -1099,7 +1092,7 @@ def remainder_category_name() -> str:
         if _category_code(name) == DEFAULT_CATEGORY:
             return name
     raise ValueError(
-        f"No category with code {DEFAULT_CATEGORY} found in {CATEGORIES_PATH.name}"
+        f"No category with code {DEFAULT_CATEGORY} found in {paths.CATEGORIES_PATH.name}"
     )
 
 
@@ -1118,7 +1111,7 @@ def _source_transaction_by_id(
     transaction_id: str, payload: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
     """Return the effective transaction (base + sparse modification) for ``id``."""
-    data = payload if payload is not None else _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    data = payload if payload is not None else _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     mods_by_id = _modifications_by_id(data)
     for transaction in data.get("transactions", []):
         if isinstance(transaction, dict) and str(transaction.get("id", "")) == transaction_id:
@@ -1132,7 +1125,7 @@ def record_modification(transaction: dict[str, Any]) -> dict[str, Any]:
     ``transaction`` is the edited effective row from the UI. Diffed against the
     base row in ``transactions``. Replaces any existing modification for the same id.
     """
-    data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    data = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     if not data:
         data = {"transactions": []}
 
@@ -1174,8 +1167,8 @@ def record_modification(transaction: dict[str, Any]) -> dict[str, Any]:
         data.pop("modifications", None)
 
     data = _migrate_categorized_store(data)
-    _write_json(CATEGORIZED_TRANSACTIONS_PATH, data)
-    general = _category_map(_read_json(CATEGORIES_PATH))
+    _write_json(paths.CATEGORIZED_TRANSACTIONS_PATH, data)
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
     _write_category_totals(data, general)
     return _public_transaction(_effective_transaction(base, _modifications_by_id(data)))
 
@@ -1187,7 +1180,7 @@ def record_category_change(transaction: dict[str, Any], category_name: str) -> d
         raise ValueError(f"Unknown category: {category_name!r}")
 
     transaction_id = str(transaction.get("id", ""))
-    data = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+    data = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     effective = _source_transaction_by_id(transaction_id, data) or dict(transaction)
     modified = dict(effective)
     modified["category"] = code
@@ -1201,14 +1194,14 @@ def process_transactions(raw_transactions: list[dict[str, Any]], new_year: bool)
     present and keep existing ``modifications``. When *new_year* is true,
     replace the file with only this fetch (no merge, no modifications).
     """
-    general = _category_map(_read_json(CATEGORIES_PATH))
-    personal = _category_map(_read_json(PERSONAL_CATEGORIES_PATH))
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
+    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
     new_records = _simplify_and_categorize(raw_transactions, general, personal)
 
     if new_year:
         merged = _merge_simplified({"transactions": []}, new_records)
     else:
-        existing = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+        existing = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
         if not isinstance(existing.get("transactions"), list):
             existing = {"transactions": []}
         merged = _merge_simplified(existing, new_records)
@@ -1217,6 +1210,6 @@ def process_transactions(raw_transactions: list[dict[str, Any]], new_year: bool)
             merged["modifications"] = modifications
 
     merged = _migrate_categorized_store(merged)
-    _write_json(RAW_TRANSACTIONS_PATH, raw_transactions)
-    _write_json(CATEGORIZED_TRANSACTIONS_PATH, merged)
+    _write_json(paths.RAW_TRANSACTIONS_PATH, raw_transactions)
+    _write_json(paths.CATEGORIZED_TRANSACTIONS_PATH, merged)
     return _write_category_totals(merged, general)

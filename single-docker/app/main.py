@@ -316,38 +316,36 @@ def client_category_table_log(body: ClientLogRequest) -> dict[str, str]:
 
 @app.get("/api/transactions/{category_name}")
 def transactions_for_category(category_name: str) -> dict[str, Any]:
+    import app.paths as paths
     from app.category_table_log import log, log_exception, log_path
     from app.core.categorize import (
         _load_json_object,
         _read_json,
         category_code_set,
-        CATEGORIZED_TRANSACTIONS_PATH,
-        CATEGORIES_PATH,
         modification_style_ids,
         remainder_category_name,
         terms_for_category,
         transaction_display_column_keys,
         transactions_for_category as load_transactions,
     )
-    from app.paths import PERSON_SHORT
     from app.runtime import app_root
 
     log(
         "api.transactions.request",
         category_name=category_name,
-        person=PERSON_SHORT,
+        person=paths.PERSON_SHORT,
         app_root=app_root(),
         log_file=log_path(),
     )
     try:
         rows = load_transactions(category_name)
-        cat_data = _read_json(CATEGORIES_PATH)
-        payload = _load_json_object(CATEGORIZED_TRANSACTIONS_PATH)
+        cat_data = _read_json(paths.CATEGORIES_PATH)
+        payload = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
         description_modified_ids, category_modified_ids = modification_style_ids(payload)
         columns = transaction_display_column_keys(rows)
         keywords = terms_for_category(category_name)
         response = {
-            "person": PERSON_SHORT,
+            "person": paths.PERSON_SHORT,
             "category": category_name,
             "columns": columns,
             "transactions": rows,
@@ -387,26 +385,24 @@ def save_modification(body: ModificationRequest) -> dict[str, Any]:
 
 @app.get("/api/settings")
 def get_settings() -> dict[str, Any]:
+    import app.paths as paths
     from app.core.categorize import (
         _category_map,
         _load_json_object,
         _read_json,
         category_code_set,
         category_names,
-        CATEGORIES_PATH,
-        PERSONAL_CATEGORIES_PATH,
         remainder_category_name,
         type_rules_payload,
     )
-    from app.paths import PERSON_SHORT
 
-    general = _category_map(_read_json(CATEGORIES_PATH))
-    personal = _category_map(_load_json_object(PERSONAL_CATEGORIES_PATH))
+    general = _category_map(_read_json(paths.CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     return {
         "categories": category_names(),
-        "person": PERSON_SHORT,
+        "person": paths.PERSON_SHORT,
         "general": general,
-        "personal": {PERSON_SHORT: personal},
+        "personal": {paths.PERSON_SHORT: personal},
         "valid_category_codes": sorted(category_code_set()),
         "remainder_category": remainder_category_name(),
         "typerules": type_rules_payload(),

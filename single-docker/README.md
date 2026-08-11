@@ -148,29 +148,30 @@ Enable Banking Control Panel. Country must be ISO 3166-1 alpha-2 (`NL`, not
 ## Project layout
 
 ```
-single-docker/
-├─ secret/                     # credentials (git-ignored, mounted outside container)
+single-docker/                 # source / docker
+├─ secret/                     # credentials (git-ignored)
 │  ├─ profile.json
+│  ├─ consent.json             # bank session (preferred location)
 │  └─ *.pem
 ├─ data/                       # runtime JSON (git-ignored)
-│  ├─ categories.json          # shared general keywords + abbreviations + typerules
-│  ├─ personal_categories.json # personal keyword overrides
-│  ├─ consent.json
+│  ├─ personal_categories.json
 │  ├─ categorized_transactions.json
 │  ├─ downloaded_transactions.json
 │  └─ category_totals.json
-├─ app/
-│  ├─ main.py                  # FastAPI
-│  ├─ settings.py
-│  ├─ paths.py
-│  └─ core/                    # categorize.py, single_client.py
-├─ frontend/                   # React UI (Vite) → frontend/dist
-├─ Dockerfile                  # multi-stage: Node build + Python
-└─ docker-compose.yml
+├─ app/ …
+└─ frontend/ …
+
+# Deployed person pack (e.g. under boekhouding/):
+boekhouding/
+  categories.json              # shared; parent of each person pack folder
+  juleon_schins/
+    boekh.exe
+    data/                      # personal JSON (not categories/consent)
+    secret/                    # profile, pem, consent.json
 ```
 
 Person identity comes from `secret/profile.json` (`"person"` field), or from
-`data/consent.json`, or from `bankingApp_PERSON`. Filenames are **not** prefixed.
+`secret/consent.json`, or from `bankingApp_PERSON`. Filenames are **not** prefixed.
 
 ---
 
@@ -180,9 +181,9 @@ Person identity comes from `secret/profile.json` (`"person"` field), or from
 |------|------|
 | `secret/profile.json` | Enable Banking profile (`person`, `app_id`, `key_file`, bank, redirect) |
 | `secret/*.pem` | Exactly one Enable Banking private key |
-| `data/categories.json` | Shared keywords, typerules, abbreviations |
+| `../categories.json` | Shared keywords, typerules, abbreviations (parent of pack folder) |
 | `data/personal_categories.json` | Personal keyword overrides |
-| `data/consent.json` | Bank session / accounts |
+| `secret/consent.json` | Bank session / accounts |
 | `data/categorized_transactions.json` | Processed + categorised transactions |
 | `data/downloaded_transactions.json` | Raw bank download |
 | `data/category_totals.json` | Sidebar totals |
@@ -280,11 +281,11 @@ boekh_onedir/
 
 | Path | Purpose |
 |------|---------|
+| `../categories.json` | Shared keyword lists (parent of pack folder) |
 | `secret/profile.json` | Enable Banking profile |
 | `secret/*.pem` | Private key (exactly one) |
-| `data/categories.json` | Shared keyword lists |
+| `secret/consent.json` | Created after bank consent |
 | `data/personal_categories.json` | Personal keyword overrides (optional) |
-| `data/consent.json` | Created after bank consent |
 
 Start by double-clicking `boekh_onedir.exe`. It listens on **http://127.0.0.1:8200**
 and opens your browser.

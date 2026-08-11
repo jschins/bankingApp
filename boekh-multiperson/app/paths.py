@@ -7,12 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+from app.runtime import app_root
+
 DATA_DIR: Path = Path("data")
 PERSON_SHORT: str = ""
 PROFILE_PATH: Path = Path("profile.json")
 PRIVATE_KEY_PATH: Path = Path("key.pem")
-CONSENT_PATH: Path = DATA_DIR / "consent.json"
-CATEGORIES_PATH: Path = DATA_DIR / "categories.json"
+CONSENT_PATH: Path = Path("secret") / "consent.json"
+CATEGORIES_PATH: Path = Path("categories.json")
 PERSONAL_CATEGORIES_PATH: Path = DATA_DIR / "personal_categories.json"
 CATEGORIZED_TRANSACTIONS_PATH: Path = DATA_DIR / "categorized_transactions.json"
 RAW_TRANSACTIONS_PATH: Path = DATA_DIR / "downloaded_transactions.json"
@@ -31,11 +33,7 @@ class PersonPack:
 
     @property
     def consent_path(self) -> Path:
-        return self.data_dir / "consent.json"
-
-    @property
-    def categories_path(self) -> Path:
-        return self.data_dir / "categories.json"
+        return self.secret_dir / "consent.json"
 
     @property
     def personal_categories_path(self) -> Path:
@@ -48,6 +46,12 @@ class PersonPack:
     @property
     def totals_path(self) -> Path:
         return self.data_dir / "category_totals.json"
+
+
+def shared_categories_path(root: Path | None = None) -> Path:
+    """``categories.json`` beside ``boekhouding.exe`` (admin deploy root)."""
+    base = root if root is not None else app_root()
+    return (base / "categories.json").resolve()
 
 
 def _read_person_short(profile_path: Path) -> str:
@@ -81,7 +85,7 @@ def apply_person(pack: PersonPack) -> None:
     PROFILE_PATH = pack.profile_path
     PRIVATE_KEY_PATH = pack.private_key_path
     CONSENT_PATH = pack.consent_path
-    CATEGORIES_PATH = pack.categories_path
+    CATEGORIES_PATH = shared_categories_path()
     PERSONAL_CATEGORIES_PATH = pack.personal_categories_path
     CATEGORIZED_TRANSACTIONS_PATH = pack.categorized_path
     RAW_TRANSACTIONS_PATH = pack.data_dir / "downloaded_transactions.json"
@@ -129,8 +133,6 @@ def configure() -> list[PersonPack]:
 
     people = list_people()
     if not people:
-        from app.runtime import app_root
-
         raise FileNotFoundError(
             "No person packs found under "
             f"{app_root()}. Each pack needs both a data/ and a secret/ folder "

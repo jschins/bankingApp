@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.runtime import app_root
 from app.settings import AppSettings, init_app_settings
 
 # Placeholders until configure() runs; never derive from folder names.
@@ -10,8 +11,8 @@ DATA_DIR: Path = Path("data")
 PERSON_SHORT: str = ""
 PROFILE_PATH: Path = Path("profile.json")
 PRIVATE_KEY_PATH: Path = Path("key.pem")
-CONSENT_PATH: Path = DATA_DIR / "consent.json"
-CATEGORIES_PATH: Path = DATA_DIR / "categories.json"
+CONSENT_PATH: Path = Path("secret") / "consent.json"
+CATEGORIES_PATH: Path = Path("categories.json")
 PERSONAL_CATEGORIES_PATH: Path = DATA_DIR / "personal_categories.json"
 CATEGORIZED_TRANSACTIONS_PATH: Path = DATA_DIR / "categorized_transactions.json"
 RAW_TRANSACTIONS_PATH: Path = DATA_DIR / "downloaded_transactions.json"
@@ -24,6 +25,28 @@ def _read_person_short(profile_path: Path) -> str:
     if not person:
         raise ValueError(f"profile missing 'person': {profile_path}")
     return person
+
+
+def resolve_categories_path(root: Path | None = None) -> Path:
+    """Shared ``categories.json`` in the parent of the person pack.
+
+    Layout::
+
+        boekhouding/
+          categories.json
+          juleon_schins/
+            boekh.exe
+            data/
+            secret/
+    """
+    pack_root = root if root is not None else app_root()
+    return (pack_root.parent / "categories.json").resolve()
+
+
+def resolve_consent_path(root: Path | None = None) -> Path:
+    """``secret/consent.json`` beside the executable."""
+    pack_root = root if root is not None else app_root()
+    return (pack_root / "secret" / "consent.json").resolve()
 
 
 def configure(person_short: str | None = None) -> AppSettings:
@@ -49,8 +72,9 @@ def configure(person_short: str | None = None) -> AppSettings:
             f"profile.person must match resolved person {settings.person_short!r}"
         )
 
-    CONSENT_PATH = DATA_DIR / "consent.json"
-    CATEGORIES_PATH = DATA_DIR / "categories.json"
+    root = app_root()
+    CONSENT_PATH = resolve_consent_path(root)
+    CATEGORIES_PATH = resolve_categories_path(root)
     PERSONAL_CATEGORIES_PATH = DATA_DIR / "personal_categories.json"
     CATEGORIZED_TRANSACTIONS_PATH = DATA_DIR / "categorized_transactions.json"
     RAW_TRANSACTIONS_PATH = DATA_DIR / "downloaded_transactions.json"

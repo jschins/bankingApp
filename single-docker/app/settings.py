@@ -39,9 +39,13 @@ def _person_from_json(path: Path) -> str | None:
     return person or None
 
 
-def person_from_consent(data_root: Path) -> str | None:
-    """Return person short name from ``data/consent.json`` if present."""
-    return _person_from_json(data_root / "consent.json")
+def person_from_consent(secret_root: Path | None = None) -> str | None:
+    """Return person short name from ``secret/consent.json`` if present."""
+    from app.paths import resolve_consent_path
+    from app.runtime import app_root
+
+    root = secret_root if secret_root is not None else app_root()
+    return _person_from_json(resolve_consent_path(root))
 
 
 def person_from_secret_profile() -> str | None:
@@ -61,13 +65,13 @@ def resolve_person_short(explicit: str | None = None) -> str:
     if profile_person:
         return profile_person
 
-    consent_person = person_from_consent(data_dir())
+    consent_person = person_from_consent()
     if consent_person:
         return consent_person
 
     raise FileNotFoundError(
         f"Could not determine person short name. Set bankingApp_PERSON or add "
-        f"secret/profile.json (with a person field) or data/consent.json next to "
+        f"secret/profile.json (with a person field) or secret/consent.json next to "
         f"the app (looked under {data_dir().parent})."
     )
 

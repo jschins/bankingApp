@@ -24,7 +24,7 @@ from shared.enable_banking.transactions import (
     fetch_transactions_period,
 )
 
-from app.paths import CONSENT_PATH, PRIVATE_KEY_PATH, PROFILE_PATH
+import app.paths as paths
 
 AIB_HISTORICAL_YEARS = 2
 AIB_ROLLING_DAYS = 90
@@ -143,9 +143,9 @@ class SingleDockerClient(EnableBankingClient):
     @classmethod
     def from_profile(cls, profile: dict[str, Any]) -> SingleDockerClient:
         app_id = str(profile.get("app_id") or "")
-        if not PRIVATE_KEY_PATH.exists():
-            raise EnableBankingError(f"Private key file not found: {PRIVATE_KEY_PATH}")
-        return cls(app_id, PRIVATE_KEY_PATH.read_bytes())
+        if not paths.PRIVATE_KEY_PATH.exists():
+            raise EnableBankingError(f"Private key file not found: {paths.PRIVATE_KEY_PATH}")
+        return cls(app_id, paths.PRIVATE_KEY_PATH.read_bytes())
 
     def start_authorization(self, profile: dict[str, Any], valid_until: str) -> dict[str, Any]:
         return super().start_authorization(
@@ -197,9 +197,9 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def load_profile() -> dict[str, Any]:
-    if not PROFILE_PATH.exists():
-        raise EnableBankingError(f"Profile not found: {PROFILE_PATH}")
-    profile = _read_json(PROFILE_PATH)
+    if not paths.PROFILE_PATH.exists():
+        raise EnableBankingError(f"Profile not found: {paths.PROFILE_PATH}")
+    profile = _read_json(paths.PROFILE_PATH)
     country = str(profile.get("country") or "")
     if country and len(country) != 2:
         raise EnableBankingError(
@@ -421,9 +421,9 @@ def _normalize_consent(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_consent() -> dict[str, Any]:
-    if not CONSENT_PATH.exists():
+    if not paths.CONSENT_PATH.exists():
         return {"person": "unknown", "connections": []}
-    raw = _read_json(CONSENT_PATH)
+    raw = _read_json(paths.CONSENT_PATH)
     record = _normalize_consent(raw)
     if "connections" not in raw or "enabled_account_uids" in raw or raw.get("aspsp"):
         _save_consent(record)
@@ -431,7 +431,7 @@ def _load_consent() -> dict[str, Any]:
 
 
 def _save_consent(record: dict[str, Any]) -> None:
-    _write_json(CONSENT_PATH, _normalize_consent(record))
+    _write_json(paths.CONSENT_PATH, _normalize_consent(record))
 
 
 def _find_connection(record: dict[str, Any], aspsp: str, country: str) -> dict[str, Any] | None:
@@ -502,7 +502,7 @@ def _consent_person_matches(record: dict[str, Any], profile: dict[str, Any]) -> 
 
 def needs_consent_renewal() -> bool:
     """True when the profile bank has no valid connection (for the consent banner)."""
-    if not CONSENT_PATH.exists():
+    if not paths.CONSENT_PATH.exists():
         return True
     try:
         profile = load_profile()
