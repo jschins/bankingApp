@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lokale-boekhouding"
+version = "0.1"
+description = "Local multi-person bookkeeping admin; syncs selected files with centraleBoekhouding"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+authors = [
+  { name = "juleon", email = "j.m.schins@gmail.com" }
+]
+
+dependencies = [
+  "banking-app-shared",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.6.0",
+  "tzdata>=2024.1",
+]
+
+[project.scripts]
+lokale-boekhouding = "app.main:run"
+
+[dependency-groups]
+build = ["pyinstaller>=6.0"]
+
+[tool.uv.sources]
+banking-app-shared = { path = "../shared" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
