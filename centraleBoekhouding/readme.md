@@ -104,14 +104,13 @@ Open `http://<host>:8400/` for central notifications and a simple central save f
 cd centraleBoekhouding
 uv sync
 uv run centrale-boekhouding
-# or
+# Hub exe:
 uv run --group build python scripts/build_onefile.py
-# → boekhouding/centraleBoekhouding.exe
+# → boekhouding/centraleBoekhouding.exe (:8400)
 
-# Central admin UI (from lokaleBoekhouding sources):
-cd ..\lokaleBoekhouding
+# Central admin UI (bundles lokaleBoekhouding frontend; always rebuilds it):
 uv run --group build python scripts/build_centrale_admin.py
-# → centraleBoekhouding/boekhouding/centraleAdmin.exe (:8300)
+# → boekhouding/centraleAdmin.exe (:8300)
 ```
 
 Start hub first (:8400), then `centraleAdmin.exe` (:8300).

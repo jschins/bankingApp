@@ -14,6 +14,7 @@ import {
   type CentraleSyncStatus,
   type SyncNotification,
 } from "./api";
+import { IS_CENTRAL_ADMIN } from "./mode";
 import type {
   MatrixResponse,
   PersonInfo,
@@ -118,7 +119,24 @@ function SyncNotifyShell({
     };
   }, []);
 
+  const isCentralAdmin =
+    IS_CENTRAL_ADMIN || status?.role === "central_admin";
+  // Central admin: all hub workspaces. Local peer: only this workspace.
+  const workspaces = isCentralAdmin
+    ? status?.workspaces?.length
+      ? status.workspaces
+      : status?.workspace
+        ? [status.workspace]
+        : []
+    : status?.workspace
+      ? [status.workspace]
+      : [];
+
   function handleSelect(ws: string) {
+    if (!isCentralAdmin) {
+      // Local peer: dropdown is display-only (single workspace).
+      return;
+    }
     setSwitching(true);
     setWorkspace(ws)
       .then(() => {
@@ -128,33 +146,21 @@ function SyncNotifyShell({
       .finally(() => setSwitching(false));
   }
 
-  const isCentralAdmin = status?.role === "central_admin";
-  const workspaces = status?.workspaces?.length
-    ? status.workspaces
-    : status?.workspace
-      ? [status.workspace]
-      : [];
+  const showBar = Boolean(status?.enabled) || isCentralAdmin;
 
   return (
     <div className="lock-shell">
-      {status?.enabled && (
+      {showBar && (
         <div className="centrale-status-bar">
-          {isCentralAdmin ? (
-            <div className="centrale-status-left">
-              <WorkspaceSwitcher
-                workspace={status.workspace}
-                workspaces={workspaces}
-                onSelect={handleSelect}
-              />
-              {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
-              {status.error ? <span> · sync error: {status.error}</span> : null}
-            </div>
-          ) : (
-            <span>
-              Centrale: {status.centrale_url} · workspace {status.workspace}
-              {status.error ? ` · sync error: ${status.error}` : ""}
-            </span>
-          )}
+          <div className="centrale-status-left">
+            <WorkspaceSwitcher
+              workspace={status?.workspace || "…"}
+              workspaces={workspaces}
+              onSelect={handleSelect}
+            />
+            {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
+            {status?.error ? <span> · sync error: {status.error}</span> : null}
+          </div>
           <div className="sync-notify-row">
             {notes.map((n) => (
               <button key={`${n.file_path}-${n.expires_at}`} type="button" className="sync-notify-btn">
@@ -267,7 +273,7 @@ function MainApp() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
-  const [centralAdmin, setCentralAdmin] = useState(false);
+  const [centralAdmin, setCentralAdmin] = useState(IS_CENTRAL_ADMIN);
   const [dateFrom, setDateFrom] = useState(() => previousMonthRange().from);
   const [dateTo, setDateTo] = useState(() => previousMonthRange().to);
   const prevMonth = previousMonthRange();
@@ -281,6 +287,10 @@ function MainApp() {
   const dirtyRef = useRef(false);
 
   useEffect(() => {
+    if (IS_CENTRAL_ADMIN) {
+      setCentralAdmin(true);
+      return;
+    }
     getCentraleStatus()
       .then((s) => setCentralAdmin(s.role === "central_admin"))
       .catch(() => setCentralAdmin(false));

@@ -59,8 +59,9 @@ $env:LOKALE_WORKSPACE="jl"; uv run lokale-boekhouding
 uv run --group build python scripts/build_onefile.py
 # → dkg/lokaleBoekhouding.exe and jl/lokaleBoekhouding.exe
 
-uv run --group build python scripts/build_centrale_admin.py
-# → ../centraleBoekhouding/boekhouding/centraleAdmin.exe
+# Central admin UI: build from the hub package
+#   cd ../centraleBoekhouding
+#   uv run --group build python scripts/build_centrale_admin.py
 ```
 
 Start the hub (`centraleBoekhouding` on **8400**) first if you want sync.

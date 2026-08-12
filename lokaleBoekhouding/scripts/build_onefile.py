@@ -31,19 +31,19 @@ def _run(cmd: list[str], *, cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def _ensure_frontend() -> None:
-    if (FRONTEND_DIST / "index.html").is_file():
-        return
-    print("Building frontend...")
+def _ensure_frontend(*, force: bool = False) -> None:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
-    _run([npm, "install"], cwd=FRONTEND)
-    _run([npm, "run", "build"], cwd=FRONTEND)
+    if force or not (FRONTEND_DIST / "index.html").is_file():
+        print("Building frontend...")
+        _run([npm, "install"], cwd=FRONTEND)
+        _run([npm, "run", "build"], cwd=FRONTEND)
     if not (FRONTEND_DIST / "index.html").is_file():
         raise SystemExit(f"frontend build failed: {FRONTEND_DIST / 'index.html'} missing")
 
 
 def main() -> int:
-    _ensure_frontend()
+    # Rebuild UI when shipping so status-bar / sync changes are not stale.
+    _ensure_frontend(force=True)
     for deploy in DEPLOY_DIRS:
         deploy.mkdir(parents=True, exist_ok=True)
 

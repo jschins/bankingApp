@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
-"""Build centraleAdmin.exe (lokaleBoekhouding in central_admin role).
+"""Build centraleAdmin.exe into ``boekhouding/`` (next to the hub exe).
 
-Output: ``centraleBoekhouding/boekhouding/centraleAdmin.exe`` next to the hub
-data root and ``lokale_config.json`` (role=central_admin, port 8300).
+The hub itself has no React UI. ``centraleAdmin`` reuses the
+``lokaleBoekhouding`` app + frontend with ``role=central_admin``
+(``entry_centrale_admin.py``).
+
+Always rebuilds the lokale frontend so the workspace switcher / no-Refresh
+UI is not shipped stale.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from app.runtime import project_root
-
-PROJECT = project_root()
-FRONTEND = PROJECT / "frontend"
+CENTRALE = Path(__file__).resolve().parents[1]
+LOKALE = CENTRALE.parent / "lokaleBoekhouding"
+FRONTEND = LOKALE / "frontend"
 FRONTEND_DIST = FRONTEND / "dist"
-ENTRY = PROJECT / "entry.py"
+ENTRY = LOKALE / "entry_centrale_admin.py"
 NAME = "centraleAdmin"
-HUB_DEPLOY = PROJECT.parent / "centraleBoekhouding" / "boekhouding"
-BUILD_DIST = HUB_DEPLOY
+DEPLOY = CENTRALE / "boekhouding"
 
 
 def _run(cmd: list[str], *, cwd: Path) -> None:
@@ -29,27 +30,33 @@ def _run(cmd: list[str], *, cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def _ensure_frontend() -> None:
-    if (FRONTEND_DIST / "index.html").is_file():
-        return
-    print("Building frontend...")
+def _ensure_lokale_frontend() -> None:
+    if not LOKALE.is_dir():
+        raise SystemExit(f"Missing lokaleBoekhouding sources at {LOKALE}")
+    if not ENTRY.is_file():
+        raise SystemExit(f"Missing entry point: {ENTRY}")
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    print(f"Building frontend from {FRONTEND} (VITE_APP_MODE=central_admin) ...")
+    env = {**os.environ, "VITE_APP_MODE": "central_admin"}
     _run([npm, "install"], cwd=FRONTEND)
-    _run([npm, "run", "build"], cwd=FRONTEND)
+    print("+", " ".join([npm, "run", "build"]), f"(cwd={FRONTEND}, VITE_APP_MODE=central_admin)")
+    subprocess.run([npm, "run", "build"], cwd=FRONTEND, env=env, check=True)
     if not (FRONTEND_DIST / "index.html").is_file():
         raise SystemExit(f"frontend build failed: {FRONTEND_DIST / 'index.html'} missing")
 
 
 def main() -> int:
-    _ensure_frontend()
-    HUB_DEPLOY.mkdir(parents=True, exist_ok=True)
+    _ensure_lokale_frontend()
+    DEPLOY.mkdir(parents=True, exist_ok=True)
 
     sep = os.pathsep
     add_data = f"{FRONTEND_DIST}{sep}frontend/dist"
     exe_name = NAME + (".exe" if sys.platform == "win32" else "")
 
+    # Prefer hub venv pyinstaller if present; else PATH.
+    pyinstaller = "pyinstaller"
     cmd = [
-        "pyinstaller",
+        pyinstaller,
         "--onefile",
         "--clean",
         "--noconfirm",
@@ -57,13 +64,13 @@ def main() -> int:
         "--name",
         NAME,
         "--paths",
-        str(PROJECT),
+        str(LOKALE),
         "--distpath",
-        str(BUILD_DIST),
+        str(DEPLOY),
         "--workpath",
-        str(PROJECT / "build_centrale_admin"),
+        str(CENTRALE / "build_centrale_admin"),
         "--specpath",
-        str(PROJECT),
+        str(CENTRALE / "build_centrale_admin"),
         "--add-data",
         add_data,
         "--collect-submodules",
@@ -99,29 +106,27 @@ def main() -> int:
         str(ENTRY),
     ]
 
-    _run(cmd, cwd=PROJECT)
+    _run(cmd, cwd=LOKALE)
 
-    built = BUILD_DIST / exe_name
+    built = DEPLOY / exe_name
     if not built.is_file():
         raise SystemExit(f"Build failed: {built} not created")
 
-    cfg = HUB_DEPLOY / "lokale_config.json"
-    if not cfg.is_file():
-        cfg.write_text(
-            '{\n'
-            '  "role": "central_admin",\n'
-            '  "enabled": true,\n'
-            '  "centrale_url": "http://127.0.0.1:8400",\n'
-            '  "workspace": "dkg",\n'
-            '  "port": 8300,\n'
-            '  "api_key": ""\n'
-            "}\n",
-            encoding="utf-8",
-        )
-        print(f"Wrote {cfg}")
-
+    cfg = DEPLOY / "lokale_config.json"
+    cfg.write_text(
+        "{\n"
+        '  "role": "central_admin",\n'
+        '  "enabled": true,\n'
+        '  "centrale_url": "http://127.0.0.1:8400",\n'
+        '  "workspace": "dkg",\n'
+        '  "port": 8300,\n'
+        '  "api_key": ""\n'
+        "}\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote {cfg}")
     print(f"\nBuilt: {built}")
-    print("Run hub centraleBoekhouding.exe (:8400) first, then centraleAdmin.exe (:8300).")
+    print("Run centraleBoekhouding.exe (:8400) first, then centraleAdmin.exe (:8300).")
     return 0
 
 
