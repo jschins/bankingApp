@@ -180,10 +180,22 @@ def put_file(
                     "source": last_source,
                 }
 
+        existing = _read_json_or_none(path)
+        if _json_equal(existing, content):
+            return {
+                "ok": True,
+                "central_wins": False,
+                "unchanged": True,
+                "workspace": ws,
+                "path": rel,
+                "content": existing,
+                "revision": current_rev,
+                "source": last_source,
+            }
+
         new_rev = current_rev + 1
         if rel == SHARED_CATEGORIES and not skip_categories_merge:
-            previous = _read_json_or_none(path)
-            record_category_term_diff(previous, content)
+            record_category_term_diff(existing, content)
         _write_json(path, content)
         now = time.time()
         _file_meta[key] = {"revision": new_rev, "source": source, "mtime": now}
@@ -533,3 +545,12 @@ def _read_json_or_none(path: Path) -> Any | None:
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _json_equal(a: Any, b: Any) -> bool:
+    try:
+        return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(
+            b, sort_keys=True, ensure_ascii=False
+        )
+    except (TypeError, ValueError):
+        return False

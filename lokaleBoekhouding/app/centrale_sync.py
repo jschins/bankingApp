@@ -25,6 +25,8 @@ _pending_notifications: list[dict[str, Any]] = []
 _state_lock = threading.Lock()
 _worker_thread: threading.Thread | None = None
 _worker_stop = threading.Event()
+_push_wake = threading.Event()
+_push_pending: set[str] = set()
 _NOTIFY_TTL_SEC = 15.0
 
 
@@ -187,7 +189,11 @@ def apply_remote_files(payload: dict[str, Any]) -> None:
 
 
 def push_paths(paths: list[str]) -> dict[str, Any]:
-    """Immediately PUT each local tracked file to centrale."""
+    """Immediately PUT each local tracked file to centrale.
+
+    Unchanged files (same JSON as hub) are skipped so they do not create
+    notifications for unrelated people.
+    """
     global _last_error
     cfg = load_config()
     if not cfg.enabled:
@@ -196,16 +202,23 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
         return {"ok": True, "skipped": True, "reason": "session inactive"}
 
     results: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for rel in paths:
         rel_n = rel.replace("\\", "/").lstrip("/")
+        if rel_n in seen:
+            continue
+        seen.add(rel_n)
         content = read_local_path(rel_n)
         if content is None:
             results.append({"path": rel_n, "ok": False, "error": "missing local file"})
             continue
         try:
-            # Always refresh hub revision before PUT. Using 0 after restart made
-            # every local write look stale (central_wins) and overwrite the edit.
-            rev = _hub_revision(cfg.workspace, rel_n)
+            hub = _hub_file(cfg.workspace, rel_n)
+            rev = int(hub.get("revision") or 0)
+            _file_revisions[rel_n] = rev
+            if _json_equal(hub.get("content"), content):
+                results.append({"path": rel_n, "ok": True, "skipped": True, "reason": "unchanged"})
+                continue
             res = _request(
                 "PUT",
                 f"/api/local/{cfg.workspace}/file",
@@ -217,7 +230,6 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
                 },
             )
             if res.get("central_wins"):
-                # True race: hub moved ahead while we wrote. Keep hub copy.
                 if res.get("content") is not None:
                     apply_local_path(rel_n, res["content"])
                 _file_revisions[rel_n] = int(res.get("revision") or rev)
@@ -234,10 +246,23 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
     return {"ok": ok, "results": results}
 
 
+def _json_equal(a: Any, b: Any) -> bool:
+    try:
+        return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(
+            b, sort_keys=True, ensure_ascii=False
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _hub_file(workspace: str, rel_path: str) -> dict[str, Any]:
+    q = urllib.parse.urlencode({"path": rel_path})
+    return _request("GET", f"/api/local/{workspace}/file?{q}", timeout=10.0)
+
+
 def _hub_revision(workspace: str, rel_path: str) -> int:
     try:
-        q = urllib.parse.urlencode({"path": rel_path})
-        data = _request("GET", f"/api/local/{workspace}/file?{q}", timeout=10.0)
+        data = _hub_file(workspace, rel_path)
         rev = int(data.get("revision") or 0)
         _file_revisions[rel_path] = rev
         return rev
@@ -247,7 +272,40 @@ def _hub_revision(workspace: str, rel_path: str) -> int:
 
 
 def mark_and_push(paths: list[str]) -> dict[str, Any]:
+    """Queue paths for background up-sync; return immediately (UI must not wait)."""
+    normalized = [
+        p.replace("\\", "/").lstrip("/")
+        for p in paths
+        if p and str(p).strip()
+    ]
+    if not normalized:
+        return {"ok": True, "queued": False, "paths": []}
+    with _state_lock:
+        _push_pending.update(normalized)
+    _push_wake.set()
+    return {"ok": True, "queued": True, "paths": normalized}
+
+
+def flush_pending_pushes() -> dict[str, Any]:
+    """Synchronously push any queued paths (used on shutdown)."""
+    with _state_lock:
+        paths = sorted(_push_pending)
+        _push_pending.clear()
+    _push_wake.clear()
+    if not paths:
+        return {"ok": True, "skipped": True, "reason": "nothing queued"}
     return push_paths(paths)
+
+
+def _drain_push_queue() -> None:
+    with _state_lock:
+        paths = sorted(_push_pending)
+        _push_pending.clear()
+    if paths:
+        try:
+            push_paths(paths)
+        except Exception:
+            pass
 
 
 def pull_event_file(event: dict[str, Any]) -> None:
@@ -357,6 +415,8 @@ def end_session_and_push() -> dict[str, Any]:
         if child.is_dir() and (child / "data").is_dir():
             paths.append(f"{child.name}/data/{CATEGORIZED}")
             paths.append(f"{child.name}/data/{PERSONAL_CATEGORIES}")
+    # Finish any queued background pushes before the final sync push.
+    flush_pending_pushes()
     push = push_paths(paths)
     try:
         _request("POST", f"/api/local/{ws}/session/end")
@@ -370,11 +430,19 @@ def end_session_and_push() -> dict[str, Any]:
 
 
 def _worker_loop() -> None:
-    while not _worker_stop.wait(1.5):
+    while not _worker_stop.is_set():
+        woken = _push_wake.wait(timeout=1.5)
+        if _worker_stop.is_set():
+            break
+        if woken:
+            _push_wake.clear()
+            _drain_push_queue()
         try:
             poll_central_events()
         except Exception:
             pass
+    # Final drain on stop.
+    _drain_push_queue()
 
 
 def start_event_worker() -> None:
@@ -382,6 +450,7 @@ def start_event_worker() -> None:
     if _worker_thread and _worker_thread.is_alive():
         return
     _worker_stop.clear()
+    _push_wake.clear()
     _worker_thread = threading.Thread(target=_worker_loop, name="centrale-events", daemon=True)
     _worker_thread.start()
 
@@ -389,6 +458,8 @@ def start_event_worker() -> None:
 def stop_event_worker() -> None:
     global _worker_thread
     _worker_stop.set()
+    _push_wake.set()  # unblock wait so shutdown can drain
     if _worker_thread and _worker_thread.is_alive():
-        _worker_thread.join(timeout=2.0)
+        _worker_thread.join(timeout=5.0)
+    flush_pending_pushes()
     _worker_thread = None

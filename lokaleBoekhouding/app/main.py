@@ -109,17 +109,24 @@ def api_centrale_notifications() -> dict[str, Any]:
 
 
 def _tracked_paths_for_people() -> list[str]:
-    paths = ["categories.json"]
-    for p in get_people():
-        paths.append(f"{p.folder_name}/data/categorized_transactions.json")
-        paths.append(f"{p.folder_name}/data/personal_categories.json")
-    return paths
+    """All people categorized_transactions paths (not personal_categories)."""
+    return [
+        f"{p.folder_name}/data/categorized_transactions.json" for p in get_people()
+    ]
+
+
+def _person_categorized_path(folder_name: str) -> str:
+    return f"{folder_name}/data/categorized_transactions.json"
+
+
+def _person_personal_path(folder_name: str) -> str:
+    return f"{folder_name}/data/personal_categories.json"
 
 
 def _person_tracked_paths(folder_name: str) -> list[str]:
     return [
-        f"{folder_name}/data/categorized_transactions.json",
-        f"{folder_name}/data/personal_categories.json",
+        _person_categorized_path(folder_name),
+        _person_personal_path(folder_name),
     ]
 
 @app.get("/api/people")
@@ -218,7 +225,7 @@ def api_modification(short: str, body: ModificationRequest) -> dict[str, Any]:
             modified = record_modification(body.transaction)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    mark_and_push(_person_tracked_paths(pack.folder_name))
+    mark_and_push([_person_categorized_path(pack.folder_name)])
     return {"transaction": modified, "person": pack.short}
 
 
@@ -275,6 +282,7 @@ def api_update_settings(
     if group == "general":
         terms = save_general_terms(category_name, body.terms)
         matrix = recalculate_all()
+        # General terms: shared categories + recategorized transactions only.
         mark_and_push(["categories.json"] + _tracked_paths_for_people())
         return {"group": "general", "category": category_name, "terms": terms, "matrix": matrix}
 
