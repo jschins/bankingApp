@@ -11,13 +11,20 @@ def is_frozen() -> bool:
 
 
 def data_root() -> Path:
-    """Directory that contains workspace folders (e.g. ``dkg/``)."""
+    """Directory that contains workspace folders (e.g. ``dkg/``).
+
+    Prefer ``boekhouding/`` next to the exe (frozen) or under the project (dev).
+    """
     env = os.environ.get("CENTRALE_DATA_ROOT", "").strip()
     if env:
         return Path(env).resolve()
     if is_frozen():
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[1]
+    project = Path(__file__).resolve().parents[1]
+    boekhouding = project / "boekhouding"
+    if boekhouding.is_dir():
+        return boekhouding
+    return project
 
 
 def project_root() -> Path:

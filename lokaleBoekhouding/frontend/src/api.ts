@@ -92,22 +92,25 @@ export function recordModification(
   });
 }
 
-export interface CentraleLockStatus {
+export interface SyncNotification {
+  file_path: string;
+  expires_at: number;
+}
+
+export interface CentraleSyncStatus {
   enabled: boolean;
-  central_admin_logged_in: boolean;
-  local_session_active: boolean;
-  show_overwrite_warning: boolean;
   workspace: string;
   centrale_url: string;
+  local_session_active: boolean;
   error: string | null;
-  local_sessions?: string[];
+  last_event_id?: number;
+  notifications?: SyncNotification[];
 }
 
-export function getCentraleLock(): Promise<CentraleLockStatus> {
-  return getJson("/api/centrale/lock");
+export function getCentraleStatus(): Promise<CentraleSyncStatus> {
+  return getJson("/api/centrale/status");
 }
 
-export function logoutCentrale(): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
-  return sendJson("/api/centrale/logout", "POST", {});
+export function getCentraleNotifications(): Promise<{ notifications: SyncNotification[] }> {
+  return getJson("/api/centrale/notifications");
 }
-

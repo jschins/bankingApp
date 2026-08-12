@@ -10,25 +10,26 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1]
 ENTRY = PROJECT / "entry.py"
 NAME = "centraleBoekhouding"
-DIST = PROJECT / "dist"
+DEPLOY = PROJECT / "boekhouding"
 
 
 def main() -> int:
-    DIST.mkdir(parents=True, exist_ok=True)
+    DEPLOY.mkdir(parents=True, exist_ok=True)
     cmd = [
         "pyinstaller",
         "--onefile",
         "--clean",
         "--noconfirm",
         f"--name={NAME}",
-        f"--distpath={DIST}",
+        f"--distpath={DEPLOY}",
         f"--workpath={PROJECT / 'build'}",
         f"--specpath={PROJECT / 'build'}",
         str(ENTRY),
     ]
     print("+", " ".join(cmd))
     subprocess.run(cmd, cwd=PROJECT, check=True)
-    print(f"Built: {DIST / (NAME + ('.exe' if sys.platform == 'win32' else ''))}")
+    out = DEPLOY / (NAME + (".exe" if sys.platform == "win32" else ""))
+    print(f"Built: {out}")
     return 0
 
 

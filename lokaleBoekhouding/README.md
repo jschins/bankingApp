@@ -1,14 +1,18 @@
 # lokaleBoekhouding
 
-Local multi-person admin (`lokaleBoekhouding.exe`), forked from `boekh-multiperson`, with sync against [`centraleBoekhouding`](../centraleBoekhouding/).
+Local multi-person admin (`lokaleBoekhouding.exe`), syncing immediately with [`centraleBoekhouding`](../centraleBoekhouding/).
 
 ## Behaviour
 
-1. **Start (local login):** register session on centrale, **pull** selected files into `boekhouding/`.
-2. **While running:** poll the centrale lock flag every ~2s. If the central admin is logged in (or was while this session is still open), the UI turns **light pink** with a **large red caution** that local edits will be overwritten.
-3. **Logout:** button **Logout & sync to centrale**, or process exit — **push** selected files, clear session and sticky warning.
+1. **Session start:** register with centrale and pull tracked files for this workspace.
+2. **Local mutation:** each successful write immediately up-syncs the affected tracked file(s). If centrale reports `central_wins`, local content is overwritten from the hub.
+3. **Incoming central changes:** a background poll of `/api/events` applies matching files and shows a **5-second notification button** labeled with the file path.
+4. **Categories:** when any peer’s `categories.json` changes, centrale merges all peers into a root `categories.json` and pushes the merge to every peer; all peers are notified.
+5. **Person files:** only this workspace is notified when centrale changes files under this workspace.
+6. **No sync button / no pink lock UI** — notifications only.
+7. **Process exit:** best-effort push of tracked files, then end session.
 
-Selected files (workspace e.g. `dkg` on the server):
+Tracked files:
 
 - `boekhouding/categories.json`
 - `boekhouding/<person>/data/categorized_transactions.json`
@@ -16,7 +20,7 @@ Selected files (workspace e.g. `dkg` on the server):
 
 ## Config
 
-Place `boekhouding/lokale_config.json` next to the exe (already in this tree for dev):
+`boekhouding/lokale_config.json`:
 
 ```json
 {
@@ -27,7 +31,7 @@ Place `boekhouding/lokale_config.json` next to the exe (already in this tree for
 }
 ```
 
-Env overrides: `CENTRALE_URL`, `LOKALE_WORKSPACE`, `CENTRALE_API_KEY`, `CENTRALE_SYNC=0` to disable.
+Env overrides: `CENTRALE_URL`, `LOKALE_WORKSPACE`, `CENTRALE_API_KEY`, `CENTRALE_SYNC=0`.
 
 ## Run / build
 
@@ -35,7 +39,6 @@ Env overrides: `CENTRALE_URL`, `LOKALE_WORKSPACE`, `CENTRALE_API_KEY`, `CENTRALE
 cd lokaleBoekhouding
 uv sync
 uv run lokale-boekhouding
-# build:
 uv run --group build python scripts/build_onefile.py
 # → boekhouding/lokaleBoekhouding.exe
 ```

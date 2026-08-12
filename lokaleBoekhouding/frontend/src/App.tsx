@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   addCategoryTerm,
-  getCentraleLock,
+  getCentraleNotifications,
+  getCentraleStatus,
   getMatrix,
   getSettings,
   getTransactions,
-  logoutCentrale,
   recalculate,
   recordModification,
   refreshAll,
   updateSettings,
-  type CentraleLockStatus,
+  type CentraleSyncStatus,
+  type SyncNotification,
 } from "./api";
 import type {
   MatrixResponse,
@@ -22,71 +23,49 @@ import type {
 
 const CHANNEL = "boekhouding";
 
-const WARN_TEXT =
-  "CAUTION: the central administrator is logged in. All modifications you make locally will be overwritten when the central administrator logs out.";
-
 type CellSelection = { short: string; category: string };
 
-function CentralLockShell({ children }: { children: ReactNode }) {
-  const [lock, setLock] = useState<CentraleLockStatus | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+function SyncNotifyShell({ children }: { children: ReactNode }) {
+  const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
+  const [notes, setNotes] = useState<SyncNotification[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     function poll() {
-      getCentraleLock()
+      getCentraleStatus()
         .then((s) => {
-          if (!cancelled) setLock(s);
+          if (!cancelled) setStatus(s);
         })
-        .catch(() => {
-          /* keep last known */
-        });
+        .catch(() => {});
+      getCentraleNotifications()
+        .then((payload) => {
+          if (!cancelled) setNotes(payload.notifications || []);
+        })
+        .catch(() => {});
     }
     poll();
-    const id = window.setInterval(poll, 2000);
+    const id = window.setInterval(poll, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
   }, []);
 
-  const warn = !!lock?.show_overwrite_warning;
-
-  useEffect(() => {
-    document.body.classList.toggle("centrale-lock-warn", warn);
-    return () => document.body.classList.remove("centrale-lock-warn");
-  }, [warn]);
-
-  function doLogout() {
-    setLoggingOut(true);
-    logoutCentrale()
-      .then(() => {
-        window.alert(
-          "Synced to centrale and logged out locally. You can close this window; restart the app to log in again."
-        );
-        return getCentraleLock().then(setLock);
-      })
-      .catch((e: Error) => window.alert(e.message))
-      .finally(() => setLoggingOut(false));
-  }
-
   return (
-    <div className={warn ? "lock-shell warn" : "lock-shell"}>
-      {warn && (
-        <div className="centrale-warn-banner" role="alert">
-          {WARN_TEXT}
-        </div>
-      )}
-      {lock?.enabled && (
+    <div className="lock-shell">
+      {status?.enabled && (
         <div className="centrale-status-bar">
           <span>
-            Centrale: {lock.centrale_url} · workspace {lock.workspace}
-            {lock.central_admin_logged_in ? " · central IN" : " · central out"}
-            {lock.error ? ` · sync error: ${lock.error}` : ""}
+            Centrale: {status.centrale_url} · workspace {status.workspace}
+            {status.error ? ` · sync error: ${status.error}` : ""}
           </span>
-          <button type="button" className="logout-sync-btn" onClick={doLogout} disabled={loggingOut}>
-            {loggingOut ? "Syncing…" : "Logout & sync to centrale"}
-          </button>
+          <div className="sync-notify-row">
+            {notes.map((n) => (
+              <button key={`${n.file_path}-${n.expires_at}`} type="button" className="sync-notify-btn">
+                {n.file_path}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {children}
@@ -178,7 +157,7 @@ function isPlainAlt(e: KeyboardEvent): boolean {
 export default function App() {
   const isTerms = new URLSearchParams(window.location.search).get("view") === "terms";
   return (
-    <CentralLockShell>{isTerms ? <TermsApp /> : <MainApp />}</CentralLockShell>
+    <SyncNotifyShell>{isTerms ? <TermsApp /> : <MainApp />}</SyncNotifyShell>
   );
 }
 

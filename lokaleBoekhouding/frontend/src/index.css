@@ -12,16 +12,6 @@ body {
   margin: 0;
 }
 
-body.centrale-lock-warn {
-  background: #ffe4ec;
-}
-
-body.centrale-lock-warn .app,
-body.centrale-lock-warn .sidebar,
-body.centrale-lock-warn .main-panel {
-  background: #ffe4ec;
-}
-
 .lock-shell {
   min-height: 100vh;
   height: 100vh;
@@ -30,26 +20,10 @@ body.centrale-lock-warn .main-panel {
   overflow: hidden;
 }
 
-.lock-shell.warn {
-  background: #ffe4ec;
-}
-
 .lock-shell .app {
   flex: 1;
   min-height: 0;
   height: auto;
-}
-
-.centrale-warn-banner {
-  flex: 0 0 auto;
-  padding: 1.25rem 1.5rem;
-  text-align: center;
-  font-size: clamp(1.35rem, 2.8vw, 2.1rem);
-  font-weight: 700;
-  line-height: 1.25;
-  color: #c1121f;
-  background: #ffd6e0;
-  border-bottom: 3px solid #c1121f;
 }
 
 .centrale-status-bar {
@@ -66,18 +40,19 @@ body.centrale-lock-warn .main-panel {
   border-bottom: 1px solid #e3e3e6;
 }
 
-.logout-sync-btn {
-  font: inherit;
-  cursor: pointer;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid #334155;
-  background: #fff;
-  color: #1a1a1a;
+.sync-notify-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
-.logout-sync-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.sync-notify-btn {
+  font: inherit;
+  cursor: default;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #334155;
+  background: #fff;
+  color: #0f172a;
 }
 
 .app {

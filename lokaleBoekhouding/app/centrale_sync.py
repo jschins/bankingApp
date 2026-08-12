@@ -1,9 +1,11 @@
-"""Client for centraleBoekhouding lock + selected-file sync."""
+"""Immediate per-file sync client for centraleBoekhouding."""
 from __future__ import annotations
 
 import json
 import os
-import urllib.error
+import threading
+import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,9 +17,15 @@ CATEGORIZED = "categorized_transactions.json"
 PERSONAL_CATEGORIES = "personal_categories.json"
 SHARED_CATEGORIES = "categories.json"
 
-_saw_central_lock = False
 _local_session_active = False
 _last_error: str | None = None
+_file_revisions: dict[str, int] = {}
+_last_event_id = 0
+_pending_notifications: list[dict[str, Any]] = []
+_state_lock = threading.Lock()
+_worker_thread: threading.Thread | None = None
+_worker_stop = threading.Event()
+_NOTIFY_TTL_SEC = 5.0
 
 
 @dataclass(frozen=True)
@@ -29,7 +37,6 @@ class CentraleConfig:
 
 
 def load_config() -> CentraleConfig:
-    """Resolve sync settings from env and optional ``lokale_config.json`` beside the deploy root."""
     cfg_path = app_root() / "lokale_config.json"
     file_cfg: dict[str, Any] = {}
     if cfg_path.is_file():
@@ -86,136 +93,54 @@ def _request(
         return json.loads(raw)
 
 
-def lock_status() -> dict[str, Any]:
-    """Poll centrale lock; maintain sticky warning until local logout after seeing central lock."""
-    global _saw_central_lock, _last_error
+def sync_status() -> dict[str, Any]:
     cfg = load_config()
-    if not cfg.enabled:
-        return {
-            "enabled": False,
-            "central_admin_logged_in": False,
-            "local_session_active": _local_session_active,
-            "show_overwrite_warning": False,
-            "workspace": cfg.workspace,
-            "centrale_url": cfg.url,
-            "error": None,
-        }
-    try:
-        remote = _request("GET", "/api/lock", timeout=5.0)
-        _last_error = None
-        if remote.get("central_admin_logged_in"):
-            _saw_central_lock = True
-        show = bool(remote.get("central_admin_logged_in")) or (
-            _saw_central_lock and _local_session_active
+    with _state_lock:
+        notes = _active_notifications_unlocked()
+    return {
+        "enabled": cfg.enabled,
+        "workspace": cfg.workspace,
+        "centrale_url": cfg.url,
+        "local_session_active": _local_session_active,
+        "error": _last_error,
+        "last_event_id": _last_event_id,
+        "notifications": notes,
+    }
+
+
+def pop_notifications() -> dict[str, Any]:
+    with _state_lock:
+        notes = _active_notifications_unlocked()
+    return {"notifications": notes}
+
+
+def _active_notifications_unlocked() -> list[dict[str, Any]]:
+    now = time.time()
+    alive = [n for n in _pending_notifications if float(n.get("expires_at", 0)) > now]
+    _pending_notifications[:] = alive
+    return list(alive)
+
+
+def _queue_notification(display_path: str) -> None:
+    with _state_lock:
+        _pending_notifications.append(
+            {
+                "file_path": display_path,
+                "expires_at": time.time() + _NOTIFY_TTL_SEC,
+            }
         )
-        return {
-            "enabled": True,
-            "central_admin_logged_in": bool(remote.get("central_admin_logged_in")),
-            "local_sessions": remote.get("local_sessions") or [],
-            "local_session_active": _local_session_active,
-            "show_overwrite_warning": show,
-            "workspace": cfg.workspace,
-            "centrale_url": cfg.url,
-            "error": None,
-        }
-    except Exception as exc:  # noqa: BLE001 — surface any transport/JSON failure to UI
-        _last_error = str(exc)
-        show = _saw_central_lock and _local_session_active
-        return {
-            "enabled": True,
-            "central_admin_logged_in": False,
-            "local_session_active": _local_session_active,
-            "show_overwrite_warning": show,
-            "workspace": cfg.workspace,
-            "centrale_url": cfg.url,
-            "error": _last_error,
-        }
 
 
-def collect_local_files() -> dict[str, Any]:
+def apply_local_path(rel_path: str, content: Any) -> None:
     root = app_root()
-    categories_path = root / SHARED_CATEGORIES
-    categories = _read_json(categories_path)
-    people: dict[str, Any] = {}
-    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
-        if not child.is_dir() or not (child / "data").is_dir():
-            continue
-        data = child / "data"
-        people[child.name] = {
-            "categorized_transactions": _read_json(data / CATEGORIZED),
-            "personal_categories": _read_json(data / PERSONAL_CATEGORIES),
-        }
-    return {"categories": categories, "people": people}
+    rel = rel_path.replace("\\", "/").lstrip("/")
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def apply_remote_files(payload: dict[str, Any]) -> None:
-    root = app_root()
-    if payload.get("categories") is not None:
-        _write_json(root / SHARED_CATEGORIES, payload["categories"])
-    people = payload.get("people") or {}
-    if not isinstance(people, dict):
-        return
-    for person, files in people.items():
-        if not isinstance(files, dict):
-            continue
-        safe = Path(person).name
-        data_dir = root / safe / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        if files.get("categorized_transactions") is not None:
-            _write_json(data_dir / CATEGORIZED, files["categorized_transactions"])
-        if files.get("personal_categories") is not None:
-            _write_json(data_dir / PERSONAL_CATEGORIES, files["personal_categories"])
-
-
-def login_and_pull() -> dict[str, Any]:
-    """Register local session and pull selected files from centrale."""
-    global _local_session_active, _saw_central_lock, _last_error
-    cfg = load_config()
-    if not cfg.enabled:
-        _local_session_active = True
-        return {"ok": True, "skipped": True, "reason": "sync disabled"}
-    ws = cfg.workspace
-    try:
-        _request("POST", f"/api/local/{ws}/login")
-        files = _request("GET", f"/api/local/{ws}/files")
-        apply_remote_files(files)
-        _local_session_active = True
-        # If central already logged in at pull time, sticky warning starts immediately.
-        remote = _request("GET", "/api/lock", timeout=5.0)
-        if remote.get("central_admin_logged_in"):
-            _saw_central_lock = True
-        _last_error = None
-        return {"ok": True, "workspace": ws, "people": list((files.get("people") or {}).keys())}
-    except Exception as exc:  # noqa: BLE001
-        _last_error = str(exc)
-        _local_session_active = True  # still allow offline local work
-        return {"ok": False, "error": _last_error, "workspace": ws}
-
-
-def logout_and_push() -> dict[str, Any]:
-    """Push selected files to centrale and end local session."""
-    global _local_session_active, _saw_central_lock, _last_error
-    cfg = load_config()
-    if not cfg.enabled:
-        _local_session_active = False
-        _saw_central_lock = False
-        return {"ok": True, "skipped": True, "reason": "sync disabled"}
-    ws = cfg.workspace
-    try:
-        payload = collect_local_files()
-        _request("PUT", f"/api/local/{ws}/files", body=payload)
-        _request("POST", f"/api/local/{ws}/logout")
-        _last_error = None
-        result: dict[str, Any] = {"ok": True, "workspace": ws}
-    except Exception as exc:  # noqa: BLE001
-        _last_error = str(exc)
-        result = {"ok": False, "error": _last_error, "workspace": ws}
-    _local_session_active = False
-    _saw_central_lock = False
-    return result
-
-
-def _read_json(path: Path) -> Any | None:
+def read_local_path(rel_path: str) -> Any | None:
+    path = app_root() / rel_path.replace("\\", "/").lstrip("/")
     if not path.is_file():
         return None
     try:
@@ -224,6 +149,220 @@ def _read_json(path: Path) -> Any | None:
         return None
 
 
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+def collect_local_files() -> dict[str, Any]:
+    root = app_root()
+    categories = read_local_path(SHARED_CATEGORIES)
+    people: dict[str, Any] = {}
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir() or not (child / "data").is_dir():
+            continue
+        data = child / "data"
+        people[child.name] = {
+            "categorized_transactions": read_local_path(f"{child.name}/data/{CATEGORIZED}"),
+            "personal_categories": read_local_path(f"{child.name}/data/{PERSONAL_CATEGORIES}"),
+        }
+    return {"categories": categories, "people": people}
+
+
+def apply_remote_files(payload: dict[str, Any]) -> None:
+    if payload.get("categories") is not None:
+        apply_local_path(SHARED_CATEGORIES, payload["categories"])
+    people = payload.get("people") or {}
+    if not isinstance(people, dict):
+        return
+    for person, files in people.items():
+        if not isinstance(files, dict):
+            continue
+        safe = Path(person).name
+        if files.get("categorized_transactions") is not None:
+            apply_local_path(
+                f"{safe}/data/{CATEGORIZED}",
+                files["categorized_transactions"],
+            )
+        if files.get("personal_categories") is not None:
+            apply_local_path(
+                f"{safe}/data/{PERSONAL_CATEGORIES}",
+                files["personal_categories"],
+            )
+
+
+def push_paths(paths: list[str]) -> dict[str, Any]:
+    """Immediately PUT each local tracked file to centrale."""
+    global _last_error
+    cfg = load_config()
+    if not cfg.enabled:
+        return {"ok": True, "skipped": True, "reason": "sync disabled"}
+    if not _local_session_active:
+        return {"ok": True, "skipped": True, "reason": "session inactive"}
+
+    results: list[dict[str, Any]] = []
+    for rel in paths:
+        rel_n = rel.replace("\\", "/").lstrip("/")
+        content = read_local_path(rel_n)
+        if content is None:
+            results.append({"path": rel_n, "ok": False, "error": "missing local file"})
+            continue
+        try:
+            rev = _file_revisions.get(rel_n, 0)
+            res = _request(
+                "PUT",
+                f"/api/local/{cfg.workspace}/file",
+                body={
+                    "path": rel_n,
+                    "content": content,
+                    "source": "local",
+                    "client_revision": rev,
+                },
+            )
+            if res.get("central_wins"):
+                # Central always wins: overwrite local with hub content.
+                if res.get("content") is not None:
+                    apply_local_path(rel_n, res["content"])
+                _file_revisions[rel_n] = int(res.get("revision") or rev)
+                results.append({"path": rel_n, "ok": True, "central_wins": True})
+            else:
+                _file_revisions[rel_n] = int(res.get("revision") or rev + 1)
+                results.append({"path": rel_n, "ok": True, "central_wins": False})
+        except Exception as exc:  # noqa: BLE001
+            _last_error = str(exc)
+            results.append({"path": rel_n, "ok": False, "error": str(exc)})
+    ok = all(r.get("ok") for r in results) if results else True
+    if ok:
+        _last_error = None
+    return {"ok": ok, "results": results}
+
+
+def mark_and_push(paths: list[str]) -> dict[str, Any]:
+    return push_paths(paths)
+
+
+def pull_event_file(event: dict[str, Any]) -> None:
+    """Apply a central change event to the local workspace."""
+    cfg = load_config()
+    fp = str(event.get("file_path") or "")
+    # Merged categories broadcast: pull this peer's categories.json (already merged on hub).
+    if event.get("broadcast") or fp == SHARED_CATEGORIES:
+        local_rel = SHARED_CATEGORIES
+        remote_ws = cfg.workspace
+        remote_path = SHARED_CATEGORIES
+    else:
+        local_rel = fp
+        remote_ws = str(event.get("workspace") or cfg.workspace)
+        remote_path = fp
+        if remote_ws != cfg.workspace:
+            return
+
+    q = urllib.parse.urlencode({"path": remote_path})
+    data = _request("GET", f"/api/local/{remote_ws}/file?{q}", timeout=15.0)
+    content = data.get("content")
+    if content is not None:
+        apply_local_path(local_rel, content)
+        _file_revisions[local_rel] = int(data.get("revision") or 0)
+    display = str(event.get("display_path") or f"{remote_ws}/{remote_path}")
+    _queue_notification(display)
+
+
+def poll_central_events() -> dict[str, Any]:
+    global _last_event_id, _last_error
+    cfg = load_config()
+    if not cfg.enabled or not _local_session_active:
+        return {"ok": True, "skipped": True}
+    try:
+        q = urllib.parse.urlencode(
+            {
+                "viewer": "local",
+                "workspace": cfg.workspace,
+                "since_id": _last_event_id,
+            }
+        )
+        data = _request("GET", f"/api/events?{q}", timeout=10.0)
+        for ev in data.get("events") or []:
+            pull_event_file(ev)
+            _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
+        latest = int(data.get("latest_id") or 0)
+        if latest > _last_event_id:
+            _last_event_id = latest
+        _last_error = None
+        return {"ok": True, "events": len(data.get("events") or [])}
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        return {"ok": False, "error": _last_error}
+
+
+def start_session_and_pull() -> dict[str, Any]:
+    global _local_session_active, _last_error, _last_event_id
+    cfg = load_config()
+    if not cfg.enabled:
+        _local_session_active = True
+        return {"ok": True, "skipped": True, "reason": "sync disabled"}
+    ws = cfg.workspace
+    try:
+        _request("POST", f"/api/local/{ws}/session/start")
+        files = _request("GET", f"/api/local/{ws}/files")
+        apply_remote_files(files)
+        _local_session_active = True
+        events = _request(
+            "GET",
+            f"/api/events?{urllib.parse.urlencode({'viewer': 'local', 'workspace': ws, 'since_id': 0})}",
+            timeout=10.0,
+        )
+        _last_event_id = int(events.get("latest_id") or 0)
+        _last_error = None
+        return {"ok": True, "workspace": ws, "people": list((files.get("people") or {}).keys())}
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        _local_session_active = True
+        return {"ok": False, "error": _last_error, "workspace": ws}
+
+
+def end_session_and_push() -> dict[str, Any]:
+    """Best-effort push of all tracked files, then end session."""
+    global _local_session_active, _last_error
+    cfg = load_config()
+    if not _local_session_active:
+        return {"ok": True, "skipped": True, "reason": "no active local session"}
+    if not cfg.enabled:
+        _local_session_active = False
+        return {"ok": True, "skipped": True, "reason": "sync disabled"}
+    ws = cfg.workspace
+    paths = [SHARED_CATEGORIES]
+    root = app_root()
+    for child in root.iterdir():
+        if child.is_dir() and (child / "data").is_dir():
+            paths.append(f"{child.name}/data/{CATEGORIZED}")
+            paths.append(f"{child.name}/data/{PERSONAL_CATEGORIES}")
+    push = push_paths(paths)
+    try:
+        _request("POST", f"/api/local/{ws}/session/end")
+        _last_error = None
+        result: dict[str, Any] = {"ok": bool(push.get("ok")), "push": push, "workspace": ws}
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        result = {"ok": False, "error": _last_error, "push": push, "workspace": ws}
+    _local_session_active = False
+    return result
+
+
+def _worker_loop() -> None:
+    while not _worker_stop.wait(1.5):
+        try:
+            poll_central_events()
+        except Exception:
+            pass
+
+
+def start_event_worker() -> None:
+    global _worker_thread
+    if _worker_thread and _worker_thread.is_alive():
+        return
+    _worker_stop.clear()
+    _worker_thread = threading.Thread(target=_worker_loop, name="centrale-events", daemon=True)
+    _worker_thread.start()
+
+
+def stop_event_worker() -> None:
+    global _worker_thread
+    _worker_stop.set()
+    if _worker_thread and _worker_thread.is_alive():
+        _worker_thread.join(timeout=2.0)
+    _worker_thread = None
