@@ -31,13 +31,18 @@ def app_root() -> Path:
             juleon_schins/…
 
     Frozen: directory of the executable.
-    Dev: ``<project>/boekhouding/`` (person data), not the source root.
+    Dev: ``<project>/dkg/`` by default (person data), not the source root.
+    Prefer ``dkg/`` after the former ``boekhouding/`` rename; fall back to
+    ``boekhouding/`` only if ``dkg/`` is missing.
     """
     if is_frozen():
         exe = Path(sys.executable).resolve()
         if "Contents" in exe.parts and "MacOS" in exe.parts:
             return Path(*exe.parts[: exe.parts.index("Contents")]).parent
         return exe.parent
+    dkg = project_root() / "dkg"
+    if dkg.is_dir():
+        return dkg
     return project_root() / "boekhouding"
 
 

@@ -223,7 +223,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
       btn.className = "notify-btn";
       btn.textContent = displayPath;
       notifyEl.prepend(btn);
-      setTimeout(() => btn.remove(), 5000);
+      setTimeout(() => btn.remove(), 15000);
     }
 
     async function refreshStatus() {

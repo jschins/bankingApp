@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
 """Cross-platform PyInstaller build for lokaleBoekhouding (onefile).
 
-Output lands in ``boekhouding/`` next to the person packs.
+Builds once, then copies ``lokaleBoekhouding.exe`` into both workspace
+deploy folders ``dkg/`` and ``jl/`` (next to each peer's person packs).
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from app.runtime import app_root, project_root
+from app.runtime import project_root
 
 PROJECT = project_root()
-DEPLOY = app_root()  # boekhouding/ (person packs + exe)
 FRONTEND = PROJECT / "frontend"
 FRONTEND_DIST = FRONTEND / "dist"
 ENTRY = PROJECT / "entry.py"
 NAME = "lokaleBoekhouding"
+# Peer deploy roots (exe + person packs + lokale_config.json).
+DEPLOY_DIRS = (PROJECT / "dkg", PROJECT / "jl")
+# PyInstaller dist intermediate (first deploy dir).
+BUILD_DIST = DEPLOY_DIRS[0]
 
 
 def _run(cmd: list[str], *, cwd: Path) -> None:
@@ -39,10 +44,12 @@ def _ensure_frontend() -> None:
 
 def main() -> int:
     _ensure_frontend()
-    DEPLOY.mkdir(parents=True, exist_ok=True)
+    for deploy in DEPLOY_DIRS:
+        deploy.mkdir(parents=True, exist_ok=True)
 
     sep = os.pathsep
     add_data = f"{FRONTEND_DIST}{sep}frontend/dist"
+    exe_name = NAME + (".exe" if sys.platform == "win32" else "")
 
     cmd = [
         "pyinstaller",
@@ -55,7 +62,7 @@ def main() -> int:
         "--paths",
         str(PROJECT),
         "--distpath",
-        str(DEPLOY),
+        str(BUILD_DIST),
         "--workpath",
         str(PROJECT / "build"),
         "--specpath",
@@ -97,15 +104,26 @@ def main() -> int:
 
     _run(cmd, cwd=PROJECT)
 
-    out = DEPLOY / (NAME + (".exe" if sys.platform == "win32" else ""))
-    if not out.is_file():
-        raise SystemExit(f"Build failed: {out} not created")
+    built = BUILD_DIST / exe_name
+    if not built.is_file():
+        raise SystemExit(f"Build failed: {built} not created")
 
-    print(f"\nBuilt {out}")
+    for deploy in DEPLOY_DIRS[1:]:
+        dest = deploy / exe_name
+        shutil.copy2(built, dest)
+        print(f"Copied {built} -> {dest}")
+
+    print("\nBuilt:")
+    for deploy in DEPLOY_DIRS:
+        out = deploy / exe_name
+        print(f"  {out}")
+        if not out.is_file():
+            raise SystemExit(f"Missing deploy output: {out}")
+
     print(
-        "Person packs are sibling folders of this exe under boekhouding/ "
+        "Person packs are sibling folders of each exe under dkg/ and jl/ "
         "(each must contain data/ and secret/). Configure centrale via "
-        "boekhouding/lokale_config.json (centrale_url, workspace)."
+        "lokale_config.json next to the exe (centrale_url, workspace)."
     )
     return 0
 

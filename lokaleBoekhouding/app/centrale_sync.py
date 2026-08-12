@@ -25,7 +25,7 @@ _pending_notifications: list[dict[str, Any]] = []
 _state_lock = threading.Lock()
 _worker_thread: threading.Thread | None = None
 _worker_stop = threading.Event()
-_NOTIFY_TTL_SEC = 5.0
+_NOTIFY_TTL_SEC = 15.0
 
 
 @dataclass(frozen=True)

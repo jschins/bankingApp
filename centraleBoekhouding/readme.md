@@ -65,7 +65,7 @@ Person-file changes under `dkg/...` notify **only** the `dkg` peer. Central is n
 1. Local mutation → immediate `PUT /api/local/{workspace}/file` (`source=local`).
 2. If hub revision is ahead → response `central_wins` and local overwrites from hub content.
 3. Central mutation → `PUT` with `source=central` (admin page form or API).
-4. Both sides poll `/api/events` and show a **5-second notification button** whose label is the changed file path (then it disappears).
+4. Both sides poll `/api/events` and show a **15-second notification button** whose label is the changed file path (then it disappears).
 
 ---
 

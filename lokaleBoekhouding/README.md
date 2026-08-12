@@ -6,7 +6,7 @@ Local multi-person admin (`lokaleBoekhouding.exe`), syncing immediately with [`c
 
 1. **Session start:** register with centrale and pull tracked files for this workspace.
 2. **Local mutation:** each successful write immediately up-syncs the affected tracked file(s). If centrale reports `central_wins`, local content is overwritten from the hub.
-3. **Incoming central changes:** a background poll of `/api/events` applies matching files and shows a **5-second notification button** labeled with the file path.
+3. **Incoming central changes:** a background poll of `/api/events` applies matching files and shows a **15-second notification button** labeled with the file path.
 4. **Categories:** when any peer’s `categories.json` changes, centrale merges all peers into a root `categories.json` and pushes the merge to every peer; all peers are notified.
 5. **Person files:** only this workspace is notified when centrale changes files under this workspace.
 6. **No sync button / no pink lock UI** — notifications only.
