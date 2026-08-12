@@ -105,6 +105,9 @@ export interface CentraleSyncStatus {
   error: string | null;
   last_event_id?: number;
   notifications?: SyncNotification[];
+  port?: number;
+  role?: "local" | "central_admin";
+  workspaces?: string[];
 }
 
 export function getCentraleStatus(): Promise<CentraleSyncStatus> {
@@ -113,4 +116,20 @@ export function getCentraleStatus(): Promise<CentraleSyncStatus> {
 
 export function getCentraleNotifications(): Promise<{ notifications: SyncNotification[] }> {
   return getJson("/api/centrale/notifications");
+}
+
+export function getWorkspaces(): Promise<{
+  workspaces: string[];
+  workspace: string;
+  role: string;
+}> {
+  return getJson("/api/workspaces");
+}
+
+export function setWorkspace(workspace: string): Promise<{
+  ok: boolean;
+  workspace: string;
+  people: { short: string; folder: string }[];
+}> {
+  return sendJson("/api/workspace", "POST", { workspace });
 }

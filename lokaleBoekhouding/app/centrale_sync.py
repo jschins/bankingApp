@@ -11,7 +11,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.runtime import app_root
+from app.runtime import (
+    app_root,
+    central_data_root,
+    exe_dir,
+    is_central_admin,
+    is_frozen,
+    project_root,
+    selected_workspace,
+    set_runtime,
+)
 
 CATEGORIZED = "categorized_transactions.json"
 PERSONAL_CATEGORIES = "personal_categories.json"
@@ -28,6 +37,7 @@ _worker_stop = threading.Event()
 _push_wake = threading.Event()
 _push_pending: set[str] = set()
 _NOTIFY_TTL_SEC = 15.0
+_config_cache: CentraleConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -36,10 +46,62 @@ class CentraleConfig:
     workspace: str
     api_key: str
     enabled: bool
+    port: int
+    role: str  # "local" | "central_admin"
+    centrale_data_root: str | None = None
 
 
-def load_config() -> CentraleConfig:
-    cfg_path = app_root() / "lokale_config.json"
+def _default_central_data_root() -> Path:
+    env = os.environ.get("CENTRALE_DATA_ROOT", "").strip()
+    if env:
+        return Path(env).resolve()
+    if is_frozen():
+        return exe_dir()
+    sibling = project_root().parent / "centraleBoekhouding" / "boekhouding"
+    if sibling.is_dir():
+        return sibling.resolve()
+    return (project_root() / "boekhouding").resolve()
+
+
+def config_path() -> Path:
+    """Where ``lokale_config.json`` / central-admin config lives."""
+    env = os.environ.get("LOKALE_CONFIG", "").strip()
+    if env:
+        return Path(env)
+    if is_frozen():
+        return exe_dir() / "lokale_config.json"
+    ws = os.environ.get("LOKALE_WORKSPACE", "").strip()
+    root = project_root()
+    if ws:
+        return root / ws / "lokale_config.json"
+    if os.environ.get("LOKALE_ROLE", "").strip().lower() == "central_admin":
+        return _default_central_data_root() / "lokale_config.json"
+    for name in ("dkg", "jl"):
+        p = root / name / "lokale_config.json"
+        if p.is_file():
+            return p
+    return _default_central_data_root() / "lokale_config.json"
+
+
+def load_config(*, force_reload: bool = False) -> CentraleConfig:
+    global _config_cache
+    if _config_cache is not None and not force_reload:
+        # Keep workspace in sync with runtime switcher for central admin.
+        if is_central_admin() and selected_workspace():
+            ws = selected_workspace() or _config_cache.workspace
+            if ws != _config_cache.workspace:
+                _config_cache = CentraleConfig(
+                    url=_config_cache.url,
+                    workspace=ws,
+                    api_key=_config_cache.api_key,
+                    enabled=_config_cache.enabled,
+                    port=_config_cache.port,
+                    role=_config_cache.role,
+                    centrale_data_root=_config_cache.centrale_data_root,
+                )
+        return _config_cache
+
+    cfg_path = config_path()
     file_cfg: dict[str, Any] = {}
     if cfg_path.is_file():
         try:
@@ -52,11 +114,20 @@ def load_config() -> CentraleConfig:
         or str(file_cfg.get("centrale_url") or "").strip()
         or "http://127.0.0.1:8400"
     ).rstrip("/")
+    role = (
+        os.environ.get("LOKALE_ROLE", "").strip()
+        or str(file_cfg.get("role") or "").strip()
+        or "local"
+    ).lower()
+    if role not in ("local", "central_admin"):
+        role = "local"
     workspace = (
         os.environ.get("LOKALE_WORKSPACE", "").strip()
         or str(file_cfg.get("workspace") or "").strip()
         or "dkg"
     )
+    if role == "central_admin" and selected_workspace():
+        workspace = selected_workspace() or workspace
     api_key = (
         os.environ.get("CENTRALE_API_KEY", "").strip()
         or str(file_cfg.get("api_key") or "").strip()
@@ -68,7 +139,64 @@ def load_config() -> CentraleConfig:
         enabled = True
     else:
         enabled = bool(file_cfg.get("enabled", True))
-    return CentraleConfig(url=url, workspace=workspace, api_key=api_key, enabled=enabled)
+    # Ports: central admin 8300; lokale dkg 8301; lokale jl 8302 (overridable).
+    default_port = 8300 if role == "central_admin" else (8302 if workspace == "jl" else 8301)
+    try:
+        port = int(
+            os.environ.get("PORT", "").strip()
+            or file_cfg.get("port")
+            or default_port
+        )
+    except (TypeError, ValueError):
+        port = default_port
+
+    data_root_s: str | None = None
+    if role == "central_admin":
+        raw_root = (
+            os.environ.get("CENTRALE_DATA_ROOT", "").strip()
+            or str(file_cfg.get("centrale_data_root") or "").strip()
+        )
+        data_root = Path(raw_root).resolve() if raw_root else _default_central_data_root()
+        data_root_s = str(data_root)
+        set_runtime(
+            role="central_admin",
+            central_data_root=data_root,
+            workspace=workspace,
+            local_deploy_root=None,
+        )
+    else:
+        if is_frozen():
+            local_root = exe_dir()
+        else:
+            local_root = (project_root() / workspace).resolve()
+            if not local_root.is_dir():
+                local_root = app_root()
+        set_runtime(
+            role="local",
+            central_data_root=None,
+            workspace=workspace,
+            local_deploy_root=local_root,
+        )
+
+    _config_cache = CentraleConfig(
+        url=url,
+        workspace=workspace,
+        api_key=api_key,
+        enabled=enabled,
+        port=port,
+        role=role,
+        centrale_data_root=data_root_s,
+    )
+    return _config_cache
+
+
+def _push_source() -> str:
+    return "central" if is_central_admin() else "local"
+
+
+def _events_viewer() -> str:
+    return "central" if is_central_admin() else "local"
+
 
 
 def _request(
@@ -107,6 +235,8 @@ def sync_status() -> dict[str, Any]:
         "error": _last_error,
         "last_event_id": _last_event_id,
         "notifications": notes,
+        "port": cfg.port,
+        "role": cfg.role,
     }
 
 
@@ -225,7 +355,7 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
                 body={
                     "path": rel_n,
                     "content": content,
-                    "source": "local",
+                    "source": _push_source(),
                     "client_revision": rev,
                 },
             )
@@ -309,7 +439,7 @@ def _drain_push_queue() -> None:
 
 
 def pull_event_file(event: dict[str, Any]) -> None:
-    """Apply a central change event to the local workspace."""
+    """Apply a hub change event to the active workspace."""
     cfg = load_config()
     fp = str(event.get("file_path") or "")
     # Merged categories broadcast: pull this peer's categories.json (already merged on hub).
@@ -322,6 +452,8 @@ def pull_event_file(event: dict[str, Any]) -> None:
         remote_ws = str(event.get("workspace") or cfg.workspace)
         remote_path = fp
         if remote_ws != cfg.workspace:
+            # Central admin only applies events for the selected workspace
+            # (person files); broadcast categories already handled above.
             return
 
     q = urllib.parse.urlencode({"path": remote_path})
@@ -342,7 +474,7 @@ def poll_central_events() -> dict[str, Any]:
     try:
         q = urllib.parse.urlencode(
             {
-                "viewer": "local",
+                "viewer": _events_viewer(),
                 "workspace": cfg.workspace,
                 "since_id": _last_event_id,
             }
@@ -361,33 +493,62 @@ def poll_central_events() -> dict[str, Any]:
         return {"ok": False, "error": _last_error}
 
 
+def list_hub_workspaces() -> list[str]:
+    """Workspace names known to the hub (or local data root for central admin)."""
+    cfg = load_config()
+    if cfg.enabled:
+        try:
+            status = _request("GET", "/api/status", timeout=10.0)
+            names = status.get("workspaces") or []
+            if isinstance(names, list) and names:
+                return [str(n) for n in names]
+        except Exception:
+            pass
+    root = central_data_root()
+    if root is not None and root.is_dir():
+        found: list[str] = []
+        for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+            if not child.is_dir() or child.name.startswith("_"):
+                continue
+            if (child / SHARED_CATEGORIES).is_file() or any(
+                p.is_dir() and (p / "data").is_dir() for p in child.iterdir() if p.is_dir()
+            ):
+                found.append(child.name)
+        return found
+    return [cfg.workspace] if cfg.workspace else []
+
+
+def _seed_revisions(ws: str, files: dict[str, Any]) -> None:
+    for rel in [SHARED_CATEGORIES] + [
+        f"{name}/data/{CATEGORIZED}" for name in (files.get("people") or {})
+    ] + [
+        f"{name}/data/{PERSONAL_CATEGORIES}" for name in (files.get("people") or {})
+    ]:
+        try:
+            _hub_revision(ws, rel)
+        except Exception:
+            pass
+
+
 def start_session_and_pull() -> dict[str, Any]:
     global _local_session_active, _last_error, _last_event_id
+    load_config(force_reload=True)
     cfg = load_config()
     if not cfg.enabled:
         _local_session_active = True
         return {"ok": True, "skipped": True, "reason": "sync disabled"}
     ws = cfg.workspace
     try:
-        _request("POST", f"/api/local/{ws}/session/start")
+        # Central admin does not register as a lokale peer session.
+        if not is_central_admin():
+            _request("POST", f"/api/local/{ws}/session/start")
         files = _request("GET", f"/api/local/{ws}/files")
         apply_remote_files(files)
         _local_session_active = True
-        # Seed hub revisions so later local edits are not rejected as stale.
-        for rel in [SHARED_CATEGORIES] + [
-            f"{name}/data/{CATEGORIZED}"
-            for name in (files.get("people") or {})
-        ] + [
-            f"{name}/data/{PERSONAL_CATEGORIES}"
-            for name in (files.get("people") or {})
-        ]:
-            try:
-                _hub_revision(ws, rel)
-            except Exception:
-                pass
+        _seed_revisions(ws, files)
         events = _request(
             "GET",
-            f"/api/events?{urllib.parse.urlencode({'viewer': 'local', 'workspace': ws, 'since_id': 0})}",
+            f"/api/events?{urllib.parse.urlencode({'viewer': _events_viewer(), 'workspace': ws, 'since_id': 0})}",
             timeout=10.0,
         )
         _last_event_id = int(events.get("latest_id") or 0)
@@ -399,8 +560,56 @@ def start_session_and_pull() -> dict[str, Any]:
         return {"ok": False, "error": _last_error, "workspace": ws}
 
 
+def switch_workspace(workspace: str) -> dict[str, Any]:
+    """Central-admin: change active workspace, flush pushes, re-pull hub files."""
+    global _last_event_id, _file_revisions, _last_error, _config_cache
+    if not is_central_admin():
+        return {"ok": False, "error": "workspace switch only available in central_admin role"}
+    ws = workspace.strip()
+    if not ws:
+        return {"ok": False, "error": "workspace required"}
+    flush_pending_pushes()
+    root = central_data_root() or _default_central_data_root()
+    set_runtime(
+        role="central_admin",
+        central_data_root=root,
+        workspace=ws,
+        local_deploy_root=None,
+    )
+    if _config_cache is not None:
+        _config_cache = CentraleConfig(
+            url=_config_cache.url,
+            workspace=ws,
+            api_key=_config_cache.api_key,
+            enabled=_config_cache.enabled,
+            port=_config_cache.port,
+            role=_config_cache.role,
+            centrale_data_root=_config_cache.centrale_data_root or str(root),
+        )
+    _file_revisions = {}
+    with _state_lock:
+        _pending_notifications.clear()
+    cfg = load_config()
+    try:
+        if cfg.enabled:
+            files = _request("GET", f"/api/local/{ws}/files")
+            apply_remote_files(files)
+            _seed_revisions(ws, files)
+            events = _request(
+                "GET",
+                f"/api/events?{urllib.parse.urlencode({'viewer': 'central', 'workspace': ws, 'since_id': 0})}",
+                timeout=10.0,
+            )
+            _last_event_id = int(events.get("latest_id") or 0)
+        _last_error = None
+        return {"ok": True, "workspace": ws}
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        return {"ok": False, "error": _last_error, "workspace": ws}
+
+
 def end_session_and_push() -> dict[str, Any]:
-    """Best-effort push of all tracked files, then end session."""
+    """Best-effort push of all tracked files, then end session (local peers only)."""
     global _local_session_active, _last_error
     cfg = load_config()
     if not _local_session_active:
@@ -411,13 +620,16 @@ def end_session_and_push() -> dict[str, Any]:
     ws = cfg.workspace
     paths = [SHARED_CATEGORIES]
     root = app_root()
-    for child in root.iterdir():
-        if child.is_dir() and (child / "data").is_dir():
-            paths.append(f"{child.name}/data/{CATEGORIZED}")
-            paths.append(f"{child.name}/data/{PERSONAL_CATEGORIES}")
-    # Finish any queued background pushes before the final sync push.
+    if root.is_dir():
+        for child in root.iterdir():
+            if child.is_dir() and (child / "data").is_dir():
+                paths.append(f"{child.name}/data/{CATEGORIZED}")
+                paths.append(f"{child.name}/data/{PERSONAL_CATEGORIES}")
     flush_pending_pushes()
     push = push_paths(paths)
+    if is_central_admin():
+        _local_session_active = False
+        return {"ok": bool(push.get("ok")), "push": push, "workspace": ws}
     try:
         _request("POST", f"/api/local/{ws}/session/end")
         _last_error = None

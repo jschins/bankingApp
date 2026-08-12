@@ -1,16 +1,21 @@
-# Centrale boekhouding — immediate file sync + notifications
+# Centrale boekhouding — sync hub + central admin UI
 
-Executable: **`centraleBoekhouding.exe`** (built into `boekhouding/`). Runs continually as the sync hub.
+Two processes on the central laptop:
 
-Local counterpart: [`lokaleBoekhouding`](../lokaleBoekhouding/) → **`lokaleBoekhouding.exe`**.
+| Program | Port | Role |
+|---------|------|------|
+| **`centraleBoekhouding.exe`** | **8400** | Sync hub: sessions, file PUT/GET, categories merge/deletions, events |
+| **`centraleAdmin.exe`** | **8300** | Matrix / terms UI (lokaleBoekhouding in `central_admin` mode); workspace dropdown; **no** bank Refresh |
 
-There is **no** central login and **no** inspection/modification mode. Every tracked-file change is synced **immediately**. Conflict policy: **central always wins**.
+Local peers run [`lokaleBoekhouding`](../lokaleBoekhouding/) on **8301** (`dkg`) and **8302** (`jl`).
+
+There is **no** central login. Every tracked-file change is synced **immediately**. Conflict policy: **central always wins**.
 
 ---
 
 ## Network approach (LAN first)
 
-1. **Now:** same LAN — use the server’s LAN IP (e.g. `http://192.168.x.x:8400`).
+1. **Now:** same LAN — use the server’s LAN IP (e.g. `http://192.168.x.x:8400` for the hub).
 2. **Later:** Tailscale — same protocol, different URL.
 
 Optional shared API key via `CENTRALE_API_KEY`. Prefer not syncing `.pem` files.
@@ -21,8 +26,11 @@ Optional shared API key via `CENTRALE_API_KEY`. Prefer not syncing `.pem` files.
 
 | Role | Machine | Program |
 |------|---------|---------|
-| Central administrator | Distant laptop | `centraleBoekhouding.exe` (hub + notify UI + central file writes) |
-| Local administrator | Local laptop | `lokaleBoekhouding.exe` (workspace e.g. `dkg`) |
+| Sync hub | Central laptop | `centraleBoekhouding.exe` (:8400) |
+| Central administrator UI | Central laptop | `centraleAdmin.exe` (:8300) — workspace ▾ switcher; edits push as `source=central` |
+| Local administrator | Local laptop(s) | `lokaleBoekhouding.exe` in `dkg/` (:8301) or `jl/` (:8302) |
+
+Central admin discovers people from **`data/` only** (no secrets / no Refresh).
 
 ---
 
@@ -38,10 +46,13 @@ Layout:
 
 ```text
 centraleBoekhouding/boekhouding/
+  lokale_config.json       # centralAdmin: role=central_admin, port=8300
+  centraleAdmin.exe
+  centraleBoekhouding.exe  # hub
   categories.json          # MERGED root (all peers)
   dkg/
-    categories.json        # peer copy (receives merge)
-    juleon_schins/data/…
+    categories.json
+    …/data/…
   jl/
     categories.json
     …
@@ -56,7 +67,7 @@ When any peer’s `categories.json` is written (local or central):
 3. Pushes that merged document into **every** peer’s `categories.json`.
 4. Notifies all local peers so they pull the update.
 
-Person-file changes under `dkg/...` notify **only** the `dkg` peer. Central is notified for **every** local change.
+Person-file changes under `dkg/...` notify **only** the `dkg` peer. Central admin (viewer=central) is notified for **every** local change.
 
 ---
 
@@ -64,7 +75,7 @@ Person-file changes under `dkg/...` notify **only** the `dkg` peer. Central is n
 
 1. Local mutation → immediate `PUT /api/local/{workspace}/file` (`source=local`).
 2. If hub revision is ahead → response `central_wins` and local overwrites from hub content.
-3. Central mutation → `PUT` with `source=central` (admin page form or API).
+3. Central admin mutation → `PUT` with `source=central`.
 4. Both sides poll `/api/events` and show a **15-second notification button** whose label is the changed file path (then it disappears).
 
 ---
@@ -96,6 +107,13 @@ uv run centrale-boekhouding
 # or
 uv run --group build python scripts/build_onefile.py
 # → boekhouding/centraleBoekhouding.exe
+
+# Central admin UI (from lokaleBoekhouding sources):
+cd ..\lokaleBoekhouding
+uv run --group build python scripts/build_centrale_admin.py
+# → centraleBoekhouding/boekhouding/centraleAdmin.exe (:8300)
 ```
 
-Env: `HOST`, `PORT` (default `8400`), `CENTRALE_API_KEY`, `CENTRALE_DATA_ROOT` (default: `boekhouding/` next to the exe / under the project).
+Start hub first (:8400), then `centraleAdmin.exe` (:8300).
+
+Env (hub): `HOST`, `PORT` (default `8400`), `CENTRALE_API_KEY`, `CENTRALE_DATA_ROOT` (default: `boekhouding/` next to the exe / under the project).

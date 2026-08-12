@@ -1,8 +1,13 @@
-"""Runtime layout: boekh-multiperson source vs boekhouding deploy folder."""
+"""Runtime layout: deploy root vs active workspace (person packs)."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+_role: str = "local"  # "local" | "central_admin"
+_central_data_root: Path | None = None
+_selected_workspace: str | None = None
+_local_deploy_root: Path | None = None
 
 
 def is_frozen() -> bool:
@@ -10,36 +15,66 @@ def is_frozen() -> bool:
 
 
 def project_root() -> Path:
-    """Source tree (``boekh-multiperson/``): app/, frontend/, scripts/, …"""
+    """Source tree (``lokaleBoekhouding/``): app/, frontend/, scripts/, …"""
     if is_frozen():
-        # Bundled UI lives under _MEIPASS; project_root is unused for people data.
         base = getattr(sys, "_MEIPASS", None)
         return Path(base) if base else Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[1]
 
 
-def app_root() -> Path:
-    """Folder that contains the admin exe and the person packs.
-
-    Deploy layout::
-
-        boekh-multiperson/
-          app/ frontend/ …          # source (dev)
-          boekhouding/              # deploy / runtime root
-            boekhouding.exe
-            anton_schins/data+secret
-            juleon_schins/…
-
-    Frozen: directory of the executable.
-    Dev: ``<project>/dkg/`` by default (person data), not the source root.
-    Prefer ``dkg/`` after the former ``boekhouding/`` rename; fall back to
-    ``boekhouding/`` only if ``dkg/`` is missing.
-    """
+def exe_dir() -> Path:
     if is_frozen():
         exe = Path(sys.executable).resolve()
         if "Contents" in exe.parts and "MacOS" in exe.parts:
             return Path(*exe.parts[: exe.parts.index("Contents")]).parent
         return exe.parent
+    return project_root()
+
+
+def set_runtime(
+    *,
+    role: str = "local",
+    central_data_root: Path | None = None,
+    workspace: str | None = None,
+    local_deploy_root: Path | None = None,
+) -> None:
+    """Bind role and roots after config load (and on workspace switch)."""
+    global _role, _central_data_root, _selected_workspace, _local_deploy_root
+    _role = role if role in ("local", "central_admin") else "local"
+    _central_data_root = central_data_root.resolve() if central_data_root else None
+    _selected_workspace = workspace
+    _local_deploy_root = local_deploy_root.resolve() if local_deploy_root else None
+
+
+def is_central_admin() -> bool:
+    return _role == "central_admin"
+
+
+def role() -> str:
+    return _role
+
+
+def central_data_root() -> Path | None:
+    return _central_data_root
+
+
+def selected_workspace() -> str | None:
+    return _selected_workspace
+
+
+def set_selected_workspace(workspace: str) -> None:
+    global _selected_workspace
+    _selected_workspace = workspace.strip()
+
+
+def app_root() -> Path:
+    """Active workspace folder (person packs + categories.json)."""
+    if _role == "central_admin" and _central_data_root is not None and _selected_workspace:
+        return (_central_data_root / _selected_workspace).resolve()
+    if _local_deploy_root is not None:
+        return _local_deploy_root
+    if is_frozen():
+        return exe_dir()
     dkg = project_root() / "dkg"
     if dkg.is_dir():
         return dkg

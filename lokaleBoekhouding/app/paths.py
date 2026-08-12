@@ -130,9 +130,15 @@ def bind_person(pack: PersonPack) -> Iterator[PersonPack]:
 def configure() -> list[PersonPack]:
     """Discover person packs under app_root (called once at startup)."""
     from app.people import list_people
+    from app.runtime import app_root, is_central_admin
 
     people = list_people()
     if not people:
+        if is_central_admin():
+            raise FileNotFoundError(
+                "No person packs found under "
+                f"{app_root()}. Central admin expects folders with a data/ directory."
+            )
         raise FileNotFoundError(
             "No person packs found under "
             f"{app_root()}. Each pack needs both a data/ and a secret/ folder "

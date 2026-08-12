@@ -2,6 +2,8 @@
 
 Local multi-person admin (`lokaleBoekhouding.exe`), syncing immediately with [`centraleBoekhouding`](../centraleBoekhouding/).
 
+Central laptop also runs **`centraleAdmin.exe`** (same codebase, `role: central_admin`) — see hub readme.
+
 ## Behaviour
 
 1. **Session start:** register with centrale and pull tracked files for this workspace.
@@ -12,35 +14,53 @@ Local multi-person admin (`lokaleBoekhouding.exe`), syncing immediately with [`c
 6. **No sync button / no pink lock UI** — notifications only.
 7. **Process exit:** best-effort push of tracked files, then end session.
 
-Tracked files:
+Tracked files (per workspace folder `dkg/` or `jl/`):
 
-- `boekhouding/categories.json`
-- `boekhouding/<person>/data/categorized_transactions.json`
-- `boekhouding/<person>/data/personal_categories.json`
+- `categories.json`
+- `<person>/data/categorized_transactions.json`
+- `<person>/data/personal_categories.json`
+
+## Ports
+
+| App | Port | Config |
+|-----|------|--------|
+| `centraleAdmin` (central matrix UI) | **8300** | `centraleBoekhouding/boekhouding/lokale_config.json` |
+| `lokaleBoekhouding` workspace **dkg** | **8301** | `dkg/lokale_config.json` |
+| `lokaleBoekhouding` workspace **jl** | **8302** | `jl/lokale_config.json` |
+| Sync hub `centraleBoekhouding` | **8400** | hub process |
 
 ## Config
 
-`boekhouding/lokale_config.json`:
+Example `dkg/lokale_config.json`:
 
 ```json
 {
   "enabled": true,
   "centrale_url": "http://192.168.x.x:8400",
   "workspace": "dkg",
+  "port": 8301,
   "api_key": ""
 }
 ```
 
-Env overrides: `CENTRALE_URL`, `LOKALE_WORKSPACE`, `CENTRALE_API_KEY`, `CENTRALE_SYNC=0`.
+`jl/lokale_config.json` uses `"workspace": "jl"` and `"port": 8302`.
+
+Env overrides: `CENTRALE_URL`, `LOKALE_WORKSPACE`, `PORT`, `CENTRALE_API_KEY`, `CENTRALE_SYNC=0`, `LOKALE_CONFIG`, `LOKALE_ROLE=central_admin`.
 
 ## Run / build
 
 ```powershell
 cd lokaleBoekhouding
 uv sync
+# dkg (default when dkg/lokale_config.json is found):
 uv run lokale-boekhouding
+# jl in dev:
+$env:LOKALE_WORKSPACE="jl"; uv run lokale-boekhouding
 uv run --group build python scripts/build_onefile.py
-# → boekhouding/lokaleBoekhouding.exe
+# → dkg/lokaleBoekhouding.exe and jl/lokaleBoekhouding.exe
+
+uv run --group build python scripts/build_centrale_admin.py
+# → ../centraleBoekhouding/boekhouding/centraleAdmin.exe
 ```
 
-Port default **8300**. Start `centraleBoekhouding` first if you want sync.
+Start the hub (`centraleBoekhouding` on **8400**) first if you want sync.

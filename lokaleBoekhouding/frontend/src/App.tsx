@@ -9,6 +9,7 @@ import {
   recalculate,
   recordModification,
   refreshAll,
+  setWorkspace,
   updateSettings,
   type CentraleSyncStatus,
   type SyncNotification,
@@ -25,9 +26,75 @@ const CHANNEL = "boekhouding";
 
 type CellSelection = { short: string; category: string };
 
-function SyncNotifyShell({ children }: { children: ReactNode }) {
+function WorkspaceSwitcher({
+  workspace,
+  workspaces,
+  onSelect,
+}: {
+  workspace: string;
+  workspaces: string[];
+  onSelect: (ws: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(ev: Event) {
+      if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="workspace-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className="workspace-switcher-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="workspace-switcher-chevron" aria-hidden>
+          ▾
+        </span>
+        <span className="workspace-switcher-label">{workspace}</span>
+      </button>
+      {open && (
+        <ul className="workspace-switcher-menu" role="listbox">
+          {workspaces.map((ws) => (
+            <li key={ws}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={ws === workspace}
+                className={ws === workspace ? "is-selected" : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  if (ws !== workspace) onSelect(ws);
+                }}
+              >
+                {ws}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SyncNotifyShell({
+  children,
+  onWorkspaceChanged,
+}: {
+  children: ReactNode;
+  onWorkspaceChanged?: () => void;
+}) {
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
   const [notes, setNotes] = useState<SyncNotification[]>([]);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,14 +118,43 @@ function SyncNotifyShell({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  function handleSelect(ws: string) {
+    setSwitching(true);
+    setWorkspace(ws)
+      .then(() => {
+        onWorkspaceChanged?.();
+      })
+      .catch(() => {})
+      .finally(() => setSwitching(false));
+  }
+
+  const isCentralAdmin = status?.role === "central_admin";
+  const workspaces = status?.workspaces?.length
+    ? status.workspaces
+    : status?.workspace
+      ? [status.workspace]
+      : [];
+
   return (
     <div className="lock-shell">
       {status?.enabled && (
         <div className="centrale-status-bar">
-          <span>
-            Centrale: {status.centrale_url} · workspace {status.workspace}
-            {status.error ? ` · sync error: ${status.error}` : ""}
-          </span>
+          {isCentralAdmin ? (
+            <div className="centrale-status-left">
+              <WorkspaceSwitcher
+                workspace={status.workspace}
+                workspaces={workspaces}
+                onSelect={handleSelect}
+              />
+              {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
+              {status.error ? <span> · sync error: {status.error}</span> : null}
+            </div>
+          ) : (
+            <span>
+              Centrale: {status.centrale_url} · workspace {status.workspace}
+              {status.error ? ` · sync error: ${status.error}` : ""}
+            </span>
+          )}
           <div className="sync-notify-row">
             {notes.map((n) => (
               <button key={`${n.file_path}-${n.expires_at}`} type="button" className="sync-notify-btn">
@@ -156,8 +252,11 @@ function isPlainAlt(e: KeyboardEvent): boolean {
 
 export default function App() {
   const isTerms = new URLSearchParams(window.location.search).get("view") === "terms";
+  const [wsEpoch, setWsEpoch] = useState(0);
   return (
-    <SyncNotifyShell>{isTerms ? <TermsApp /> : <MainApp />}</SyncNotifyShell>
+    <SyncNotifyShell onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}>
+      {isTerms ? <TermsApp key={wsEpoch} /> : <MainApp key={wsEpoch} />}
+    </SyncNotifyShell>
   );
 }
 
@@ -168,6 +267,7 @@ function MainApp() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [centralAdmin, setCentralAdmin] = useState(false);
   const [dateFrom, setDateFrom] = useState(() => previousMonthRange().from);
   const [dateTo, setDateTo] = useState(() => previousMonthRange().to);
   const prevMonth = previousMonthRange();
@@ -179,6 +279,12 @@ function MainApp() {
   const [termMenuSettings, setTermMenuSettings] = useState<SettingsResponse | null>(null);
   const selectionRef = useRef<CellSelection | null>(null);
   const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    getCentraleStatus()
+      .then((s) => setCentralAdmin(s.role === "central_admin"))
+      .catch(() => setCentralAdmin(false));
+  }, []);
 
   useEffect(() => {
     selectionRef.current = selection;
@@ -385,31 +491,35 @@ function MainApp() {
         <h1 className="app-heading">Boekhouding</h1>
 
         <div className="fetch-form">
-          <label>
-            date-from
-            <input
-              type="date"
-              value={dateFrom}
-              placeholder={prevMonth.from}
-              min={historicalStartDate()}
-              onChange={(e) => setDateFrom(e.target.value)}
-            />
-          </label>
-          <label>
-            date-to
-            <input
-              type="date"
-              value={dateTo}
-              placeholder={prevMonth.to}
-              min={historicalStartDate()}
-              max={isoDate(new Date())}
-              onChange={(e) => setDateTo(e.target.value)}
-            />
-          </label>
-          <button className="refresh-button" onClick={doRefresh} disabled={refreshing}>
-            {refreshing ? "Refreshing…" : "↻ Refresh all"}
-          </button>
-          {refreshStatus && <div className="refresh-status">{refreshStatus}</div>}
+          {!centralAdmin && (
+            <>
+              <label>
+                date-from
+                <input
+                  type="date"
+                  value={dateFrom}
+                  placeholder={prevMonth.from}
+                  min={historicalStartDate()}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </label>
+              <label>
+                date-to
+                <input
+                  type="date"
+                  value={dateTo}
+                  placeholder={prevMonth.to}
+                  min={historicalStartDate()}
+                  max={isoDate(new Date())}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </label>
+              <button className="refresh-button" onClick={doRefresh} disabled={refreshing}>
+                {refreshing ? "Refreshing…" : "↻ Refresh all"}
+              </button>
+              {refreshStatus && <div className="refresh-status">{refreshStatus}</div>}
+            </>
+          )}
         </div>
 
         <div className="winbar">

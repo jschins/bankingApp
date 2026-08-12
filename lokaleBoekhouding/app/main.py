@@ -14,18 +14,20 @@ from app.settings import get_people, init_app
 async def lifespan(_app: FastAPI):
     from app.centrale_sync import (
         end_session_and_push,
+        load_config,
         start_event_worker,
         start_session_and_pull,
         stop_event_worker,
     )
 
+    cfg = load_config(force_reload=True)
     pull = start_session_and_pull()
     if not pull.get("ok"):
         print(f"WARNING: centrale pull failed: {pull.get('error')}")
     elif pull.get("skipped"):
         print("centrale sync disabled — working offline on local files only")
     else:
-        print(f"centrale session+pull ok (workspace={pull.get('workspace')})")
+        print(f"centrale session+pull ok (workspace={pull.get('workspace')}, role={cfg.role})")
     init_app()
     start_event_worker()
     try:
@@ -75,7 +77,7 @@ def health() -> dict[str, Any]:
     cfg = load_config()
     return {
         "ok": True,
-        "app": "lokaleBoekhouding",
+        "app": "centraleAdmin" if cfg.role == "central_admin" else "lokaleBoekhouding",
         "app_root": str(app_root()),
         "frozen": is_frozen(),
         "frontend_ok": frontend_dist_ok(),
@@ -83,7 +85,9 @@ def health() -> dict[str, Any]:
             "url": cfg.url,
             "workspace": cfg.workspace,
             "enabled": cfg.enabled,
-            **{k: v for k, v in sync_status().items() if k not in ("workspace", "centrale_url", "enabled")},
+            "port": cfg.port,
+            "role": cfg.role,
+            **{k: v for k, v in sync_status().items() if k not in ("workspace", "centrale_url", "enabled", "port", "role")},
         },
         "people": [
             {"short": p.short, "folder": p.folder_name, "data_dir": str(p.data_dir)}
@@ -92,12 +96,57 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/api/workspaces")
+def api_workspaces() -> dict[str, Any]:
+    from app.centrale_sync import list_hub_workspaces, load_config
+
+    cfg = load_config()
+    return {
+        "workspaces": list_hub_workspaces(),
+        "workspace": cfg.workspace,
+        "role": cfg.role,
+    }
+
+
+class WorkspaceRequest(BaseModel):
+    workspace: str
+
+
+@app.post("/api/workspace")
+def api_set_workspace(body: WorkspaceRequest) -> dict[str, Any]:
+    from app.centrale_sync import list_hub_workspaces, load_config, switch_workspace
+    from app.settings import init_app
+
+    cfg = load_config()
+    if cfg.role != "central_admin":
+        raise HTTPException(status_code=400, detail="workspace switch requires central_admin role")
+    names = list_hub_workspaces()
+    if body.workspace not in names and names:
+        raise HTTPException(status_code=404, detail=f"Unknown workspace: {body.workspace!r}")
+    result = switch_workspace(body.workspace)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("error") or "switch failed")
+    try:
+        people = init_app()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "workspace": body.workspace,
+        "people": [{"short": p.short, "folder": p.folder_name} for p in people],
+    }
+
+
 @app.get("/api/centrale/status")
 def api_centrale_status() -> dict[str, Any]:
-    from app.centrale_sync import poll_central_events, sync_status
+    from app.centrale_sync import list_hub_workspaces, load_config, poll_central_events, sync_status
 
     poll_central_events()
-    return sync_status()
+    status = sync_status()
+    cfg = load_config()
+    if cfg.role == "central_admin":
+        status["workspaces"] = list_hub_workspaces()
+    return status
 
 
 @app.get("/api/centrale/notifications")
@@ -158,9 +207,14 @@ def api_recalculate() -> dict[str, Any]:
 
 @app.post("/api/refresh")
 def api_refresh(body: RefreshRequest | None = None) -> dict[str, Any]:
-    from app.centrale_sync import mark_and_push
+    from app.centrale_sync import load_config, mark_and_push
     from app.matrix import refresh_all
 
+    if load_config().role == "central_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Bank refresh is not available in central admin (no secrets).",
+        )
     req = body or RefreshRequest()
     result = refresh_all(date_from=req.date_from, date_to=req.date_to)
     mark_and_push(_tracked_paths_for_people())
@@ -399,12 +453,16 @@ def run() -> None:
 
     import uvicorn
 
+    from app.centrale_sync import load_config
     from app.runtime import app_root, is_frozen
 
+    cfg = load_config()
     host = os.environ.get("HOST", "127.0.0.1" if is_frozen() else "0.0.0.0")
-    port = int(os.environ.get("PORT", "8300"))
+    # PORT env wins; else lokale_config.json "port" (dkg=8301, jl=8302, central_admin=8300).
+    port = int(os.environ.get("PORT", str(cfg.port)))
+    label = "centraleAdmin" if cfg.role == "central_admin" else "lokaleBoekhouding"
     # People discovery happens in lifespan after centrale pull.
-    print(f"lokaleBoekhouding root: {app_root()}")
+    print(f"{label} root: {app_root()} (workspace={cfg.workspace}, port={port})")
 
     if is_frozen():
 
