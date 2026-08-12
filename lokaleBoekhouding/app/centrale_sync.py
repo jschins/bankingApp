@@ -203,7 +203,9 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
             results.append({"path": rel_n, "ok": False, "error": "missing local file"})
             continue
         try:
-            rev = _file_revisions.get(rel_n, 0)
+            # Always refresh hub revision before PUT. Using 0 after restart made
+            # every local write look stale (central_wins) and overwrite the edit.
+            rev = _hub_revision(cfg.workspace, rel_n)
             res = _request(
                 "PUT",
                 f"/api/local/{cfg.workspace}/file",
@@ -215,7 +217,7 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
                 },
             )
             if res.get("central_wins"):
-                # Central always wins: overwrite local with hub content.
+                # True race: hub moved ahead while we wrote. Keep hub copy.
                 if res.get("content") is not None:
                     apply_local_path(rel_n, res["content"])
                 _file_revisions[rel_n] = int(res.get("revision") or rev)
@@ -230,6 +232,18 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
     if ok:
         _last_error = None
     return {"ok": ok, "results": results}
+
+
+def _hub_revision(workspace: str, rel_path: str) -> int:
+    try:
+        q = urllib.parse.urlencode({"path": rel_path})
+        data = _request("GET", f"/api/local/{workspace}/file?{q}", timeout=10.0)
+        rev = int(data.get("revision") or 0)
+        _file_revisions[rel_path] = rev
+        return rev
+    except Exception:
+        return int(_file_revisions.get(rel_path, 0))
+
 
 
 def mark_and_push(paths: list[str]) -> dict[str, Any]:
@@ -301,6 +315,18 @@ def start_session_and_pull() -> dict[str, Any]:
         files = _request("GET", f"/api/local/{ws}/files")
         apply_remote_files(files)
         _local_session_active = True
+        # Seed hub revisions so later local edits are not rejected as stale.
+        for rel in [SHARED_CATEGORIES] + [
+            f"{name}/data/{CATEGORIZED}"
+            for name in (files.get("people") or {})
+        ] + [
+            f"{name}/data/{PERSONAL_CATEGORIES}"
+            for name in (files.get("people") or {})
+        ]:
+            try:
+                _hub_revision(ws, rel)
+            except Exception:
+                pass
         events = _request(
             "GET",
             f"/api/events?{urllib.parse.urlencode({'viewer': 'local', 'workspace': ws, 'since_id': 0})}",

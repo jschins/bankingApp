@@ -51,9 +51,10 @@ centraleBoekhouding/boekhouding/
 
 When any peer’s `categories.json` is written (local or central):
 
-1. Centrale rebuilds a **merged** `boekhouding/categories.json` one level above the peer folders (union of abbreviations and category terms).
-2. That merged document is written back into **every** peer’s `categories.json`.
-3. All local peers are notified and pull the updated categories.
+1. Centrale records term **deletions** (so a removed term is not brought back by another peer’s older copy).
+2. Rebuilds a **merged** `boekhouding/categories.json` (union of abbreviations and category terms, minus recorded deletions).
+3. Pushes that merged document into **every** peer’s `categories.json`.
+4. Notifies all local peers so they pull the update.
 
 Person-file changes under `dkg/...` notify **only** the `dkg` peer. Central is notified for **every** local change.
 

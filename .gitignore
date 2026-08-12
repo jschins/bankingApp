@@ -11,6 +11,7 @@ single-docker/people/
 single-docker/dist/boekh_onedir/
 boekh-multiperson/boekhouding/
 lokaleBoekhouding/boekhouding/
+lokaleBoekhouding/jl/
 centraleBoekhouding/boekhouding/
 
 

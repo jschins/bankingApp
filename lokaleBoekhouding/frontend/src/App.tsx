@@ -1129,6 +1129,10 @@ function EditableCell({
     if (!arraysEqual(cleaned, terms)) onCommit(cleaned);
   }
 
+  function removeAt(index: number) {
+    commit(draft.filter((_, idx) => idx !== index));
+  }
+
   function commitAdd() {
     if (!add.trim()) return;
     commit([...draft, add]);
@@ -1137,18 +1141,27 @@ function EditableCell({
   return (
     <div className="terms">
       {draft.map((term, i) => (
-        <input
-          key={i}
-          className="term-input"
-          value={term}
-          onChange={(e) =>
-            setDraft((d) => d.map((t, idx) => (idx === i ? e.target.value : t)))
-          }
-          onBlur={() => commit(draft)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-        />
+        <div key={`${term}-${i}`} className="term-row">
+          <input
+            className="term-input"
+            value={term}
+            onChange={(e) =>
+              setDraft((d) => d.map((t, idx) => (idx === i ? e.target.value : t)))
+            }
+            onBlur={() => commit(draft)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+          />
+          <button
+            type="button"
+            className="term-delete"
+            title="Delete term"
+            onClick={() => removeAt(i)}
+          >
+            ×
+          </button>
+        </div>
       ))}
       <input
         className="term-input add"

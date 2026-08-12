@@ -457,6 +457,13 @@ td.clickable:hover {
   gap: 2px;
 }
 
+.term-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
 .term-input {
   box-sizing: border-box;
   border: 1px solid #e3e3e6;
@@ -468,6 +475,31 @@ td.clickable:hover {
   min-width: 100%;
   max-width: none;
   field-sizing: content;
+}
+
+.term-row .term-input {
+  min-width: 0;
+  flex: 1;
+  width: auto;
+}
+
+.term-delete {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid #e3e3e6;
+  border-radius: 4px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.95rem;
+}
+
+.term-delete:hover {
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 
 .term-input.add {
