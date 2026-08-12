@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
+  ackCentralWinsRefusal,
   addCategoryTerm,
+  getCentralWinsRefusals,
   getCentraleNotifications,
   getCentraleStatus,
   getMatrix,
@@ -11,6 +13,7 @@ import {
   refreshAll,
   setWorkspace,
   updateSettings,
+  type CentralWinsAlert,
   type CentraleSyncStatus,
   type SyncNotification,
 } from "./api";
@@ -96,6 +99,7 @@ function SyncNotifyShell({
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
   const [notes, setNotes] = useState<SyncNotification[]>([]);
   const [switching, setSwitching] = useState(false);
+  const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +112,16 @@ function SyncNotifyShell({
       getCentraleNotifications()
         .then((payload) => {
           if (!cancelled) setNotes(payload.notifications || []);
+        })
+        .catch(() => {});
+      getCentralWinsRefusals()
+        .then((payload) => {
+          if (cancelled) return;
+          const next = (payload.alerts || [])[0] || null;
+          setRefusal((prev) => {
+            if (prev && next && prev.id === next.id) return prev;
+            return next;
+          });
         })
         .catch(() => {});
     }
@@ -146,6 +160,21 @@ function SyncNotifyShell({
       .finally(() => setSwitching(false));
   }
 
+  function dismissRefusal() {
+    if (!refusal) return;
+    const id = refusal.id;
+    ackCentralWinsRefusal(id)
+      .then((res) => {
+        const next = (res.alerts || [])[0] || null;
+        setRefusal(next);
+        onWorkspaceChanged?.();
+      })
+      .catch(() => {
+        setRefusal(null);
+        onWorkspaceChanged?.();
+      });
+  }
+
   const showBar = Boolean(status?.enabled) || isCentralAdmin;
 
   return (
@@ -167,6 +196,17 @@ function SyncNotifyShell({
                 {n.file_path}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+      {refusal && !isCentralAdmin && (
+        <div className="central-wins-overlay" role="alertdialog" aria-modal="true">
+          <div className="central-wins-dialog">
+            <p>{refusal.message}</p>
+            {refusal.path ? <p className="central-wins-path">{refusal.path}</p> : null}
+            <button type="button" className="central-wins-ok" onClick={dismissRefusal}>
+              OK
+            </button>
           </div>
         </div>
       )}

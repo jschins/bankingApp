@@ -100,4 +100,16 @@ uv run --group build python scripts/build_onefile.py
 ## levert boekh.exe
 
 
+# lokaleBoekhouding en centraleBoekhouding
+
+frontend staat in lokaleBoekhouding
+
+1. backend voor hub op poort 8400 (synchronisatie wijzigingen): 
+PS C:\Coding\bankingApp\centraleBoekhouding> uv run --group build python scripts/build_onefile.py  
+
+2. backend voor centrale administrator (geen refresh data):
+PS C:\Coding\bankingApp\centraleBoekhouding> uv run --group build python scripts/build_centrale_admin.py
+
+3. backend voor lokale administrator (slechts één workspace optie):
+PS C:\Coding\bankingApp\lokaleBoekhouding> uv run --group build python scripts/build_onefile.py  
 

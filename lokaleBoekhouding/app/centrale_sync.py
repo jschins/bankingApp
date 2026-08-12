@@ -38,6 +38,13 @@ _push_wake = threading.Event()
 _push_pending: set[str] = set()
 _NOTIFY_TTL_SEC = 15.0
 _config_cache: CentraleConfig | None = None
+_central_wins_alerts: list[dict[str, Any]] = []
+_next_alert_id = 1
+
+_CENTRAL_WINS_MESSAGE = (
+    "modification refused due to coincidental (same time, same file) "
+    "modification by central administrator"
+)
 
 
 @dataclass(frozen=True)
@@ -246,6 +253,39 @@ def pop_notifications() -> dict[str, Any]:
     return {"notifications": notes}
 
 
+def _queue_central_wins_alert(rel_path: str) -> None:
+    """Sticky alert for local peers when hub rejects a push (central wins)."""
+    global _next_alert_id
+    if is_central_admin():
+        return
+    with _state_lock:
+        alert_id = _next_alert_id
+        _next_alert_id += 1
+        _central_wins_alerts.append(
+            {
+                "id": alert_id,
+                "path": rel_path,
+                "message": _CENTRAL_WINS_MESSAGE,
+            }
+        )
+
+
+def pop_central_wins_alerts() -> dict[str, Any]:
+    with _state_lock:
+        return {"alerts": list(_central_wins_alerts)}
+
+
+def ack_central_wins_alert(alert_id: int) -> dict[str, Any]:
+    with _state_lock:
+        before = len(_central_wins_alerts)
+        _central_wins_alerts[:] = [
+            a for a in _central_wins_alerts if int(a.get("id") or 0) != int(alert_id)
+        ]
+        removed = before - len(_central_wins_alerts)
+        remaining = list(_central_wins_alerts)
+    return {"ok": True, "removed": removed, "alerts": remaining}
+
+
 def _active_notifications_unlocked() -> list[dict[str, Any]]:
     now = time.time()
     alive = [n for n in _pending_notifications if float(n.get("expires_at", 0)) > now]
@@ -363,6 +403,7 @@ def push_paths(paths: list[str]) -> dict[str, Any]:
                 if res.get("content") is not None:
                     apply_local_path(rel_n, res["content"])
                 _file_revisions[rel_n] = int(res.get("revision") or rev)
+                _queue_central_wins_alert(rel_n)
                 results.append({"path": rel_n, "ok": True, "central_wins": True})
             else:
                 _file_revisions[rel_n] = int(res.get("revision") or rev + 1)

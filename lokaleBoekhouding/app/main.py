@@ -157,6 +157,24 @@ def api_centrale_notifications() -> dict[str, Any]:
     return pop_notifications()
 
 
+@app.get("/api/centrale/refusals")
+def api_centrale_refusals() -> dict[str, Any]:
+    from app.centrale_sync import pop_central_wins_alerts
+
+    return pop_central_wins_alerts()
+
+
+class RefusalAckRequest(BaseModel):
+    id: int
+
+
+@app.post("/api/centrale/refusals/ack")
+def api_centrale_refusal_ack(body: RefusalAckRequest) -> dict[str, Any]:
+    from app.centrale_sync import ack_central_wins_alert
+
+    return ack_central_wins_alert(body.id)
+
+
 def _tracked_paths_for_people() -> list[str]:
     """All people categorized_transactions paths (not personal_categories)."""
     return [

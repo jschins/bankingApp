@@ -118,6 +118,24 @@ export function getCentraleNotifications(): Promise<{ notifications: SyncNotific
   return getJson("/api/centrale/notifications");
 }
 
+export interface CentralWinsAlert {
+  id: number;
+  path: string;
+  message: string;
+}
+
+export function getCentralWinsRefusals(): Promise<{ alerts: CentralWinsAlert[] }> {
+  return getJson("/api/centrale/refusals");
+}
+
+export function ackCentralWinsRefusal(id: number): Promise<{
+  ok: boolean;
+  removed: number;
+  alerts: CentralWinsAlert[];
+}> {
+  return sendJson("/api/centrale/refusals/ack", "POST", { id });
+}
+
 export function getWorkspaces(): Promise<{
   workspaces: string[];
   workspace: string;

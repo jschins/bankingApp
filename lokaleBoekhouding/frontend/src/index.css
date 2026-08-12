@@ -110,6 +110,46 @@ body {
   font-size: 0.75rem;
 }
 
+.central-wins-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.central-wins-dialog {
+  width: min(92vw, 28rem);
+  padding: 1.25rem 1.35rem;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+}
+
+.central-wins-dialog p {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+  color: #0f172a;
+}
+
+.central-wins-path {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.central-wins-ok {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.4rem 1.1rem;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #fff;
+}
+
 .sync-notify-row {
   display: flex;
   flex-wrap: wrap;
