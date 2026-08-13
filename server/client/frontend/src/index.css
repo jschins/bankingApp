@@ -206,6 +206,13 @@ body {
   font-size: 0.75rem;
 }
 
+.fetch-form--person-scope {
+  background: #fbcfe8;
+  padding: 0.55rem 0.65rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #f9a8d4;
+}
+
 .fetch-form label {
   display: flex;
   flex-direction: column;

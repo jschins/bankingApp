@@ -679,7 +679,11 @@ function MainApp({ author }: { author: string }) {
           {author ? `Boekhouding ${author}` : "Boekhouding"}
         </h1>
 
-        <div className="fetch-form">
+        <div
+          className={
+            awaitingPostConsentFetch ? "fetch-form fetch-form--person-scope" : "fetch-form"
+          }
+        >
           {hasSecrets && (
             <>
               <label>
@@ -715,17 +719,28 @@ function MainApp({ author }: { author: string }) {
               ) : null}
               {refreshStatus && (
                 <div className="refresh-status">
-                  {(refreshStatus.results || []).map((r) => (
+                  {(refreshStatus.results || [])
+                    .filter((r) => {
+                      if (!awaitingPostConsentFetch) return true;
+                      return (
+                        r.skipped &&
+                        r.reason === "needs_consent_renewal" &&
+                        Boolean(consentReady[r.short])
+                      );
+                    })
+                    .map((r) => (
                     <div key={r.short} className="refresh-status-line">
                       {r.skipped ? (
                         r.reason === "needs_consent_renewal" ? (
                           <>
-                            <span>
-                              {r.short}: consent renewal required
-                              {!r.authorization_url && !consentReady[r.short]
-                                ? " (no authorization URL)"
-                                : ""}
-                            </span>
+                            {!awaitingPostConsentFetch ? (
+                              <span>
+                                {r.short}: consent renewal required
+                                {!r.authorization_url && !consentReady[r.short]
+                                  ? " (no authorization URL)"
+                                  : ""}
+                              </span>
+                            ) : null}
                             {!consentReady[r.short] && r.authorization_url ? (
                               <a
                                 className="refresh-button"
@@ -781,24 +796,32 @@ function MainApp({ author }: { author: string }) {
                           {r.new_year ? " — new year overwrite" : ""}
                         </span>
                       )}
-                      {(r.warnings || []).map((w) => (
-                        <div key={`${r.short}-w-${w}`} className="refresh-status-note">
-                          {r.short}: {w}
-                        </div>
-                      ))}
-                      {(r.account_errors || []).map((w) => (
-                        <div key={`${r.short}-e-${w}`} className="refresh-status-note">
-                          {r.short}: {w}
-                        </div>
-                      ))}
+                      {!awaitingPostConsentFetch
+                        ? (r.warnings || []).map((w) => (
+                            <div key={`${r.short}-w-${w}`} className="refresh-status-note">
+                              {r.short}: {w}
+                            </div>
+                          ))
+                        : null}
+                      {!awaitingPostConsentFetch
+                        ? (r.account_errors || []).map((w) => (
+                            <div key={`${r.short}-e-${w}`} className="refresh-status-note">
+                              {r.short}: {w}
+                            </div>
+                          ))
+                        : null}
                     </div>
                   ))}
-                  {(refreshStatus.warnings || []).map((w) => (
-                    <div key={w} className="refresh-status-note">
-                      {w}
-                    </div>
-                  ))}
-                  {!refreshStatus.results?.length && !refreshStatus.warnings?.length ? (
+                  {!awaitingPostConsentFetch
+                    ? (refreshStatus.warnings || []).map((w) => (
+                        <div key={w} className="refresh-status-note">
+                          {w}
+                        </div>
+                      ))
+                    : null}
+                  {!awaitingPostConsentFetch &&
+                  !refreshStatus.results?.length &&
+                  !refreshStatus.warnings?.length ? (
                     <div>Refreshed (no person results)</div>
                   ) : null}
                 </div>
