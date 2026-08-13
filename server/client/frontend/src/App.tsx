@@ -11,6 +11,7 @@ import {
   recalculate,
   recordModification,
   refreshAll,
+  refreshPerson,
   setWorkspace,
   updateSettings,
   type CentralWinsAlert,
@@ -383,6 +384,8 @@ function MainApp({ author }: { author: string }) {
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchingShort, setFetchingShort] = useState<string | null>(null);
+  const [personNewYear, setPersonNewYear] = useState<Record<string, boolean>>({});
   const [refreshStatus, setRefreshStatus] = useState<StoredRefreshStatus | null>(() =>
     loadStoredRefreshStatus()
   );
@@ -576,6 +579,7 @@ function MainApp({ author }: { author: string }) {
     setError(null);
     setRefreshStatus(null);
     clearStoredRefreshStatus();
+    setPersonNewYear({});
     refreshAll({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
@@ -593,6 +597,38 @@ function MainApp({ author }: { author: string }) {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setRefreshing(false));
+  }
+
+  function doRefreshPerson(short: string) {
+    setFetchingShort(short);
+    setError(null);
+    refreshPerson(short, {
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      new_year: Boolean(personNewYear[short]),
+    })
+      .then((res) => {
+        setMatrix(res.matrix);
+        const nextResult = (res.results || [])[0];
+        const prev = refreshStatus || { results: [], warnings: [] };
+        const results = nextResult
+          ? [
+              ...prev.results.filter((r) => r.short !== short),
+              nextResult,
+            ]
+          : prev.results.filter((r) => r.short !== short);
+        const warnings = [
+          ...prev.warnings.filter((w) => !w.startsWith(`${short}:`) && !w.startsWith(`${short} (`)),
+          ...(res.warnings || []),
+        ];
+        const payload: StoredRefreshStatus = { results, warnings };
+        saveStoredRefreshStatus(payload);
+        setRefreshStatus(payload);
+        setSelection(null);
+        setDetail(null);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setFetchingShort(null));
   }
 
   const inPView = selection !== null;
@@ -628,7 +664,11 @@ function MainApp({ author }: { author: string }) {
                   onChange={(e) => setDateTo(e.target.value)}
                 />
               </label>
-              <button className="refresh-button" onClick={doRefresh} disabled={refreshing}>
+              <button
+                className="refresh-button"
+                onClick={doRefresh}
+                disabled={refreshing || Boolean(fetchingShort)}
+              >
                 {refreshing ? "Refreshing…" : "↻ Refresh all"}
               </button>
               {refreshStatus && (
@@ -653,6 +693,30 @@ function MainApp({ author }: { author: string }) {
                                 {r.folder ? ` (${r.folder})` : ""}
                               </a>
                             ) : null}
+                            <label className="refresh-person-newyear">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(personNewYear[r.short])}
+                                disabled={Boolean(refreshing || fetchingShort)}
+                                onChange={(e) =>
+                                  setPersonNewYear((prev) => ({
+                                    ...prev,
+                                    [r.short]: e.target.checked,
+                                  }))
+                                }
+                              />
+                              new year (overwrite {r.short} only)
+                            </label>
+                            <button
+                              type="button"
+                              className="refresh-person-button"
+                              disabled={Boolean(refreshing || fetchingShort)}
+                              onClick={() => doRefreshPerson(r.short)}
+                            >
+                              {fetchingShort === r.short
+                                ? `Fetching ${r.short}…`
+                                : `Fetch ${r.short}`}
+                            </button>
                           </>
                         ) : (
                           <span>
@@ -667,6 +731,7 @@ function MainApp({ author }: { author: string }) {
                           {r.date_from && r.date_to
                             ? ` (${r.date_from} .. ${r.date_to})`
                             : ""}
+                          {r.new_year ? " — new year overwrite" : ""}
                         </span>
                       )}
                       {(r.warnings || []).map((w) => (

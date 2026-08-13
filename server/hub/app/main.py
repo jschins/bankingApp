@@ -246,6 +246,12 @@ class RefreshRequest(BaseModel):
     date_to: str | None = None
 
 
+class PersonRefreshRequest(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    new_year: bool = False
+
+
 @app.get("/api/local/{workspace}/capabilities")
 def api_capabilities(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
     from app import workspace_api
@@ -392,8 +398,40 @@ def api_refresh(
     req = body or RefreshRequest()
     try:
         return workspace_api.refresh(
-            workspace, date_from=req.date_from, date_to=req.date_to
+            workspace,
+            date_from=req.date_from,
+            date_to=req.date_to,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/local/{workspace}/refresh/{short}")
+def api_refresh_person(
+    workspace: str,
+    short: str,
+    body: PersonRefreshRequest | None = None,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    req = body or PersonRefreshRequest()
+    try:
+        return workspace_api.refresh_person(
+            workspace,
+            short,
+            date_from=req.date_from,
+            date_to=req.date_to,
+            new_year=req.new_year,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:

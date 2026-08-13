@@ -206,6 +206,105 @@ def refresh_all(
         return {"matrix": matrix, "results": results, "warnings": warnings}
 
 
+def refresh_person(
+    short: str,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    new_year: bool = False,
+) -> dict[str, Any]:
+    """Fetch bank data for one person; optional new-year overwrite for that person only."""
+    from app.core.categorize import process_transactions
+    from app.core.single_client import (
+        EnableBankingError,
+        fetch_transactions,
+        get_authorization_url,
+        needs_consent_renewal,
+    )
+    from app.paths import CALC_LOCK
+    from app.runtime import active_workspace
+
+    with CALC_LOCK:
+        packs = refresh_people()
+        pack = get_person(short)
+        warnings: list[str] = []
+        results: list[dict[str, Any]] = []
+
+        with bind_person(pack):
+            try:
+                if needs_consent_renewal():
+                    auth_url: str | None = None
+                    try:
+                        auth_url = get_authorization_url(
+                            workspace=active_workspace(),
+                            person_short=pack.short,
+                            folder=pack.folder_name,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        warnings.append(
+                            f"{pack.short} ({pack.folder_name}): "
+                            f"consent renewal required — could not get authorization URL ({exc})"
+                        )
+                    else:
+                        warnings.append(
+                            f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
+                        )
+                    results.append(
+                        {
+                            "short": pack.short,
+                            "folder": pack.folder_name,
+                            "skipped": True,
+                            "reason": "needs_consent_renewal",
+                            "authorization_url": auth_url,
+                        }
+                    )
+                else:
+                    fetched = fetch_transactions(date_from=date_from, date_to=date_to)
+                    process_transactions(fetched.transactions, new_year=bool(new_year))
+                    results.append(
+                        {
+                            "short": pack.short,
+                            "folder": pack.folder_name,
+                            "skipped": False,
+                            "transaction_count": len(fetched.transactions),
+                            "date_from": fetched.date_from,
+                            "date_to": fetched.date_to,
+                            "warnings": fetched.warnings,
+                            "account_errors": fetched.account_errors,
+                            "new_year": bool(new_year),
+                        }
+                    )
+                    if fetched.warnings:
+                        for w in fetched.warnings:
+                            warnings.append(f"{pack.short}: {w}")
+                    if fetched.account_errors:
+                        for err in fetched.account_errors:
+                            warnings.append(f"{pack.short}: {err}")
+            except EnableBankingError as exc:
+                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
+                results.append(
+                    {
+                        "short": pack.short,
+                        "folder": pack.folder_name,
+                        "skipped": True,
+                        "reason": str(exc),
+                    }
+                )
+            except Exception as exc:
+                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
+                results.append(
+                    {
+                        "short": pack.short,
+                        "folder": pack.folder_name,
+                        "skipped": True,
+                        "reason": str(exc),
+                    }
+                )
+
+        matrix = build_matrix(packs)
+        return {"matrix": matrix, "results": results, "warnings": warnings}
+
+
 def save_general_terms(category_name: str, terms: list[str]) -> list[str]:
     from app.core.categorize import _cleaned_terms, _category_map
 

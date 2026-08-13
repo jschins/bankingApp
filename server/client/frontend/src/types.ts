@@ -20,6 +20,7 @@ export interface RefreshPersonResult {
   warnings?: string[];
   account_errors?: string[];
   authorization_url?: string | null;
+  new_year?: boolean;
 }
 
 export interface RefreshResponse {

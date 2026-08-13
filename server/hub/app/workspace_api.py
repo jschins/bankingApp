@@ -361,12 +361,46 @@ def add_term(
         }
 
 
+def _ingest_person_data_files(
+    ws: str, *, folder_names: list[str] | None = None
+) -> list[str]:
+    """Load on-disk person data JSON into the store; return relative paths."""
+    inputs: list[str] = []
+    root = store.workspace_dir(ws)
+    wanted = {name for name in folder_names} if folder_names is not None else None
+    for child in root.iterdir():
+        if not child.is_dir() or not (child / "data").is_dir():
+            continue
+        if wanted is not None and child.name not in wanted:
+            continue
+        for name in (store.DOWNLOADED, store.CATEGORIZED, store.CATEGORY_TOTALS):
+            path = child / "data" / name
+            if not path.is_file():
+                continue
+            try:
+                content = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            rel = f"{child.name}/data/{name}"
+            inputs.append(rel)
+            store.put_file(
+                ws,
+                rel,
+                content,
+                source="central",
+                skip_recalc=True,
+                skip_event=True,
+            )
+    return inputs
+
+
 def refresh(
     workspace: str,
     *,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict[str, Any]:
+    """Refresh all people (append-only). No new-year overwrite."""
     from app.matrix import refresh_all
 
     with _workspace_scope(workspace) as ws:
@@ -375,35 +409,53 @@ def refresh(
                 "Bank refresh requires secrets under workspaces/<ws>/<person>/secret/."
             )
         result = refresh_all(date_from=date_from, date_to=date_to)
-        inputs: list[str] = []
-        root = store.workspace_dir(ws)
-        for child in root.iterdir():
-            if not child.is_dir() or not (child / "data").is_dir():
-                continue
-            for name in (store.DOWNLOADED, store.CATEGORIZED, store.CATEGORY_TOTALS):
-                path = child / "data" / name
-                if not path.is_file():
-                    continue
-                try:
-                    content = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                rel = f"{child.name}/data/{name}"
-                inputs.append(rel)
-                store.put_file(
-                    ws,
-                    rel,
-                    content,
-                    source="central",
-                    skip_recalc=True,
-                    skip_event=True,
-                )
+        inputs = _ingest_person_data_files(ws)
 
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
     matrix_payload = mut.get("matrix") or result.get("matrix") or {}
     if isinstance(matrix_payload, dict):
         matrix_payload = {**matrix_payload, "workspace": ws}
     # Keep per-person fetch stats (transaction_count, skipped, …) from refresh_all.
+    return {
+        **result,
+        "workspace": ws,
+        "matrix": matrix_payload,
+        "affected_files": mut.get("affected_files") or [],
+        "results": list(result.get("results") or []),
+        "warnings": list(result.get("warnings") or []),
+    }
+
+
+def refresh_person(
+    workspace: str,
+    short: str,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    new_year: bool = False,
+) -> dict[str, Any]:
+    """Refresh one person; optional new-year overwrite applies only to that person."""
+    from app.matrix import refresh_person as matrix_refresh_person
+    from app.people import get_person
+
+    with _workspace_scope(workspace) as ws:
+        if not _has_secrets(ws):
+            raise PermissionError(
+                "Bank refresh requires secrets under workspaces/<ws>/<person>/secret/."
+            )
+        pack = get_person(short)
+        result = matrix_refresh_person(
+            short,
+            date_from=date_from,
+            date_to=date_to,
+            new_year=new_year,
+        )
+        inputs = _ingest_person_data_files(ws, folder_names=[pack.folder_name])
+
+    mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    matrix_payload = mut.get("matrix") or result.get("matrix") or {}
+    if isinstance(matrix_payload, dict):
+        matrix_payload = {**matrix_payload, "workspace": ws}
     return {
         **result,
         "workspace": ws,

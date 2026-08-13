@@ -49,6 +49,17 @@ export function refreshAll(body: {
   return sendJson("/api/refresh", "POST", body);
 }
 
+export function refreshPerson(
+  short: string,
+  body: {
+    date_from?: string;
+    date_to?: string;
+    new_year?: boolean;
+  } = {}
+): Promise<RefreshResponse> {
+  return sendJson(`/api/refresh/${encodeURIComponent(short)}`, "POST", body);
+}
+
 export function getTransactions(
   short: string,
   category: string

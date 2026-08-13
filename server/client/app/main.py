@@ -59,6 +59,12 @@ class RefreshRequest(BaseModel):
     date_to: str | None = None
 
 
+class PersonRefreshRequest(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    new_year: bool = False
+
+
 def _hub_error(exc: Exception) -> HTTPException:
     msg = str(exc)
     if msg.startswith("hub 403"):
@@ -224,6 +230,26 @@ def api_refresh(body: RefreshRequest | None = None) -> dict[str, Any]:
         return hub_post(
             "/refresh",
             {"date_from": req.date_from, "date_to": req.date_to},
+            timeout=300.0,
+        )
+    except Exception as exc:
+        raise _hub_error(exc) from exc
+
+
+@app.post("/api/refresh/{short}")
+def api_refresh_person(short: str, body: PersonRefreshRequest | None = None) -> dict[str, Any]:
+    from app.centrale_sync import hub_post
+    import urllib.parse
+
+    req = body or PersonRefreshRequest()
+    try:
+        return hub_post(
+            f"/refresh/{urllib.parse.quote(short)}",
+            {
+                "date_from": req.date_from,
+                "date_to": req.date_to,
+                "new_year": req.new_year,
+            },
             timeout=300.0,
         )
     except Exception as exc:
