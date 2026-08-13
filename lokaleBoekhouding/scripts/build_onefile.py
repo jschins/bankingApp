@@ -18,32 +18,60 @@ from app.runtime import project_root
 PROJECT = project_root()
 FRONTEND = PROJECT / "frontend"
 FRONTEND_DIST = FRONTEND / "dist"
+MODE_MARKER = FRONTEND_DIST / ".vite_app_mode"
 ENTRY = PROJECT / "entry.py"
 NAME = "lokaleBoekhouding"
 # Peer deploy roots (exe + person packs + lokale_config.json).
 DEPLOY_DIRS = (PROJECT / "dkg", PROJECT / "jl")
 # PyInstaller dist intermediate (first deploy dir).
 BUILD_DIST = DEPLOY_DIRS[0]
+REQUIRED_MODE = "local"
 
 
-def _run(cmd: list[str], *, cwd: Path) -> None:
+def _run(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(cmd))
-    subprocess.run(cmd, cwd=cwd, check=True)
+    subprocess.run(cmd, cwd=cwd, env=env, check=True)
 
 
-def _ensure_frontend(*, force: bool = False) -> None:
+def _force_frontend() -> bool:
+    if "--force-frontend" in sys.argv:
+        return True
+    return os.environ.get("FORCE_FRONTEND", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dist_is_local() -> bool:
+    if not (FRONTEND_DIST / "index.html").is_file():
+        return False
+    if not MODE_MARKER.is_file():
+        # Plain ``npm run build`` without marker: treat as reusable local dist.
+        return True
+    try:
+        return MODE_MARKER.read_text(encoding="utf-8").strip() == REQUIRED_MODE
+    except OSError:
+        return False
+
+
+def _ensure_frontend() -> None:
+    if not _force_frontend() and _dist_is_local():
+        print(
+            f"Reusing existing frontend dist at {FRONTEND_DIST}. "
+            "Pass --force-frontend to rebuild."
+        )
+        return
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
-    if force or not (FRONTEND_DIST / "index.html").is_file():
-        print("Building frontend...")
-        _run([npm, "install"], cwd=FRONTEND)
-        _run([npm, "run", "build"], cwd=FRONTEND)
+    print("Building frontend (local mode)...")
+    env = {**os.environ, "VITE_APP_MODE": REQUIRED_MODE}
+    # Clear central_admin mode from env if present.
+    env["VITE_APP_MODE"] = REQUIRED_MODE
+    _run([npm, "install"], cwd=FRONTEND, env=env)
+    _run([npm, "run", "build"], cwd=FRONTEND, env=env)
     if not (FRONTEND_DIST / "index.html").is_file():
         raise SystemExit(f"frontend build failed: {FRONTEND_DIST / 'index.html'} missing")
+    MODE_MARKER.write_text(REQUIRED_MODE + "\n", encoding="utf-8")
 
 
 def main() -> int:
-    # Rebuild UI when shipping so status-bar / sync changes are not stale.
-    _ensure_frontend(force=True)
+    _ensure_frontend()
     for deploy in DEPLOY_DIRS:
         deploy.mkdir(parents=True, exist_ok=True)
 

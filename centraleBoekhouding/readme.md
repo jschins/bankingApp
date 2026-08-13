@@ -108,9 +108,10 @@ uv run centrale-boekhouding
 uv run --group build python scripts/build_onefile.py
 # → boekhouding/centraleBoekhouding.exe (:8400)
 
-# Central admin UI (bundles lokaleBoekhouding frontend; always rebuilds it):
+# Central admin UI (bundles lokale frontend for central_admin; reuses dist if already built that way):
 uv run --group build python scripts/build_centrale_admin.py
 # → boekhouding/centraleAdmin.exe (:8300)
+# Force UI rebuild: --force-frontend
 ```
 
 Start hub first (:8400), then `centraleAdmin.exe` (:8300).
