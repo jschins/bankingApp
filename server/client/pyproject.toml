@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boekhouding-client"
+version = "0.1"
+description = "Identical BFF + frontend for boekhouding hub (config selects workspaces)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+dependencies = [
+  "banking-app-shared",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.6.0",
+  "tzdata>=2024.1",
+]
+
+[project.scripts]
+client = "app.main:run"
+boekhouding-client = "app.main:run"
+
+[dependency-groups]
+build = ["pyinstaller>=6.0"]
+
+[tool.uv.sources]
+banking-app-shared = { path = "../../shared" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

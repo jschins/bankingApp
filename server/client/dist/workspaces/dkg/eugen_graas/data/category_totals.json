@@ -1,0 +1,31 @@
+{
+  "categories": {
+    "08 Naar kas": "0.00",
+    "09 Pension": "-5600.00",
+    "10 Gezondheid": "-142.61",
+    "11 Convivencias": "0.00",
+    "12 Vervoer": "-4300.07",
+    "13 Kleding Fiets": "0.00",
+    "14 Gewone uitgaven": "-2211.52",
+    "15 Buitengewone uitgaven": "-47.71",
+    "16 Auto": "0.00",
+    "18 Overige uitgaven": "-4997.90",
+    "19 Giften": "0.00",
+    "20 Werk": "18120.66",
+    "21 Familie": "0.00"
+  },
+  "current_balance": "4805.12",
+  "current_balance_currency": "EUR",
+  "current_balance_by_currency": {
+    "EUR": "4805.12"
+  },
+  "account_balances": [
+    {
+      "uid": "1f60d580-f565-4cb2-a6bd-c285d818bfee",
+      "iban": "NL97INGB0006051947",
+      "name": "Hr EJM Graas",
+      "currency": "EUR",
+      "balance": "4805.12"
+    }
+  ]
+}

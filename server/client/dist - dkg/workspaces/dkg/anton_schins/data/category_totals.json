@@ -1,0 +1,31 @@
+{
+  "categories": {
+    "08 Naar kas": "0.00",
+    "09 Pension": "-6400.00",
+    "10 Gezondheid": "-180.27",
+    "11 Convivencias": "0.00",
+    "12 Vervoer": "-1164.44",
+    "13 Kleding Fiets": "-25.80",
+    "14 Gewone uitgaven": "-1308.05",
+    "15 Buitengewone uitgaven": "-238.31",
+    "16 Auto": "0.00",
+    "18 Overige uitgaven": "-17107.27",
+    "19 Giften": "-34250.00",
+    "20 Werk": "60584.08",
+    "21 Familie": "3500.00"
+  },
+  "current_balance": "5121.27",
+  "current_balance_currency": "EUR",
+  "current_balance_by_currency": {
+    "EUR": "5121.27"
+  },
+  "account_balances": [
+    {
+      "uid": "86de4a51-7e2d-4290-84fc-e514fb4d7ad4",
+      "iban": "NL83INGB0004152066",
+      "name": "Hr A G Schins",
+      "currency": "EUR",
+      "balance": "5121.27"
+    }
+  ]
+}

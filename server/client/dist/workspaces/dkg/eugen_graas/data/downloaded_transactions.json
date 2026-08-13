@@ -1,0 +1,987 @@
+[
+  {
+    "entry_reference": "010305246283465280000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "652.52"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "STICHTING ONZE LIEVE VROUWEKERK",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL16INGB0000083831",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Online bankieren",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-07-27",
+    "value_date": null,
+    "transaction_date": "2026-07-27",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: STICHTING ONZE LIEVE VROUWEKERK",
+      "Omschrijving: Salaris.",
+      "IBAN: NL16INGB0000083831",
+      "Valutadatum: 27-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305244914527660000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "500.00"
+    },
+    "creditor": null,
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Geldautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-25",
+    "value_date": null,
+    "transaction_date": "2026-07-25",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Geldmaat GM Westermar Amsterdam",
+      "Kaartnr: 5238 53** **** 5173",
+      "Datum: 25-07-2026 Tijd: 11:01",
+      "Transactie: I96962 Term: 930098",
+      "RRN: 620611826900",
+      "Valutadatum: 25-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305243647980820000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "53.48"
+    },
+    "creditor": {
+      "name": "KPN - Mobiel",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL39KPN271247010001",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL83INGB0000325513",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-24",
+    "value_date": null,
+    "transaction_date": "2026-07-24",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: KPN - Mobiel",
+      "Omschrijving: Factuur 17-07-2026,",
+      "klantnummer 20202662671,",
+      "kpn.com/mobielefactuur.",
+      "IBAN: NL83INGB0000325513",
+      "Kenmerk: 000001386072668",
+      "Machtiging ID: M10001875205",
+      "Incassant ID: NL39KPN271247010001",
+      "Doorlopende incasso",
+      "Valutadatum: 24-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305243611125780000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "54.10"
+    },
+    "creditor": {
+      "name": "Nederlands Dagblad B.V.",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL44ZZZ090569430000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL79RABO0329680099",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-24",
+    "value_date": null,
+    "transaction_date": "2026-07-23",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: Nederlands Dagblad B.V.",
+      "Omschrijving: ABON 24-07-2026 t/m",
+      "23-08-2026 / Nederlands Dagblad",
+      "RelNR: 82479",
+      "IBAN: NL79RABO0329680099",
+      "Kenmerk: NEDE.I.2026.072202.1.1501863923",
+      "Machtiging ID: 102067",
+      "Incassant ID: NL44ZZZ090569430000",
+      "Doorlopende incasso",
+      "Valutadatum: 24-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305242457980830000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "1581.55"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "Sociale Verzekeringsbank",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL16RABO0317347780",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Overschrijving",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-07-23",
+    "value_date": null,
+    "transaction_date": "2026-07-23",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Sociale Verzekeringsbank",
+      "Omschrijving: AOW JUL 26 PC00633090",
+      "WWW.SVB.NL SVB",
+      "IBAN: NL16RABO0317347780",
+      "Kenmerk: PC0063309007082026072001",
+      "Valutadatum: 23-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305242415851670000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "220.92"
+    },
+    "creditor": {
+      "name": "NS GROEP IZ NS REIZIGERS",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL03ZZZ301243580000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL14ABNA0576850675",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-23",
+    "value_date": null,
+    "transaction_date": "2026-07-23",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: NS GROEP IZ NS REIZIGERS",
+      "Omschrijving: Factuur: 430020455385",
+      "IBAN: NL14ABNA0576850675",
+      "Kenmerk: 240051394621",
+      "Machtiging ID: 210001238101",
+      "Incassant ID: NL03ZZZ301243580000",
+      "Doorlopende incasso",
+      "Valutadatum: 23-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305242395665320000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "137.58"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "Stichting Pensioenfonds UWV",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL59INGB0661471446",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Verzamelbetaling",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-07-23",
+    "value_date": null,
+    "transaction_date": "2026-07-22",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Stichting Pensioenfonds UWV",
+      "Omschrijving: BEGUNSTIGDE 2599906",
+      "JULI 2026 BRUTO 177,43 LOONHEFFING",
+      "31,25 ZVW 8,60 ZVWBTL 0,00",
+      "IBAN: NL59INGB0661471446",
+      "Kenmerk: TKPBD90F876890B27197954",
+      "Valutadatum: 23-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305240213633120000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "37.38"
+    },
+    "creditor": {
+      "name": "Hr J B M Clemens en/of Mw M A M Cle via ING Betaalverzoek",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL10INGB0005300114",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-21",
+    "value_date": null,
+    "transaction_date": "2026-07-21",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Hr J B M Clemens en/of Mw M A M Cle via ING Betaalverzoek",
+      "Omschrijving:",
+      "JBMClemensMwMAMClNL65INGB0001270908",
+      "7051046238711234 Sticker met QRcode",
+      "(Ned. en Eng) NL65INGB0001270908",
+      "IBAN: NL10INGB0005300114",
+      "Kenmerk: 21-07-2026 22:03 7051046238711234",
+      "Valutadatum: 21-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305239914817590000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "129.00"
+    },
+    "creditor": null,
+    "creditor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": {
+      "name": "Belastingdienst",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "debtor_account": {
+      "iban": "NL04RABO0200112244",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Overschrijving",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "CRDT",
+    "status": "BOOK",
+    "booking_date": "2026-07-20",
+    "value_date": null,
+    "transaction_date": "2026-07-20",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Belastingdienst",
+      "Omschrijving: MAAND AUG. NR.",
+      "132289969T600013 VOORSCHOT",
+      "ZORGTOESLAG 2026 (GRAAS ) MEER INFO",
+      "OP WWW.TOESLAGEN.NL",
+      "IBAN: NL04RABO0200112244",
+      "Kenmerk: COAXX047034464202607151010241582204",
+      "Valutadatum: 20-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305233963996950000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "4.85"
+    },
+    "creditor": null,
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Diversen",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-14",
+    "value_date": null,
+    "transaction_date": "2026-07-14",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Kosten BasisPakket",
+      "1 jun t/m 30 jun 2026",
+      "ING BANK N.V.",
+      "Valutadatum: 14-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305230611974830000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "30.12"
+    },
+    "creditor": {
+      "name": "Aevitae B.V. via Stichting Mollie Payments",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL51DEUT0265262461",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-11",
+    "value_date": null,
+    "transaction_date": "2026-07-11",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Aevitae B.V. via Stichting Mollie Payments",
+      "Omschrijving:",
+      "3e7817615c917b599275940ddf92e981",
+      "8152166221103856 Aevitae B.V.",
+      "Factuur 1909062908 Aevitae B.V.",
+      "IBAN: NL51DEUT0265262461",
+      "Kenmerk: 11-07-2026 17:11 8152166221103856",
+      "Valutadatum: 11-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305228158199770000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "13.23"
+    },
+    "creditor": {
+      "name": "NS GROEP IZ NS REIZIGERS",
+      "postal_address": null,
+      "organisation_id": {
+        "identification": "NL03ZZZ301243580000",
+        "scheme_name": "BANK",
+        "issuer": null
+      },
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL14ABNA0576850675",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Incasso",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-09",
+    "value_date": null,
+    "transaction_date": "2026-07-09",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": "SDDM",
+    "remittance_information": [
+      "Naam: NS GROEP IZ NS REIZIGERS",
+      "Omschrijving: Factuur: 453004141490",
+      "IBAN: NL14ABNA0576850675",
+      "Kenmerk: 220050014039",
+      "Machtiging ID: 220000455701",
+      "Incassant ID: NL03ZZZ301243580000",
+      "Doorlopende incasso",
+      "Valutadatum: 09-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305226962591580000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "9.30"
+    },
+    "creditor": {
+      "name": "PARKING GARENMARKT LEIDEN",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-08",
+    "value_date": null,
+    "transaction_date": "2026-07-08",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "PARKING GARENMARKT LEIDEN LEIDEN",
+      "Pasvolgnr: 009 07-07-2026 21:41",
+      "Transactie: W00093 Term: 51493134",
+      "Valutadatum: 08-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305227024087620000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "25.00"
+    },
+    "creditor": {
+      "name": "T.A.M. Graas via Tikkie",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL13ABNA0506417344",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "iDEAL | Wero",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-08",
+    "value_date": null,
+    "transaction_date": "2026-07-08",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: T.A.M. Graas via Tikkie",
+      "Omschrijving: 001258845423",
+      "0031044739320864 Rouwboeket",
+      "NL27ASNB8843512501",
+      "IBAN: NL13ABNA0506417344",
+      "Kenmerk: 08-07-2026 10:57 0031044739320864",
+      "Valutadatum: 08-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305225771489990000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "70.19"
+    },
+    "creditor": {
+      "name": "Esso Monnickendam Oo",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-07",
+    "value_date": null,
+    "transaction_date": "2026-07-07",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Esso Monnickendam Oo NLD",
+      "Pasvolgnr: 009 06-07-2026 17:41",
+      "Transactie: W00092 Term: B07NL3",
+      "Valutadatum: 07-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305225634561440000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "23.00"
+    },
+    "creditor": null,
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Diversen",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-06",
+    "value_date": null,
+    "transaction_date": "2026-07-05",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Incasso ING creditcard",
+      "Accountnr 210039821280",
+      "Periode juni 2026",
+      "Voor info zie creditcardoverzicht",
+      "Valutadatum: 06-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305219645328600000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "29.32"
+    },
+    "creditor": {
+      "name": "Esso Amsterdam Utrecht",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Betaalautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-01",
+    "value_date": null,
+    "transaction_date": "2026-07-01",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Esso Amsterdam Utrecht AMSTERDAM",
+      "Pasvolgnr: 009 30-06-2026 14:17",
+      "Transactie: C00096 Term: 26ZY5F",
+      "Valutadatum: 01-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305220823036000000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "700.00"
+    },
+    "creditor": {
+      "name": "Stichting De Oude Gracht",
+      "postal_address": null,
+      "organisation_id": null,
+      "private_id": null,
+      "contact_details": null
+    },
+    "creditor_account": {
+      "iban": "NL94INGB0006200605",
+      "other": null
+    },
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Online bankieren",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-01",
+    "value_date": null,
+    "transaction_date": "2026-07-01",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Naam: Stichting De Oude Gracht",
+      "Omschrijving: Pension",
+      "IBAN: NL94INGB0006200605",
+      "Valutadatum: 01-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  },
+  {
+    "entry_reference": "010305250033806580000000",
+    "merchant_category_code": null,
+    "transaction_amount": {
+      "currency": "EUR",
+      "amount": "200.00"
+    },
+    "creditor": null,
+    "creditor_account": null,
+    "creditor_agent": null,
+    "debtor": null,
+    "debtor_account": {
+      "iban": "NL97INGB0006051947",
+      "other": null
+    },
+    "debtor_agent": null,
+    "bank_transaction_code": {
+      "description": "Geldautomaat",
+      "code": null,
+      "sub_code": null
+    },
+    "credit_debit_indicator": "DBIT",
+    "status": "BOOK",
+    "booking_date": "2026-07-31",
+    "value_date": null,
+    "transaction_date": "2026-07-31",
+    "balance_after_transaction": null,
+    "reference_number": null,
+    "reference_number_schema": null,
+    "remittance_information": [
+      "Geldmaat GM Westermar Amsterdam",
+      "Kaartnr: 5238 53** **** 5173",
+      "Datum: 31-07-2026 Tijd: 09:09",
+      "Transactie: I05371 Term: 930098",
+      "RRN: 621209407753",
+      "Valutadatum: 31-07-2026"
+    ],
+    "debtor_account_additional_identification": null,
+    "creditor_account_additional_identification": null,
+    "exchange_rate": null,
+    "note": null,
+    "transaction_id": null,
+    "_account_index": 0
+  }
+]
