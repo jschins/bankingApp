@@ -448,7 +448,7 @@ def list_events(
 ) -> dict[str, Any]:
     """Filter change events for central UI or a local peer.
 
-    - central: all ``source=local`` events
+    - central: all ``source=local`` events (optional workspace filter)
     - local: ``source=central`` person-file events for that workspace, plus
       broadcast merged ``categories.json`` events (all peers)
     """

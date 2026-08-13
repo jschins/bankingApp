@@ -40,6 +40,7 @@ _NOTIFY_TTL_SEC = 15.0
 _config_cache: CentraleConfig | None = None
 _central_wins_alerts: list[dict[str, Any]] = []
 _next_alert_id = 1
+_data_epoch = 0
 
 _CENTRAL_WINS_MESSAGE = (
     "modification refused due to coincidental (same time, same file) "
@@ -244,6 +245,7 @@ def sync_status() -> dict[str, Any]:
         "notifications": notes,
         "port": cfg.port,
         "role": cfg.role,
+        "data_epoch": _data_epoch,
     }
 
 
@@ -479,23 +481,48 @@ def _drain_push_queue() -> None:
             pass
 
 
-def pull_event_file(event: dict[str, Any]) -> None:
-    """Apply a hub change event to the active workspace."""
+def pull_event_file(event: dict[str, Any]) -> bool:
+    """Apply a hub change event to the active workspace when relevant.
+
+    Returns True if local files for the active workspace were updated.
+    """
+    global _data_epoch
     cfg = load_config()
     fp = str(event.get("file_path") or "")
-    # Merged categories broadcast: pull this peer's categories.json (already merged on hub).
-    if event.get("broadcast") or fp == SHARED_CATEGORIES:
-        local_rel = SHARED_CATEGORIES
-        remote_ws = cfg.workspace
-        remote_path = SHARED_CATEGORIES
+    ev_ws = str(event.get("workspace") or cfg.workspace)
+    display = str(event.get("display_path") or f"{ev_ws}/{fp}")
+    applied = False
+
+    if is_central_admin():
+        # Central sees every local change as a chip; only apply into the
+        # currently selected workspace tree.
+        _queue_notification(display)
+        if event.get("broadcast") or fp == SHARED_CATEGORIES:
+            # Peer categories.json from another workspace: notify only.
+            if not event.get("broadcast") and ev_ws != cfg.workspace:
+                return False
+            remote_ws = cfg.workspace
+            remote_path = SHARED_CATEGORIES
+            local_rel = SHARED_CATEGORIES
+        else:
+            if ev_ws != cfg.workspace:
+                return False
+            remote_ws = ev_ws
+            remote_path = fp
+            local_rel = fp
     else:
-        local_rel = fp
-        remote_ws = str(event.get("workspace") or cfg.workspace)
-        remote_path = fp
-        if remote_ws != cfg.workspace:
-            # Central admin only applies events for the selected workspace
-            # (person files); broadcast categories already handled above.
-            return
+        # Local peer: apply matching central/broadcast updates.
+        if event.get("broadcast") or fp == SHARED_CATEGORIES:
+            local_rel = SHARED_CATEGORIES
+            remote_ws = cfg.workspace
+            remote_path = SHARED_CATEGORIES
+        else:
+            local_rel = fp
+            remote_ws = ev_ws
+            remote_path = fp
+            if remote_ws != cfg.workspace:
+                return False
+        _queue_notification(display)
 
     q = urllib.parse.urlencode({"path": remote_path})
     data = _request("GET", f"/api/local/{remote_ws}/file?{q}", timeout=15.0)
@@ -503,8 +530,9 @@ def pull_event_file(event: dict[str, Any]) -> None:
     if content is not None:
         apply_local_path(local_rel, content)
         _file_revisions[local_rel] = int(data.get("revision") or 0)
-    display = str(event.get("display_path") or f"{remote_ws}/{remote_path}")
-    _queue_notification(display)
+        applied = True
+        _data_epoch += 1
+    return applied
 
 
 def poll_central_events() -> dict[str, Any]:
@@ -513,22 +541,31 @@ def poll_central_events() -> dict[str, Any]:
     if not cfg.enabled or not _local_session_active:
         return {"ok": True, "skipped": True}
     try:
-        q = urllib.parse.urlencode(
-            {
-                "viewer": _events_viewer(),
-                "workspace": cfg.workspace,
-                "since_id": _last_event_id,
-            }
-        )
+        params: dict[str, Any] = {
+            "viewer": _events_viewer(),
+            "since_id": _last_event_id,
+        }
+        # Local peers must scope to their workspace. Central admin omits
+        # workspace so it receives every source=local event (all peers).
+        if not is_central_admin():
+            params["workspace"] = cfg.workspace
+        q = urllib.parse.urlencode(params)
         data = _request("GET", f"/api/events?{q}", timeout=10.0)
+        applied_any = False
         for ev in data.get("events") or []:
-            pull_event_file(ev)
+            if pull_event_file(ev):
+                applied_any = True
+            # Advance only through delivered (viewer-filtered) events.
+            # Do NOT jump to unfiltered latest_id — merge fan-out events are
+            # invisible to some viewers and would skip later person-file events.
             _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
-        latest = int(data.get("latest_id") or 0)
-        if latest > _last_event_id:
-            _last_event_id = latest
         _last_error = None
-        return {"ok": True, "events": len(data.get("events") or [])}
+        return {
+            "ok": True,
+            "events": len(data.get("events") or []),
+            "applied": applied_any,
+            "last_event_id": _last_event_id,
+        }
     except Exception as exc:  # noqa: BLE001
         _last_error = str(exc)
         return {"ok": False, "error": _last_error}

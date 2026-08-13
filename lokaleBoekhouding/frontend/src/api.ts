@@ -108,6 +108,7 @@ export interface CentraleSyncStatus {
   port?: number;
   role?: "local" | "central_admin";
   workspaces?: string[];
+  data_epoch?: number;
 }
 
 export function getCentraleStatus(): Promise<CentraleSyncStatus> {

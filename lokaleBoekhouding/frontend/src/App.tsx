@@ -100,13 +100,24 @@ function SyncNotifyShell({
   const [notes, setNotes] = useState<SyncNotification[]>([]);
   const [switching, setSwitching] = useState(false);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
+  const dataEpochRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     function poll() {
       getCentraleStatus()
         .then((s) => {
-          if (!cancelled) setStatus(s);
+          if (cancelled) return;
+          setStatus(s);
+          const epoch = typeof s.data_epoch === "number" ? s.data_epoch : null;
+          if (epoch != null) {
+            if (dataEpochRef.current == null) {
+              dataEpochRef.current = epoch;
+            } else if (epoch > dataEpochRef.current) {
+              dataEpochRef.current = epoch;
+              onWorkspaceChanged?.();
+            }
+          }
         })
         .catch(() => {});
       getCentraleNotifications()
@@ -131,7 +142,7 @@ function SyncNotifyShell({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [onWorkspaceChanged]);
 
   const isCentralAdmin =
     IS_CENTRAL_ADMIN || status?.role === "central_admin";
