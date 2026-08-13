@@ -464,6 +464,7 @@ _mount_frontend()
 
 
 def run() -> None:
+    import logging
     import os
     import threading
     import time
@@ -473,6 +474,21 @@ def run() -> None:
 
     from app.centrale_sync import load_config
     from app.runtime import app_root, is_frozen
+
+    class _MutePollAccess(logging.Filter):
+        """Drop noisy UI poll access lines (~1s)."""
+
+        _MUTE = (
+            "GET /api/centrale/status",
+            "GET /api/centrale/notifications",
+            "GET /api/centrale/refusals",
+        )
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            msg = record.getMessage()
+            return not any(p in msg for p in self._MUTE)
+
+    logging.getLogger("uvicorn.access").addFilter(_MutePollAccess())
 
     cfg = load_config()
     host = os.environ.get("HOST", "127.0.0.1" if is_frozen() else "0.0.0.0")

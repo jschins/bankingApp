@@ -279,7 +279,18 @@ def admin_page() -> str:
 
 
 def run() -> None:
+    import logging
+
     import uvicorn
+
+    class _MuteEventsPoll(logging.Filter):
+        """Drop noisy GET /api/events access lines (UI/worker polls ~1s)."""
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            msg = record.getMessage()
+            return "GET /api/events" not in msg
+
+    logging.getLogger("uvicorn.access").addFilter(_MuteEventsPoll())
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8400"))
