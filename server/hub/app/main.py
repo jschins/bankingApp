@@ -506,14 +506,20 @@ def run() -> None:
 
     import uvicorn
 
-    class _MuteEventsPoll(logging.Filter):
-        """Drop noisy GET /api/events access lines (UI/worker polls ~1s)."""
+    class _MutePollAccess(logging.Filter):
+        """Drop noisy poll access lines (clients / admin UI)."""
+
+        _MUTE = (
+            "GET /api/events",
+            "GET /api/status",
+            "/capabilities",
+        )
 
         def filter(self, record: logging.LogRecord) -> bool:
             msg = record.getMessage()
-            return "GET /api/events" not in msg
+            return not any(p in msg for p in self._MUTE)
 
-    logging.getLogger("uvicorn.access").addFilter(_MuteEventsPoll())
+    logging.getLogger("uvicorn.access").addFilter(_MutePollAccess())
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8400"))
