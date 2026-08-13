@@ -235,11 +235,12 @@ def _category_code(name: str) -> int | None:
         return None
 
 
-_HASH_WILDCARD = "[a-z.]*"
+# Letters, dots, and ``*`` (common in merchant names like ``BCK*Praxis229``).
+_HASH_WILDCARD = "[a-z.*]*"
 
 
 def _term_body_pattern(term: str) -> str:
-    """Regex body for a keyword; each ``#`` matches zero or more letters or dots (not spaces)."""
+    """Regex body for a keyword; each ``#`` matches zero or more letters, dots, or ``*``."""
     parts: list[str] = []
     for ch in term:
         if ch == "#":
@@ -251,7 +252,8 @@ def _term_body_pattern(term: str) -> str:
 
 
 def _letters_only(word: str) -> str:
-    return re.sub(r"[^a-z.]", "", word.lower())
+    """Keep letters, dots, and ``*``; strip digits/punctuation for hash matching."""
+    return re.sub(r"[^a-z.*]", "", word.lower())
 
 
 def _matches_hash_word(term: str, haystack: str) -> bool:
