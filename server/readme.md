@@ -70,3 +70,9 @@ cd server\client
 uv sync
 uv run client
 ```
+
+### Stop the hub (:8400)
+
+Open [http://127.0.0.1:8400/](http://127.0.0.1:8400/) and click **Stop hub**.
+
+(`Ctrl+C` in the hub terminal also works.)

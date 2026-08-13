@@ -344,6 +344,20 @@ def api_refresh(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.post("/api/shutdown")
+def api_shutdown(_: None = Depends(require_api_key)) -> dict[str, Any]:
+    """Stop the hub process (for the Stop button on http://127.0.0.1:8400/)."""
+    import threading
+    import time
+
+    def _stop() -> None:
+        time.sleep(0.35)
+        os._exit(0)
+
+    threading.Thread(target=_stop, name="hub-shutdown", daemon=True).start()
+    return {"ok": True, "stopping": True}
+
+
 _ADMIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -372,6 +386,9 @@ _ADMIN_HTML = """<!DOCTYPE html>
     textarea { min-height: 8rem; font-family: Consolas, monospace; font-size: 0.85rem; }
     button.action { margin-top: 0.75rem; font: inherit; cursor: pointer;
                     padding: 0.55rem 1rem; border: 1px solid #2a5a8c; background: #2a5a8c; color: #fff; }
+    button.stop { margin-top: 0.75rem; margin-left: 0.5rem; font: inherit; cursor: pointer;
+                  padding: 0.55rem 1rem; border: 1px solid #8b3a3a; background: #8b3a3a; color: #fff; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
   </style>
 </head>
 <body>
@@ -389,7 +406,10 @@ _ADMIN_HTML = """<!DOCTYPE html>
     <label>JSON content
       <textarea id="content">{}</textarea>
     </label>
-    <button class="action" id="btnSave" type="button">Save as central</button>
+    <div class="actions">
+      <button class="action" id="btnSave" type="button">Save as central</button>
+      <button class="stop" id="btnStop" type="button">Stop hub</button>
+    </div>
     <p id="err" class="err"></p>
     <p class="meta" id="meta"></p>
   </main>
@@ -456,6 +476,20 @@ _ADMIN_HTML = """<!DOCTYPE html>
         await pollEvents();
       } catch (e) {
         errEl.textContent = String(e.message || e);
+      }
+    };
+
+    document.getElementById("btnStop").onclick = async () => {
+      if (!window.confirm("Stop the hub on port 8400?")) return;
+      errEl.textContent = "";
+      try {
+        await api("POST", "/api/shutdown", {});
+        statusEl.textContent = "Hub is stopping…";
+        metaEl.textContent = "You can close this tab.";
+      } catch (e) {
+        // Connection drop after shutdown is expected.
+        statusEl.textContent = "Hub stopped (or unreachable).";
+        metaEl.textContent = String(e.message || e);
       }
     };
 
