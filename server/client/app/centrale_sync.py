@@ -396,8 +396,11 @@ def start_session_and_pull() -> dict[str, Any]:
     ws = cfg.workspace
     try:
         hub_request("GET", "/api/health", timeout=10.0)
-        if not is_central_admin():
-            hub_request("POST", f"/api/local/{urllib.parse.quote(ws)}/session/start")
+        hub_request(
+            "POST",
+            f"/api/local/{urllib.parse.quote(ws)}/session/start",
+            body={"port": cfg.port},
+        )
         caps = refresh_capabilities()
         events = hub_request(
             "GET",
@@ -427,11 +430,12 @@ def end_session_and_push() -> dict[str, Any]:
         _hub_session_active = False
         return {"ok": True, "skipped": True, "reason": "sync disabled"}
     ws = cfg.workspace
-    if is_central_admin():
-        _hub_session_active = False
-        return {"ok": True, "workspace": ws}
     try:
-        hub_request("POST", f"/api/local/{urllib.parse.quote(ws)}/session/end")
+        hub_request(
+            "POST",
+            f"/api/local/{urllib.parse.quote(ws)}/session/end",
+            body={"port": cfg.port},
+        )
         _last_error = None
         result: dict[str, Any] = {"ok": True, "workspace": ws}
     except Exception as exc:  # noqa: BLE001

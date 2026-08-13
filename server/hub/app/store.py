@@ -42,18 +42,28 @@ def get_status() -> dict[str, Any]:
         }
 
 
-def local_session_start(workspace: str) -> dict[str, Any]:
-    ws = _clean_workspace(workspace)
+def local_session_start(client_addr: str) -> dict[str, Any]:
+    """Register a connected client as ``ip:port`` (shown on the hub status page)."""
+    label = _clean_client_addr(client_addr)
     with _lock:
-        _local_sessions.add(ws)
+        _local_sessions.add(label)
     return get_status()
 
 
-def local_session_end(workspace: str) -> dict[str, Any]:
-    ws = _clean_workspace(workspace)
+def local_session_end(client_addr: str) -> dict[str, Any]:
+    label = _clean_client_addr(client_addr)
     with _lock:
-        _local_sessions.discard(ws)
+        _local_sessions.discard(label)
     return get_status()
+
+
+def _clean_client_addr(client_addr: str) -> str:
+    label = (client_addr or "").strip()
+    if not label:
+        raise ValueError("client address is required")
+    if len(label) > 128 or "\n" in label or "\r" in label:
+        raise ValueError(f"Invalid client address: {client_addr!r}")
+    return label
 
 
 def _clean_workspace(workspace: str) -> str:

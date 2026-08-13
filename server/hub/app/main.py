@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,32 @@ class FilePutPayload(BaseModel):
     content: Any
     source: str = "local"
     client_revision: int | None = None
+
+
+class SessionPayload(BaseModel):
+    """Client listen port (BFF); hub combines with request IP → ``ip:port``."""
+    port: int | None = None
+
+
+def _client_session_label(
+    request: Request, workspace: str, body: SessionPayload
+) -> str:
+    host = "unknown"
+    if request.client is not None and request.client.host:
+        host = request.client.host
+    # Normalize IPv6 loopback / mapped forms for readability.
+    if host in ("::1", "0:0:0:0:0:0:0:1"):
+        host = "127.0.0.1"
+    elif host.startswith("::ffff:"):
+        host = host.split("::ffff:", 1)[-1]
+    port = body.port
+    addr = (
+        f"{host}:{int(port)}"
+        if port is not None and 1 <= int(port) <= 65535
+        else host
+    )
+    ws = (workspace or "").strip() or "?"
+    return f"{addr} ({ws})"
 
 
 @app.get("/api/health")
@@ -69,20 +95,28 @@ def api_events(
 
 @app.post("/api/local/{workspace}/session/start")
 def api_local_session_start(
-    workspace: str, _: None = Depends(require_api_key)
+    workspace: str,
+    request: Request,
+    body: SessionPayload = SessionPayload(),
+    _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     try:
-        return store.local_session_start(workspace)
+        label = _client_session_label(request, workspace, body)
+        return store.local_session_start(label)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/local/{workspace}/session/end")
 def api_local_session_end(
-    workspace: str, _: None = Depends(require_api_key)
+    workspace: str,
+    request: Request,
+    body: SessionPayload = SessionPayload(),
+    _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     try:
-        return store.local_session_end(workspace)
+        label = _client_session_label(request, workspace, body)
+        return store.local_session_end(label)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
