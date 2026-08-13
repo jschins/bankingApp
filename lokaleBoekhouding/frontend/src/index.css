@@ -160,8 +160,9 @@ body {
   font: inherit;
   cursor: default;
   padding: 0.3rem 0.65rem;
-  border: 1px solid #334155;
-  background: #fff;
+  border: 1px solid #f9a8d4;
+  border-radius: 999px;
+  background: #fce7f3;
   color: #0f172a;
 }
 
