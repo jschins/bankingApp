@@ -218,61 +218,54 @@ def update_settings(
     *,
     source: str = "local",
 ) -> dict[str, Any]:
-    with _workspace_scope(workspace) as ws:
-        from app.matrix import build_matrix, save_general_terms, save_personal_terms
-        from app.people import get_person
+    """Save terms, then announce + recalculate (lock released before long recalc)."""
+    from app.matrix import build_matrix, save_general_terms, save_personal_terms
+    from app.people import get_person
 
+    with _workspace_scope(workspace) as ws:
         if group == "general":
             cleaned = save_general_terms(category_name, terms)
             cats_path = store.merged_categories_path()
             content = json.loads(cats_path.read_text(encoding="utf-8"))
-            store.put_file(
-                ws,
-                store.SHARED_CATEGORIES,
-                content,
-                source=source,
-                skip_recalc=True,
-                skip_event=True,
-            )
-            result = store.mutate_and_recalculate(
-                ws,
-                [store.SHARED_CATEGORIES],
-                source=source,
-                recalc_all_workspaces=True,
-            )
-            return {
-                "workspace": ws,
-                "group": "general",
-                "folder": None,
-                "category": category_name,
-                "terms": cleaned,
-                "matrix": result.get("matrix") or {**build_matrix(), "workspace": ws},
-                "affected_files": result.get("affected_files") or [],
-            }
+            rel = store.SHARED_CATEGORIES
+            recalc_all = True
+            pack_short = "general"
+            pack_folder = None
+        else:
+            pack = get_person(group)
+            cleaned = save_personal_terms(pack.short, category_name, terms)
+            rel = f"{pack.folder_name}/data/{store.PERSONAL_CATEGORIES}"
+            path = store.resolve_file_path(ws, rel)
+            content = json.loads(path.read_text(encoding="utf-8"))
+            recalc_all = False
+            pack_short = pack.short
+            pack_folder = pack.folder_name
 
-        pack = get_person(group)
-        cleaned = save_personal_terms(pack.short, category_name, terms)
-        rel = f"{pack.folder_name}/data/{store.PERSONAL_CATEGORIES}"
-        path = store.resolve_file_path(ws, rel)
-        content = json.loads(path.read_text(encoding="utf-8"))
-        store.put_file(
-            ws,
-            rel,
-            content,
-            source=source,
-            skip_recalc=True,
-            skip_event=True,
-        )
-        result = store.mutate_and_recalculate(ws, [rel], source=source)
-        return {
-            "workspace": ws,
-            "group": pack.short,
-            "folder": pack.folder_name,
-            "category": category_name,
-            "terms": cleaned,
-            "matrix": result.get("matrix") or {**build_matrix(), "workspace": ws},
-            "affected_files": result.get("affected_files") or [],
-        }
+    store.put_file(
+        ws,
+        rel,
+        content,
+        source=source,
+        skip_recalc=True,
+        skip_event=True,
+    )
+    result = store.mutate_and_recalculate(
+        ws,
+        [rel],
+        source=source,
+        recalc_all_workspaces=recalc_all,
+    )
+    with _workspace_scope(ws):
+        matrix = result.get("matrix") or {**build_matrix(), "workspace": ws}
+    return {
+        "workspace": ws,
+        "group": pack_short,
+        "folder": pack_folder,
+        "category": category_name,
+        "terms": cleaned,
+        "matrix": matrix,
+        "affected_files": result.get("affected_files") or [],
+    }
 
 
 def add_term(

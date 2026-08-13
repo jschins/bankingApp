@@ -641,9 +641,8 @@ function MainApp() {
 
 function TermsApp() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
-  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirtyRef = useRef(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     window.name = "boekhouding-terms";
@@ -654,27 +653,10 @@ function TermsApp() {
   }, []);
 
   useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
-
-  useEffect(() => {
     const channel = new BroadcastChannel(CHANNEL);
-    function applyIfDirty() {
-      if (!dirtyRef.current) return;
-      dirtyRef.current = false;
-      setDirty(false);
-      recalculate()
-        .then(() => channel.postMessage("recalculated"))
-        .catch((e: Error) => setError(e.message));
-    }
-    function onVisibility() {
-      if (document.hidden) applyIfDirty();
-    }
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", applyIfDirty);
+    channelRef.current = channel;
     return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", applyIfDirty);
+      channelRef.current = null;
       channel.close();
     };
   }, []);
@@ -697,18 +679,20 @@ function TermsApp() {
 
   function updateTerms(group: string, category: string, terms: string[]) {
     updateSettings(group, category, terms)
-      .then(() => {
-        setDirty(true);
+      .then((res) => {
         setSettings((prev) => {
           if (!prev) return prev;
+          const nextTerms = res.terms ?? terms;
           if (group === "general") {
-            return { ...prev, general: { ...prev.general, [category]: terms } };
+            return { ...prev, general: { ...prev.general, [category]: nextTerms } };
           }
           const personGroup = { ...(prev.personal[group] ?? {}) };
-          if (terms.length) personGroup[category] = terms;
+          if (nextTerms.length) personGroup[category] = nextTerms;
           else delete personGroup[category];
           return { ...prev, personal: { ...prev.personal, [group]: personGroup } };
         });
+        // Hub already recalculated; refresh the main window immediately.
+        channelRef.current?.postMessage("recalculated");
       })
       .catch((e: Error) => setError(e.message));
   }
@@ -723,7 +707,7 @@ function TermsApp() {
         </div>
         <p className="win-hint">
           Term Window. Return to overview using <kbd>Ctrl</kbd>+<kbd>Tab</kbd> or{" "}
-          <kbd>Alt</kbd>+<kbd>M</kbd>. Changes are applied when you leave this window.{" "}
+          <kbd>Alt</kbd>+<kbd>M</kbd>. Edits save and recalculate immediately.{" "}
           {settings ? formatTermMatchHint(settings.typerules) : ""}
         </p>
       </aside>
@@ -1278,6 +1262,10 @@ function TermsColumnTable({
   );
 }
 
+function sortTerms(values: string[]): string[] {
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
 function EditableCell({
   terms,
   onCommit,
@@ -1285,39 +1273,48 @@ function EditableCell({
   terms: string[];
   onCommit: (terms: string[]) => void;
 }) {
-  const [draft, setDraft] = useState<string[]>(terms);
+  const [draft, setDraft] = useState<string[]>(() => sortTerms(terms));
   const [add, setAdd] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   useEffect(() => {
-    setDraft([...terms].sort((a, b) => a.localeCompare(b)));
+    setDraft(sortTerms(terms));
     setAdd("");
   }, [terms]);
 
   function commit(next: string[]) {
-    const cleaned = next.map((t) => t.trim()).filter(Boolean);
-    if (!arraysEqual(cleaned, terms)) onCommit(cleaned);
+    const cleaned = sortTerms(next.map((t) => t.trim()).filter(Boolean));
+    const current = sortTerms(terms.map((t) => t.trim()).filter(Boolean));
+    if (!arraysEqual(cleaned, current)) onCommit(cleaned);
   }
 
   function removeAt(index: number) {
-    commit(draft.filter((_, idx) => idx !== index));
+    commit(draftRef.current.filter((_, idx) => idx !== index));
   }
 
   function commitAdd() {
     if (!add.trim()) return;
-    commit([...draft, add]);
+    commit([...draftRef.current, add]);
+    setAdd("");
   }
 
   return (
     <div className="terms">
       {draft.map((term, i) => (
-        <div key={`${term}-${i}`} className="term-row">
+        <div key={i} className="term-row">
           <input
             className="term-input"
             value={term}
-            onChange={(e) =>
-              setDraft((d) => d.map((t, idx) => (idx === i ? e.target.value : t)))
-            }
-            onBlur={() => commit(draft)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setDraft((d) => {
+                const next = d.map((t, idx) => (idx === i ? value : t));
+                draftRef.current = next;
+                return next;
+              });
+            }}
+            onBlur={() => commit(draftRef.current)}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
             }}
