@@ -41,6 +41,7 @@ _config_cache: CentraleConfig | None = None
 _central_wins_alerts: list[dict[str, Any]] = []
 _next_alert_id = 1
 _data_epoch = 0
+_recalc_after_pull = False
 
 _CENTRAL_WINS_MESSAGE = (
     "modification refused due to coincidental (same time, same file) "
@@ -291,15 +292,38 @@ def ack_central_wins_alert(alert_id: int) -> dict[str, Any]:
 def _active_notifications_unlocked() -> list[dict[str, Any]]:
     now = time.time()
     alive = [n for n in _pending_notifications if float(n.get("expires_at", 0)) > now]
-    _pending_notifications[:] = alive
-    return list(alive)
+    # One chip per file path (keep the latest expiry if duplicates slipped in).
+    by_path: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for n in alive:
+        key = str(n.get("file_path") or "").replace("\\", "/").strip()
+        if not key:
+            continue
+        if key not in by_path:
+            order.append(key)
+        prev = by_path.get(key)
+        if prev is None or float(n.get("expires_at", 0)) >= float(prev.get("expires_at", 0)):
+            by_path[key] = n
+    deduped = [by_path[k] for k in order if k in by_path]
+    _pending_notifications[:] = deduped
+    return list(deduped)
 
 
 def _queue_notification(display_path: str) -> None:
+    """Show a 15s chip for ``display_path``; replace any existing chip for that path."""
+    key = display_path.replace("\\", "/").strip()
+    if not key:
+        return
     with _state_lock:
+        _active_notifications_unlocked()
+        _pending_notifications[:] = [
+            n
+            for n in _pending_notifications
+            if str(n.get("file_path") or "").replace("\\", "/").strip() != key
+        ]
         _pending_notifications.append(
             {
-                "file_path": display_path,
+                "file_path": key,
                 "expires_at": time.time() + _NOTIFY_TTL_SEC,
             }
         )
@@ -481,12 +505,65 @@ def _drain_push_queue() -> None:
             pass
 
 
+def _path_needs_totals_recalc(local_rel: str) -> bool:
+    rel = local_rel.replace("\\", "/").lstrip("/")
+    if rel == SHARED_CATEGORIES:
+        return True
+    if rel.endswith(f"/data/{CATEGORIZED}"):
+        return True
+    if rel.endswith(f"/data/{PERSONAL_CATEGORIES}"):
+        return True
+    return False
+
+
+def _recalculate_workspace_totals() -> None:
+    """Rebuild categorized_transactions + category_totals after synced inputs.
+
+    Matrix cells read ``category_totals.json`` (not hub-tracked). After a peer
+    or central admin changes categories / transactions, every receiver must run
+    the same ``recalculate_all`` that editors run before push.
+    """
+    global _data_epoch
+    from app.matrix import recalculate_all
+    from app.settings import init_app
+
+    try:
+        init_app()
+    except FileNotFoundError:
+        return
+    try:
+        recalculate_all()
+        _data_epoch += 1
+    except Exception:
+        pass
+
+
+def _push_recalculated_categorized() -> None:
+    """Local peers: up-sync categorized_transactions after a sync-triggered recalc."""
+    if is_central_admin():
+        return
+    try:
+        from app.settings import get_people, init_app
+
+        try:
+            people = get_people()
+            if not people:
+                people = init_app()
+        except FileNotFoundError:
+            return
+        paths = [f"{p.folder_name}/data/{CATEGORIZED}" for p in people]
+        if paths:
+            mark_and_push(paths)
+    except Exception:
+        pass
+
+
 def pull_event_file(event: dict[str, Any]) -> bool:
     """Apply a hub change event to the active workspace when relevant.
 
     Returns True if local files for the active workspace were updated.
     """
-    global _data_epoch
+    global _data_epoch, _recalc_after_pull
     cfg = load_config()
     fp = str(event.get("file_path") or "")
     ev_ws = str(event.get("workspace") or cfg.workspace)
@@ -532,11 +609,13 @@ def pull_event_file(event: dict[str, Any]) -> bool:
         _file_revisions[local_rel] = int(data.get("revision") or 0)
         applied = True
         _data_epoch += 1
+        if _path_needs_totals_recalc(local_rel):
+            _recalc_after_pull = True
     return applied
 
 
 def poll_central_events() -> dict[str, Any]:
-    global _last_event_id, _last_error
+    global _last_event_id, _last_error, _recalc_after_pull
     cfg = load_config()
     if not cfg.enabled or not _local_session_active:
         return {"ok": True, "skipped": True}
@@ -552,6 +631,7 @@ def poll_central_events() -> dict[str, Any]:
         q = urllib.parse.urlencode(params)
         data = _request("GET", f"/api/events?{q}", timeout=10.0)
         applied_any = False
+        _recalc_after_pull = False
         for ev in data.get("events") or []:
             if pull_event_file(ev):
                 applied_any = True
@@ -559,6 +639,12 @@ def poll_central_events() -> dict[str, Any]:
             # Do NOT jump to unfiltered latest_id — merge fan-out events are
             # invisible to some viewers and would skip later person-file events.
             _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
+        if _recalc_after_pull:
+            _recalculate_workspace_totals()
+            _recalc_after_pull = False
+            # Locals must refresh categorized_transactions after central (or
+            # peer) category changes, then push so the hub stays aligned.
+            _push_recalculated_categorized()
         _last_error = None
         return {
             "ok": True,
@@ -630,6 +716,7 @@ def start_session_and_pull() -> dict[str, Any]:
             timeout=10.0,
         )
         _last_event_id = int(events.get("latest_id") or 0)
+        _recalculate_workspace_totals()
         _last_error = None
         return {"ok": True, "workspace": ws, "people": list((files.get("people") or {}).keys())}
     except Exception as exc:  # noqa: BLE001
@@ -675,10 +762,11 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
             _seed_revisions(ws, files)
             events = _request(
                 "GET",
-                f"/api/events?{urllib.parse.urlencode({'viewer': 'central', 'workspace': ws, 'since_id': 0})}",
+                f"/api/events?{urllib.parse.urlencode({'viewer': 'central', 'since_id': 0})}",
                 timeout=10.0,
             )
             _last_event_id = int(events.get("latest_id") or 0)
+            _recalculate_workspace_totals()
         _last_error = None
         return {"ok": True, "workspace": ws}
     except Exception as exc:  # noqa: BLE001
