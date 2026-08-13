@@ -117,9 +117,15 @@ def record_modification(
         content,
         source=source,
         skip_recalc=True,
+        skip_event=True,
     )
-    store.recalculate_workspace(ws)
-    return {"transaction": modified, "person": pack.short}
+    result = store.mutate_and_recalculate(ws, [rel], source=source)
+    return {
+        "transaction": modified,
+        "person": pack.short,
+        "affected_files": result.get("affected_files") or [],
+        "matrix": result.get("matrix"),
+    }
 
 
 def settings(workspace: str) -> dict[str, Any]:
@@ -185,13 +191,20 @@ def update_settings(
             content,
             source=source,
             skip_recalc=True,
+            skip_event=True,
         )
-        recalc = store.recalculate_workspace(ws)
+        result = store.mutate_and_recalculate(
+            ws,
+            [store.SHARED_CATEGORIES],
+            source=source,
+            recalc_all_workspaces=True,
+        )
         return {
             "group": "general",
             "category": category_name,
             "terms": cleaned,
-            "matrix": recalc.get("matrix") or matrix(ws),
+            "matrix": result.get("matrix") or matrix(ws),
+            "affected_files": result.get("affected_files") or [],
         }
 
     pack = get_person(group)
@@ -205,13 +218,15 @@ def update_settings(
         content,
         source=source,
         skip_recalc=True,
+        skip_event=True,
     )
-    recalc = store.recalculate_workspace(ws)
+    result = store.mutate_and_recalculate(ws, [rel], source=source)
     return {
         "group": pack.short,
         "category": category_name,
         "terms": cleaned,
-        "matrix": recalc.get("matrix") or matrix(ws),
+        "matrix": result.get("matrix") or matrix(ws),
+        "affected_files": result.get("affected_files") or [],
     }
 
 
@@ -250,14 +265,21 @@ def add_term(
             content,
             source=source,
             skip_recalc=True,
+            skip_event=True,
         )
-        recalc = store.recalculate_workspace(ws)
+        result = store.mutate_and_recalculate(
+            ws,
+            [store.SHARED_CATEGORIES],
+            source=source,
+            recalc_all_workspaces=True,
+        )
         return {
             "group": "general",
             "category": category_name,
             "term": term,
             "terms": terms,
-            "matrix": recalc.get("matrix") or matrix(ws),
+            "matrix": result.get("matrix") or matrix(ws),
+            "affected_files": result.get("affected_files") or [],
         }
 
     short = (person or "").strip()
@@ -280,14 +302,16 @@ def add_term(
         content,
         source=source,
         skip_recalc=True,
+        skip_event=True,
     )
-    recalc = store.recalculate_workspace(ws)
+    result = store.mutate_and_recalculate(ws, [rel], source=source)
     return {
         "group": pack.short,
         "category": category_name,
         "term": term,
         "terms": terms,
-        "matrix": recalc.get("matrix") or matrix(ws),
+        "matrix": result.get("matrix") or matrix(ws),
+        "affected_files": result.get("affected_files") or [],
     }
 
 
@@ -305,7 +329,7 @@ def refresh(
     from app.matrix import refresh_all
 
     result = refresh_all(date_from=date_from, date_to=date_to)
-    # Publish downloaded + categorized after bank fetch.
+    inputs: list[str] = []
     root = store.workspace_dir(ws)
     for child in root.iterdir():
         if not child.is_dir() or not (child / "data").is_dir():
@@ -318,13 +342,17 @@ def refresh(
                 content = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            rel = f"{child.name}/data/{name}"
+            inputs.append(rel)
             store.put_file(
                 ws,
-                f"{child.name}/data/{name}",
+                rel,
                 content,
                 source="central",
                 skip_recalc=True,
+                skip_event=True,
             )
-    recalc = store.recalculate_workspace(ws)
-    result["matrix"] = recalc.get("matrix") or result.get("matrix")
+    mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    result["matrix"] = mut.get("matrix") or result.get("matrix")
+    result["affected_files"] = mut.get("affected_files") or []
     return result

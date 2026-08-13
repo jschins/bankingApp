@@ -334,8 +334,15 @@ def poll_central_events() -> dict[str, Any]:
         data = hub_request("GET", f"/api/events?{q}", timeout=10.0)
         applied_any = False
         for ev in data.get("events") or []:
-            display = str(ev.get("display_path") or f"{ev.get('workspace')}/{ev.get('file_path')}")
-            _queue_notification(display)
+            files = ev.get("affected_files")
+            if isinstance(files, list) and files:
+                for fp in files:
+                    _queue_notification(str(fp))
+            else:
+                display = str(
+                    ev.get("display_path") or f"{ev.get('workspace')}/{ev.get('file_path')}"
+                )
+                _queue_notification(display)
             applied_any = True
             _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
         if applied_any:

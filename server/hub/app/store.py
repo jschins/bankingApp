@@ -139,7 +139,11 @@ def _path_triggers_recalc(rel_path: str) -> bool:
     return False
 
 
-def recalculate_workspace(workspace: str) -> dict[str, Any]:
+def recalculate_workspace(
+    workspace: str,
+    *,
+    skip_events: bool = False,
+) -> dict[str, Any]:
     """Run boekhouding-style recalculate for one workspace under data_root."""
     from app.matrix import recalculate_all
     from app.runtime import set_active_workspace
@@ -149,7 +153,7 @@ def recalculate_workspace(workspace: str) -> dict[str, Any]:
     set_active_workspace(ws)
     init_app()
     matrix = recalculate_all()
-    # Publish derived totals so clients can pull them.
+    # Publish derived totals / categorized (optional silent put for batch announce).
     root = workspace_dir(ws)
     for child in root.iterdir():
         if not child.is_dir() or not (child / "data").is_dir():
@@ -166,6 +170,7 @@ def recalculate_workspace(workspace: str) -> dict[str, Any]:
                 content,
                 source="central",
                 skip_recalc=True,
+                skip_event=skip_events,
             )
         cat_path = child / "data" / CATEGORIZED
         if cat_path.is_file():
@@ -179,8 +184,113 @@ def recalculate_workspace(workspace: str) -> dict[str, Any]:
                 content,
                 source="central",
                 skip_recalc=True,
+                skip_event=skip_events,
             )
     return {"ok": True, "workspace": ws, "matrix": matrix}
+
+
+def derived_paths_for_workspace(workspace: str) -> list[str]:
+    """categorized_transactions + category_totals for every person in ``workspace``."""
+    ws = _clean_workspace(workspace)
+    paths: list[str] = []
+    for name in list_person_folders(ws):
+        paths.append(f"{ws}/{name}/data/{CATEGORIZED}")
+        paths.append(f"{ws}/{name}/data/{CATEGORY_TOTALS}")
+    return paths
+
+
+def derived_paths_for_person(workspace: str, folder_name: str) -> list[str]:
+    ws = _clean_workspace(workspace)
+    safe = Path(folder_name).name
+    return [
+        f"{ws}/{safe}/data/{CATEGORIZED}",
+        f"{ws}/{safe}/data/{CATEGORY_TOTALS}",
+    ]
+
+
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in paths:
+        p = str(raw).replace("\\", "/").strip().lstrip("/")
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
+def announce_mutation(
+    workspace: str,
+    paths: list[str],
+    *,
+    source: str = "central",
+) -> list[str]:
+    """Broadcast deduped file paths for 15s client notification chips."""
+    ws = _clean_workspace(workspace)
+    unique = _dedupe_paths(paths)
+    if not unique:
+        return []
+    with _lock:
+        meta = dict(
+            _file_meta.get(_meta_key(SHARED_META_WORKSPACE, "mutation"))
+            or {"revision": 0}
+        )
+        new_rev = int(meta.get("revision") or 0) + 1
+        _file_meta[_meta_key(SHARED_META_WORKSPACE, "mutation")] = {
+            "revision": new_rev,
+            "source": source,
+            "mtime": time.time(),
+        }
+        _append_event_unlocked(
+            workspace=ws,
+            file_path="mutation",
+            source=source,
+            revision=new_rev,
+            display_path=unique[0] if len(unique) == 1 else f"{len(unique)} files",
+            broadcast=True,
+            affected_files=unique,
+        )
+    return unique
+
+
+def mutate_and_recalculate(
+    workspace: str,
+    input_paths: list[str],
+    *,
+    source: str = "central",
+    recalc_all_workspaces: bool = False,
+) -> dict[str, Any]:
+    """Announce expected files, recalculate affected workspace(s), return matrix."""
+    primary = _clean_workspace(workspace)
+    targets = list_workspaces() if recalc_all_workspaces else [primary]
+    if primary not in targets:
+        targets.insert(0, primary)
+
+    expected: list[str] = []
+    for raw in input_paths:
+        p = str(raw).replace("\\", "/").lstrip("/")
+        if p == SHARED_CATEGORIES:
+            expected.append(SHARED_CATEGORIES)
+        elif any(p.startswith(f"{w}/") for w in list_workspaces()):
+            expected.append(p)
+        else:
+            expected.append(f"{primary}/{p}")
+    for ws in targets:
+        expected.extend(derived_paths_for_workspace(ws))
+
+    announced = announce_mutation(primary, expected, source=source)
+    matrices: dict[str, Any] = {}
+    for ws in targets:
+        matrices[ws] = recalculate_workspace(ws, skip_events=True)
+    primary_result = matrices.get(primary) or {}
+    return {
+        "ok": True,
+        "workspace": primary,
+        "affected_files": announced,
+        "matrix": primary_result.get("matrix"),
+        "recalculated": list(matrices.keys()),
+    }
 
 
 def _meta_key(workspace: str, rel_path: str) -> str:
@@ -224,6 +334,7 @@ def put_file(
     source: str,
     client_revision: int | None = None,
     skip_recalc: bool = False,
+    skip_event: bool = False,
 ) -> dict[str, Any]:
     """Write one tracked file. Central always wins when local is behind."""
     if source not in ("local", "central"):
@@ -270,14 +381,18 @@ def put_file(
         _write_json(path, content)
         now = time.time()
         _file_meta[key] = {"revision": new_rev, "source": source, "mtime": now}
-        event = _append_event_unlocked(
-            workspace=meta_ws,
-            file_path=rel,
-            source=source,
-            revision=new_rev,
-            display_path=SHARED_CATEGORIES if rel == SHARED_CATEGORIES else None,
-            broadcast=rel == SHARED_CATEGORIES,
-        )
+        display = SHARED_CATEGORIES if rel == SHARED_CATEGORIES else f"{ws}/{rel}"
+        event = None
+        if not skip_event:
+            event = _append_event_unlocked(
+                workspace=meta_ws if rel == SHARED_CATEGORIES else ws,
+                file_path=rel,
+                source=source,
+                revision=new_rev,
+                display_path=display,
+                broadcast=rel == SHARED_CATEGORIES,
+                affected_files=[display],
+            )
         result = {
             "ok": True,
             "central_wins": False,
@@ -291,7 +406,7 @@ def put_file(
 
     if not skip_recalc and _path_triggers_recalc(rel) and not result.get("central_wins"):
         try:
-            result["recalculate"] = recalculate_workspace(ws)
+            result["recalculate"] = recalculate_workspace(ws, skip_events=True)
         except Exception as exc:  # noqa: BLE001
             result["recalculate_error"] = str(exc)
     return result
@@ -305,8 +420,10 @@ def _append_event_unlocked(
     revision: int,
     display_path: str | None = None,
     broadcast: bool = False,
+    affected_files: list[str] | None = None,
 ) -> dict[str, Any]:
     global _next_event_id
+    files = _dedupe_paths(affected_files or ([display_path] if display_path else [file_path]))
     event = {
         "id": _next_event_id,
         "workspace": workspace,
@@ -315,6 +432,7 @@ def _append_event_unlocked(
         "source": source,
         "revision": revision,
         "broadcast": broadcast,
+        "affected_files": files,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
     _next_event_id += 1
@@ -330,11 +448,9 @@ def list_events(
     viewer: str = "central",
     workspace: str | None = None,
 ) -> dict[str, Any]:
-    """Filter change events for central UI or a local peer.
+    """Filter change events for clients.
 
-    - central: all ``source=local`` events (optional workspace filter)
-    - local: ``source=central`` person-file events for that workspace, plus
-      broadcast ``categories.json`` events (shared root file)
+    Broadcast mutations (``affected_files``) are visible to every viewer.
     """
     with _lock:
         events = list(_events)
@@ -342,6 +458,9 @@ def list_events(
     out: list[dict[str, Any]] = []
     for ev in events:
         if int(ev["id"]) <= since_id:
+            continue
+        if ev.get("broadcast"):
+            out.append(ev)
             continue
         if viewer == "central":
             if ev["source"] != "local":
@@ -354,13 +473,6 @@ def list_events(
                 raise ValueError("workspace is required for viewer=local")
             ws = _clean_workspace(workspace)
             if ev["source"] != "central":
-                continue
-            # Shared root categories.json → notify every peer.
-            if ev.get("broadcast") or (
-                ev["file_path"] == SHARED_CATEGORIES
-                and ev["workspace"] in (SHARED_META_WORKSPACE, MERGED_WORKSPACE)
-            ):
-                out.append(ev)
                 continue
             if ev["file_path"] == SHARED_CATEGORIES:
                 continue

@@ -151,7 +151,7 @@ def api_recalculate_workspace(
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     try:
-        return store.recalculate_workspace(workspace)
+        return store.mutate_and_recalculate(workspace, [], source="central")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -370,9 +370,10 @@ _ADMIN_HTML = """<!DOCTYPE html>
               background: rgba(255,255,255,0.75); }
     .notify-wrap { display: flex; flex-direction: column; gap: 0.5rem; min-height: 3rem; }
     .notify-btn {
-      font: inherit; text-align: left; padding: 0.65rem 0.9rem;
-      border: 1px solid #334155; background: #fff; color: #0f172a;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+      font: inherit; text-align: left; padding: 0.45rem 0.85rem;
+      border: 1px solid #f472b6; border-radius: 999px;
+      background: #fbcfe8; color: #831843;
+      box-shadow: none;
     }
     .meta { margin-top: 1.25rem; font-size: 0.85rem; color: #666; }
     .err { color: #a33; margin-top: 0.75rem; min-height: 1.2em; }
@@ -448,7 +449,10 @@ _ADMIN_HTML = """<!DOCTYPE html>
       try {
         const data = await api("GET", `/api/events?viewer=central&since_id=${sinceId}`);
         for (const ev of (data.events || [])) {
-          showNotify(ev.display_path || (ev.workspace + "/" + ev.file_path));
+          const files = (ev.affected_files && ev.affected_files.length)
+            ? ev.affected_files
+            : [ev.display_path || (ev.workspace + "/" + ev.file_path)];
+          for (const fp of files) showNotify(fp);
           sinceId = Math.max(sinceId, ev.id);
         }
         if (data.latest_id) sinceId = Math.max(sinceId, data.latest_id);
