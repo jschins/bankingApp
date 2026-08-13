@@ -14,8 +14,8 @@ lokaleBoekhouding/dkg/
 lokaleBoekhouding/jl/
 centraleBoekhouding/boekhouding/
 server/workspaces/
-server/client/dist/
-server/client/dist_jl/
-server/client/dist_dkg/
+secret/
+data/
+
 
 
