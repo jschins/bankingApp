@@ -334,15 +334,10 @@ def poll_central_events() -> dict[str, Any]:
         data = hub_request("GET", f"/api/events?{q}", timeout=10.0)
         applied_any = False
         for ev in data.get("events") or []:
-            files = ev.get("affected_files")
-            if isinstance(files, list) and files:
-                for fp in files:
-                    _queue_notification(str(fp))
-            else:
-                display = str(
-                    ev.get("display_path") or f"{ev.get('workspace')}/{ev.get('file_path')}"
-                )
-                _queue_notification(display)
+            # UI chip: workspace author only (not every affected file path).
+            author = str(ev.get("workspace") or "").strip()
+            if author and author not in ("_shared", "_merged"):
+                _queue_notification(author)
             applied_any = True
             _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
         if applied_any:
