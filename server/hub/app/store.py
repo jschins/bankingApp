@@ -334,7 +334,7 @@ def announce_mutation(
     *,
     source: str = "central",
 ) -> list[str]:
-    """Broadcast deduped file paths for 15s client notification chips."""
+    """Broadcast deduped file paths for client / hub notification chips."""
     ws = _clean_workspace(workspace)
     unique = _dedupe_paths(paths)
     if not unique:

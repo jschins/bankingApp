@@ -484,8 +484,12 @@ _ADMIN_HTML = """<!DOCTYPE html>
       btn.type = "button";
       btn.className = "notify-btn";
       btn.textContent = displayPath;
-      notifyEl.prepend(btn);
-      setTimeout(() => btn.remove(), 15000);
+      notifyEl.appendChild(btn);
+    }
+
+    function replaceNotifications(paths) {
+      notifyEl.replaceChildren();
+      for (const fp of paths) showNotify(fp);
     }
 
     async function refreshStatus() {
@@ -500,12 +504,15 @@ _ADMIN_HTML = """<!DOCTYPE html>
       errEl.textContent = "";
       try {
         const data = await api("GET", `/api/events?viewer=central&since_id=${sinceId}`);
-        for (const ev of (data.events || [])) {
-          const files = (ev.affected_files && ev.affected_files.length)
-            ? ev.affected_files
-            : [ev.display_path || (ev.workspace + "/" + ev.file_path)];
-          for (const fp of files) showNotify(fp);
-          sinceId = Math.max(sinceId, ev.id);
+        const events = data.events || [];
+        if (events.length) {
+          // Keep chips until the next mutation; then replace with that mutation's files.
+          const latest = events[events.length - 1];
+          const files = (latest.affected_files && latest.affected_files.length)
+            ? latest.affected_files
+            : [latest.display_path || (latest.workspace + "/" + latest.file_path)];
+          replaceNotifications(files);
+          for (const ev of events) sinceId = Math.max(sinceId, ev.id);
         }
         if (data.latest_id) sinceId = Math.max(sinceId, data.latest_id);
         await refreshStatus();
