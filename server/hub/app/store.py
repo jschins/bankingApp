@@ -177,22 +177,29 @@ def recalculate_workspace(
     workspace: str,
     *,
     skip_events: bool = False,
+    person_folders: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Run boekhouding-style recalculate for one workspace under data_root."""
+    """Run boekhouding-style recalculate for one workspace under data_root.
+
+    When ``person_folders`` is set, only those person packs are recategorized
+    and only their derived files are re-published.
+    """
     from app.matrix import recalculate_all
     from app.paths import CALC_LOCK
     from app.runtime import set_active_workspace
     from app.settings import init_app
 
     ws = _clean_workspace(workspace)
+    wanted = {Path(name).name for name in person_folders} if person_folders else None
     with CALC_LOCK:
         set_active_workspace(ws)
         init_app()
-        matrix = recalculate_all()
-        # Publish derived totals / categorized (optional silent put for batch announce).
+        matrix = recalculate_all(person_folders=list(wanted) if wanted else None)
         root = workspace_dir(ws)
         for child in root.iterdir():
             if not child.is_dir() or not (child / "data").is_dir():
+                continue
+            if wanted is not None and child.name not in wanted:
                 continue
             totals_path = child / "data" / CATEGORY_TOTALS
             if totals_path.is_file():
@@ -242,6 +249,71 @@ def derived_paths_for_person(workspace: str, folder_name: str) -> list[str]:
         f"{ws}/{safe}/data/{CATEGORIZED}",
         f"{ws}/{safe}/data/{CATEGORY_TOTALS}",
     ]
+
+
+def _normalize_input_path(raw: str, primary: str) -> str:
+    p = str(raw).replace("\\", "/").lstrip("/")
+    if p == SHARED_CATEGORIES:
+        return SHARED_CATEGORIES
+    if any(p.startswith(f"{w}/") for w in list_workspaces()):
+        return p
+    return f"{primary}/{p}"
+
+
+def _person_folder_from_path(path: str, workspace: str) -> str | None:
+    """Return person folder from ``ws/person/data/...`` paths; None if shared/unknown."""
+    p = str(path).replace("\\", "/").lstrip("/")
+    if p == SHARED_CATEGORIES:
+        return None
+    prefix = f"{_clean_workspace(workspace)}/"
+    if p.startswith(prefix):
+        p = p[len(prefix) :]
+    parts = p.split("/")
+    if len(parts) >= 2 and parts[1] == "data":
+        return Path(parts[0]).name
+    return None
+
+
+def _mutation_scope(
+    primary: str,
+    input_paths: list[str],
+    *,
+    recalc_all_workspaces: bool,
+) -> tuple[list[str], list[str] | None, bool]:
+    """Return (expected announce paths, person_folders or None=all, multi-workspace)."""
+    expected: list[str] = []
+    person_folders: set[str] = set()
+    scope_all_people = False
+
+    normalized = [_normalize_input_path(raw, primary) for raw in input_paths]
+    if not normalized:
+        scope_all_people = True
+
+    for p in normalized:
+        expected.append(p)
+        if p == SHARED_CATEGORIES:
+            scope_all_people = True
+            continue
+        folder = _person_folder_from_path(p, primary)
+        if folder:
+            person_folders.add(folder)
+        else:
+            scope_all_people = True
+
+    multi = bool(recalc_all_workspaces or SHARED_CATEGORIES in normalized)
+    targets = list_workspaces() if multi else [primary]
+    if primary not in targets:
+        targets.insert(0, primary)
+
+    if scope_all_people or not person_folders:
+        for ws in targets:
+            expected.extend(derived_paths_for_workspace(ws))
+        return expected, None, multi
+
+    # Person-scoped: only that pack's derived files in the primary workspace.
+    for folder in sorted(person_folders):
+        expected.extend(derived_paths_for_person(primary, folder))
+    return expected, sorted(person_folders), False
 
 
 def _dedupe_paths(paths: list[str]) -> list[str]:
@@ -297,33 +369,34 @@ def mutate_and_recalculate(
     source: str = "central",
     recalc_all_workspaces: bool = False,
 ) -> dict[str, Any]:
-    """Announce expected files, recalculate affected workspace(s), return matrix."""
+    """Announce expected files, recalculate affected person(s)/workspace(s), return matrix."""
     from app.paths import CALC_LOCK
 
     primary = _clean_workspace(workspace)
-    targets = list_workspaces() if recalc_all_workspaces else [primary]
+    expected, person_folders, multi = _mutation_scope(
+        primary,
+        input_paths,
+        recalc_all_workspaces=recalc_all_workspaces,
+    )
+    targets = list_workspaces() if multi else [primary]
     if primary not in targets:
         targets.insert(0, primary)
 
-    expected: list[str] = []
-    for raw in input_paths:
-        p = str(raw).replace("\\", "/").lstrip("/")
-        if p == SHARED_CATEGORIES:
-            expected.append(SHARED_CATEGORIES)
-        elif any(p.startswith(f"{w}/") for w in list_workspaces()):
-            expected.append(p)
-        else:
-            expected.append(f"{primary}/{p}")
-    for ws in targets:
-        expected.extend(derived_paths_for_workspace(ws))
-
     announced = announce_mutation(primary, expected, source=source)
     matrices: dict[str, Any] = {}
-    # Hold calc lock across all workspace recalcs so active workspace / path
-    # globals cannot interleave with another request.
     with CALC_LOCK:
         for ws in targets:
-            matrices[ws] = recalculate_workspace(ws, skip_events=True)
+            # Person-scoped edits only recalculate those packs (and only on primary).
+            folders = person_folders if (person_folders and ws == primary) else (
+                None if person_folders is None else []
+            )
+            if folders == []:
+                continue
+            matrices[ws] = recalculate_workspace(
+                ws,
+                skip_events=True,
+                person_folders=folders,
+            )
     primary_result = matrices.get(primary) or {}
     matrix_payload = primary_result.get("matrix")
     if isinstance(matrix_payload, dict) and "workspace" not in matrix_payload:

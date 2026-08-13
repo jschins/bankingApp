@@ -91,13 +91,19 @@ def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
     return payload
 
 
-def recalculate_all() -> dict[str, Any]:
+def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
+    """Recategorize people; when ``person_folders`` is set, only those packs are rewritten."""
     from app.core.categorize import recategorize_transactions
     from app.paths import CALC_LOCK
 
     with CALC_LOCK:
         packs = refresh_people()
-        for pack in packs:
+        if person_folders:
+            wanted = {Path(name).name for name in person_folders}
+            to_run = [p for p in packs if p.folder_name in wanted]
+        else:
+            to_run = packs
+        for pack in to_run:
             with bind_person(pack):
                 recategorize_transactions()
         return build_matrix(packs)
