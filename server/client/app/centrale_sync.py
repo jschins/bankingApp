@@ -234,6 +234,22 @@ def refresh_capabilities() -> dict[str, Any]:
 
 def sync_status() -> dict[str, Any]:
     cfg = load_config()
+    consent_ready: list[dict[str, Any]] = []
+    if cfg.enabled:
+        try:
+            data = hub_get("/consent-ready", timeout=5.0)
+            raw = data.get("ready") if isinstance(data, dict) else None
+            if isinstance(raw, list):
+                consent_ready = [
+                    {
+                        "short": str(item.get("short") or ""),
+                        "folder": str(item.get("folder") or ""),
+                    }
+                    for item in raw
+                    if isinstance(item, dict) and str(item.get("short") or "").strip()
+                ]
+        except Exception:  # noqa: BLE001
+            consent_ready = []
     with _state_lock:
         notes = _active_notifications_unlocked()
     return {
@@ -251,6 +267,7 @@ def sync_status() -> dict[str, Any]:
         "data_epoch": _data_epoch,
         "has_secrets": _cached_has_secrets,
         "layout": "central" if cfg.role == "central_admin" else "local",
+        "consent_ready": consent_ready,
     }
 
 

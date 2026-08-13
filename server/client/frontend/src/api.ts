@@ -108,6 +108,11 @@ export interface SyncNotification {
   expires_at: number;
 }
 
+export interface ConsentReadyPerson {
+  short: string;
+  folder?: string;
+}
+
 export interface CentraleSyncStatus {
   enabled: boolean;
   workspace: string;
@@ -123,6 +128,8 @@ export interface CentraleSyncStatus {
   workspaces?: string[];
   data_epoch?: number;
   has_secrets?: boolean;
+  /** People whose bank consent just completed via hub callback. */
+  consent_ready?: ConsentReadyPerson[];
 }
 
 export function getCentraleStatus(): Promise<CentraleSyncStatus> {

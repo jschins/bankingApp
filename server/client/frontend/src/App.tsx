@@ -386,6 +386,7 @@ function MainApp({ author }: { author: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [fetchingShort, setFetchingShort] = useState<string | null>(null);
   const [personNewYear, setPersonNewYear] = useState<Record<string, boolean>>({});
+  const [consentReady, setConsentReady] = useState<Record<string, boolean>>({});
   const [refreshStatus, setRefreshStatus] = useState<StoredRefreshStatus | null>(() =>
     loadStoredRefreshStatus()
   );
@@ -411,6 +412,36 @@ function MainApp({ author }: { author: string }) {
         setHasSecrets(false);
       });
   }, []);
+
+  useEffect(() => {
+    const awaitingAuth = (refreshStatus?.results || []).some(
+      (r) => r.skipped && r.reason === "needs_consent_renewal"
+    );
+    if (!awaitingAuth) {
+      setConsentReady({});
+      return;
+    }
+    let cancelled = false;
+    function pollReady() {
+      getCentraleStatus()
+        .then((s) => {
+          if (cancelled) return;
+          const next: Record<string, boolean> = {};
+          for (const item of s.consent_ready || []) {
+            const short = (item.short || "").trim();
+            if (short) next[short] = true;
+          }
+          setConsentReady(next);
+        })
+        .catch(() => {});
+    }
+    pollReady();
+    const id = window.setInterval(pollReady, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [refreshStatus]);
 
   useEffect(() => {
     selectionRef.current = selection;
@@ -580,6 +611,7 @@ function MainApp({ author }: { author: string }) {
     setRefreshStatus(null);
     clearStoredRefreshStatus();
     setPersonNewYear({});
+    setConsentReady({});
     refreshAll({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
@@ -631,6 +663,13 @@ function MainApp({ author }: { author: string }) {
       .finally(() => setFetchingShort(null));
   }
 
+  const awaitingPostConsentFetch = (refreshStatus?.results || []).some(
+    (r) =>
+      r.skipped &&
+      r.reason === "needs_consent_renewal" &&
+      Boolean(consentReady[r.short])
+  );
+
   const inPView = selection !== null;
 
   return (
@@ -664,13 +703,16 @@ function MainApp({ author }: { author: string }) {
                   onChange={(e) => setDateTo(e.target.value)}
                 />
               </label>
-              <button
-                className="refresh-button"
-                onClick={doRefresh}
-                disabled={refreshing || Boolean(fetchingShort)}
-              >
-                {refreshing ? "Refreshing…" : "↻ Refresh all"}
-              </button>
+              {!awaitingPostConsentFetch ? (
+                <button
+                  type="button"
+                  className="refresh-button"
+                  onClick={doRefresh}
+                  disabled={refreshing || Boolean(fetchingShort)}
+                >
+                  {refreshing ? "Refreshing…" : "↻ Refresh all"}
+                </button>
+              ) : null}
               {refreshStatus && (
                 <div className="refresh-status">
                   {(refreshStatus.results || []).map((r) => (
@@ -680,43 +722,48 @@ function MainApp({ author }: { author: string }) {
                           <>
                             <span>
                               {r.short}: consent renewal required
-                              {!r.authorization_url ? " (no authorization URL)" : ""}
+                              {!r.authorization_url && !consentReady[r.short]
+                                ? " (no authorization URL)"
+                                : ""}
                             </span>
-                            {r.authorization_url ? (
+                            {!consentReady[r.short] && r.authorization_url ? (
                               <a
-                                className="refresh-auth-link"
+                                className="refresh-button"
                                 href={r.authorization_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                Open bank authorization — {r.short}
-                                {r.folder ? ` (${r.folder})` : ""}
+                                {`renew ${r.short}`}
                               </a>
                             ) : null}
-                            <label className="refresh-person-newyear">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(personNewYear[r.short])}
-                                disabled={Boolean(refreshing || fetchingShort)}
-                                onChange={(e) =>
-                                  setPersonNewYear((prev) => ({
-                                    ...prev,
-                                    [r.short]: e.target.checked,
-                                  }))
-                                }
-                              />
-                              new year (overwrite {r.short} only)
-                            </label>
-                            <button
-                              type="button"
-                              className="refresh-person-button"
-                              disabled={Boolean(refreshing || fetchingShort)}
-                              onClick={() => doRefreshPerson(r.short)}
-                            >
-                              {fetchingShort === r.short
-                                ? `Fetching ${r.short}…`
-                                : `Fetch ${r.short}`}
-                            </button>
+                            {consentReady[r.short] ? (
+                              <>
+                                <label className="refresh-person-newyear">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(personNewYear[r.short])}
+                                    disabled={Boolean(refreshing || fetchingShort)}
+                                    onChange={(e) =>
+                                      setPersonNewYear((prev) => ({
+                                        ...prev,
+                                        [r.short]: e.target.checked,
+                                      }))
+                                    }
+                                  />
+                                  new year (overwrite {r.short} only)
+                                </label>
+                                <button
+                                  type="button"
+                                  className="refresh-button"
+                                  disabled={Boolean(refreshing || fetchingShort)}
+                                  onClick={() => doRefreshPerson(r.short)}
+                                >
+                                  {fetchingShort === r.short
+                                    ? `Fetching ${r.short}…`
+                                    : `fetch for ${r.short}`}
+                                </button>
+                              </>
+                            ) : null}
                           </>
                         ) : (
                           <span>

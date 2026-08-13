@@ -451,6 +451,10 @@ def refresh_person(
             new_year=new_year,
         )
         inputs = _ingest_person_data_files(ws, folder_names=[pack.folder_name])
+        from app import consent_flow
+
+        # Person-only fetch completed (or re-skipped); drop the post-callback prompt.
+        consent_flow.clear_ready(workspace=ws, short=pack.short)
 
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
     matrix_payload = mut.get("matrix") or result.get("matrix") or {}

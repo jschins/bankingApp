@@ -524,6 +524,7 @@ def consent_callback(
             pack = get_person(short)
             with bind_person(pack):
                 complete_authorization(raw_code)
+            consent_flow.mark_ready(workspace=ws, short=short, folder=folder)
     except (EnableBankingError, KeyError, FileNotFoundError, ValueError) as exc:
         return HTMLResponse(
             content=(
@@ -552,11 +553,36 @@ def consent_callback(
             "<title>Bank consent received</title></head><body>"
             f"<h1>Bank consent received — {short}</h1>"
             f"<p>Updated consent for {folder} in workspace {ws}.</p>"
-            "<p>Return to Boekhouding and run Refresh again. You can close this tab.</p>"
+            f"<p>Return to Boekhouding and use <strong>fetch for {short}</strong> "
+            "(optional new year overwrite). You can close this tab.</p>"
             "<script>window.close();</script>"
             "</body></html>"
         )
     )
+
+
+@app.get("/api/local/{workspace}/consent-ready")
+def api_consent_ready(
+    workspace: str,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import consent_flow
+
+    return {"ready": consent_flow.list_ready(workspace)}
+
+
+@app.post("/api/local/{workspace}/consent-ready/{short}/clear")
+def api_consent_ready_clear(
+    workspace: str,
+    short: str,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import consent_flow
+
+    return {
+        "ok": True,
+        "cleared": consent_flow.clear_ready(workspace=workspace, short=short),
+    }
 
 
 _ADMIN_HTML = """<!DOCTYPE html>
