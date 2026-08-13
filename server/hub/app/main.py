@@ -441,9 +441,6 @@ _ADMIN_HTML = """<!DOCTYPE html>
     }
     .meta { margin-top: 1.25rem; font-size: 0.85rem; color: #666; }
     .err { color: #a33; margin-top: 0.75rem; min-height: 1.2em; }
-    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
-    input, textarea, select { width: 100%; font: inherit; margin-top: 0.25rem; }
-    textarea { min-height: 8rem; font-family: Consolas, monospace; font-size: 0.85rem; }
     button.action { margin-top: 0.75rem; font: inherit; cursor: pointer;
                     padding: 0.55rem 1rem; border: 1px solid #2a5a8c; background: #2a5a8c; color: #fff; }
     button.stop { margin-top: 0.75rem; margin-left: 0.5rem; font: inherit; cursor: pointer;
@@ -454,20 +451,10 @@ _ADMIN_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Centrale boekhouding</h1>
-    <p class="lead">Immediate sync hub. Local changes appear here as short-lived notifications. Central file writes use the form below (source=central).</p>
+    <p class="lead">Immediate sync hub. Client changes appear here as short-lived notifications.</p>
     <div class="status" id="status">Loading…</div>
     <div class="notify-wrap" id="notify" aria-live="polite"></div>
-    <label>workspace
-      <input id="ws" value="dkg"/>
-    </label>
-    <label>path (e.g. categories.json or person/data/personal_categories.json)
-      <input id="path" value="categories.json"/>
-    </label>
-    <label>JSON content
-      <textarea id="content">{}</textarea>
-    </label>
     <div class="actions">
-      <button class="action" id="btnSave" type="button">Save as central</button>
       <button class="action" id="btnClearSessions" type="button">Clear sessions</button>
       <button class="stop" id="btnStop" type="button">Stop hub</button>
     </div>
@@ -526,22 +513,6 @@ _ADMIN_HTML = """<!DOCTYPE html>
         errEl.textContent = String(e.message || e);
       }
     }
-
-    document.getElementById("btnSave").onclick = async () => {
-      errEl.textContent = "";
-      try {
-        const ws = document.getElementById("ws").value.trim();
-        const path = document.getElementById("path").value.trim();
-        const content = JSON.parse(document.getElementById("content").value);
-        const res = await api("PUT", `/api/local/${encodeURIComponent(ws)}/file`, {
-          path, content, source: "central"
-        });
-        metaEl.textContent = "saved " + (res.path || path) + " rev=" + (res.revision || "?");
-        await pollEvents();
-      } catch (e) {
-        errEl.textContent = String(e.message || e);
-      }
-    };
 
     document.getElementById("btnClearSessions").onclick = async () => {
       errEl.textContent = "";
