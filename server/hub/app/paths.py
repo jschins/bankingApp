@@ -49,9 +49,12 @@ class PersonPack:
 
 
 def shared_categories_path(root: Path | None = None) -> Path:
-    """``categories.json`` beside ``boekhouding.exe`` (admin deploy root)."""
-    base = root if root is not None else app_root()
-    return (base / "categories.json").resolve()
+    """Shared ``categories.json`` at the hub data root (all workspaces)."""
+    if root is not None:
+        return (root / "categories.json").resolve()
+    from app.runtime import data_root
+
+    return (data_root() / "categories.json").resolve()
 
 
 def _read_person_short(profile_path: Path) -> str:

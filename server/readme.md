@@ -8,11 +8,9 @@ Always-on **hub** + identical **client** BFFs.
 ```text
 bankingApp/server/
   readme.md
-  workspaces/                 # DATA ONLY — hub data_root (secrets included)
-    categories.json           # merged root
-    _categories_deletions.json
+    workspaces/                 # DATA ONLY — hub data_root (secrets included)
+    categories.json           # shared by all workspaces
     dkg/
-      categories.json
       <person>/data/
         categorized_transactions.json
         personal_categories.json
@@ -28,7 +26,7 @@ bankingApp/server/
 | Folder | Role |
 |--------|------|
 | `workspaces/` | JSON + secrets; only the hub reads/writes this tree |
-| `hub/` | FastAPI: file store, merge, recalculate, matrix/settings/transactions/refresh |
+| `hub/` | FastAPI: file store, recalculate, matrix/settings/transactions/refresh |
 | `client/` | Same binary everywhere; config selects `workspaces[]`; proxies to hub |
 
 ## Processes
@@ -70,6 +68,16 @@ cd server\client
 uv sync
 uv run client
 ```
+
+### Hub onefile
+
+```powershell
+cd server\hub
+uv sync --group build
+uv run python scripts/build_onefile.py
+```
+
+Output: `server/workspaces/server.exe` — run it from that folder (data root is the exe directory).
 
 ### Stop the hub (:8400)
 

@@ -116,7 +116,6 @@ def record_modification(
         rel,
         content,
         source=source,
-        skip_categories_merge=True,
         skip_recalc=True,
     )
     store.recalculate_workspace(ws)
@@ -178,7 +177,7 @@ def update_settings(
 
     if group == "general":
         cleaned = save_general_terms(category_name, terms)
-        cats_path = store.workspace_dir(ws) / store.SHARED_CATEGORIES
+        cats_path = store.merged_categories_path()
         content = json.loads(cats_path.read_text(encoding="utf-8"))
         store.put_file(
             ws,
@@ -205,7 +204,6 @@ def update_settings(
         rel,
         content,
         source=source,
-        skip_categories_merge=True,
         skip_recalc=True,
     )
     recalc = store.recalculate_workspace(ws)
@@ -244,7 +242,7 @@ def add_term(
                 person=pack.short,
             )
         sync_general_categories(load_general_file([pack]), people_list)
-        cats_path = store.workspace_dir(ws) / store.SHARED_CATEGORIES
+        cats_path = store.merged_categories_path()
         content = json.loads(cats_path.read_text(encoding="utf-8"))
         store.put_file(
             ws,
@@ -281,7 +279,6 @@ def add_term(
         rel,
         content,
         source=source,
-        skip_categories_merge=True,
         skip_recalc=True,
     )
     recalc = store.recalculate_workspace(ws)
@@ -326,7 +323,6 @@ def refresh(
                 f"{child.name}/data/{name}",
                 content,
                 source="central",
-                skip_categories_merge=True,
                 skip_recalc=True,
             )
     recalc = store.recalculate_workspace(ws)

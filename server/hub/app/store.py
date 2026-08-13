@@ -1,4 +1,4 @@
-"""Workspace file I/O, per-file revisions, categories merge, and change events."""
+"""Workspace file I/O, per-file revisions, and change events."""
 from __future__ import annotations
 
 import json
@@ -16,18 +16,20 @@ _file_meta: dict[str, dict[str, Any]] = {}  # key -> {revision, source, mtime}
 _events: list[dict[str, Any]] = []
 _next_event_id = 1
 _MAX_EVENTS = 200
-_merging_categories = False
 
 PERSONAL_CATEGORIES = "personal_categories.json"
 CATEGORIZED = "categorized_transactions.json"
 CATEGORY_TOTALS = "category_totals.json"
 DOWNLOADED = "downloaded_transactions.json"
 SHARED_CATEGORIES = "categories.json"
-MERGED_WORKSPACE = "_merged"  # synthetic workspace id for root categories.json events
-DELETIONS_FILE = "_categories_deletions.json"
+# Synthetic workspace id for events on the single root categories.json
+SHARED_META_WORKSPACE = "_shared"
 _PERSON_DATA_FILES = frozenset(
     {PERSONAL_CATEGORIES, CATEGORIZED, CATEGORY_TOTALS, DOWNLOADED}
 )
+
+# Back-compat alias (older event viewers / docs).
+MERGED_WORKSPACE = SHARED_META_WORKSPACE
 
 
 def get_status() -> dict[str, Any]:
@@ -80,9 +82,7 @@ def list_workspaces() -> list[str]:
             continue
         if child.name.startswith("_"):
             continue
-        if (child / SHARED_CATEGORIES).is_file() or any(
-            p.is_dir() and (p / "data").is_dir() for p in child.iterdir() if p.is_dir()
-        ):
+        if any(p.is_dir() and (p / "data").is_dir() for p in child.iterdir() if p.is_dir()):
             names.append(child.name)
     return names
 
@@ -98,9 +98,14 @@ def list_person_folders(workspace: str) -> list[str]:
     return names
 
 
-def merged_categories_path() -> Path:
-    """Root-level merged categories.json (one level above peer folders)."""
+def shared_categories_path() -> Path:
+    """Single ``categories.json`` at the hub data root (all workspaces)."""
     return data_root() / SHARED_CATEGORIES
+
+
+def merged_categories_path() -> Path:
+    """Alias for ``shared_categories_path``."""
+    return shared_categories_path()
 
 
 def _normalize_rel_path(rel_path: str) -> str:
@@ -160,7 +165,6 @@ def recalculate_workspace(workspace: str) -> dict[str, Any]:
                 f"{child.name}/data/{CATEGORY_TOTALS}",
                 content,
                 source="central",
-                skip_categories_merge=True,
                 skip_recalc=True,
             )
         cat_path = child / "data" / CATEGORIZED
@@ -174,7 +178,6 @@ def recalculate_workspace(workspace: str) -> dict[str, Any]:
                 f"{child.name}/data/{CATEGORIZED}",
                 content,
                 source="central",
-                skip_categories_merge=True,
                 skip_recalc=True,
             )
     return {"ok": True, "workspace": ws, "matrix": matrix}
@@ -188,19 +191,23 @@ def resolve_file_path(workspace: str, rel_path: str) -> Path:
     rel = _normalize_rel_path(rel_path)
     if not _is_tracked(rel):
         raise ValueError(f"Path is not a tracked sync file: {rel}")
+    if rel == SHARED_CATEGORIES:
+        return shared_categories_path()
     return workspace_dir(workspace) / rel
 
 
 def read_file(workspace: str, rel_path: str) -> dict[str, Any]:
     rel = _normalize_rel_path(rel_path)
     path = resolve_file_path(workspace, rel)
-    key = _meta_key(workspace, rel)
+    ws = _clean_workspace(workspace)
+    meta_ws = SHARED_META_WORKSPACE if rel == SHARED_CATEGORIES else ws
+    key = _meta_key(meta_ws, rel)
     content = _read_json_or_none(path)
     with _lock:
         meta = dict(_file_meta.get(key) or {})
     return {
         "ok": True,
-        "workspace": _clean_workspace(workspace),
+        "workspace": ws,
         "path": rel,
         "content": content,
         "revision": int(meta.get("revision") or 0),
@@ -216,7 +223,6 @@ def put_file(
     *,
     source: str,
     client_revision: int | None = None,
-    skip_categories_merge: bool = False,
     skip_recalc: bool = False,
 ) -> dict[str, Any]:
     """Write one tracked file. Central always wins when local is behind."""
@@ -224,8 +230,9 @@ def put_file(
         raise ValueError("source must be 'local' or 'central'")
     rel = _normalize_rel_path(rel_path)
     path = resolve_file_path(workspace, rel)
-    key = _meta_key(workspace, rel)
     ws = _clean_workspace(workspace)
+    meta_ws = SHARED_META_WORKSPACE if rel == SHARED_CATEGORIES else ws
+    key = _meta_key(meta_ws, rel)
 
     with _lock:
         meta = dict(_file_meta.get(key) or {"revision": 0, "source": None, "mtime": 0.0})
@@ -260,16 +267,16 @@ def put_file(
             }
 
         new_rev = current_rev + 1
-        if rel == SHARED_CATEGORIES and not skip_categories_merge:
-            record_category_term_diff(existing, content)
         _write_json(path, content)
         now = time.time()
         _file_meta[key] = {"revision": new_rev, "source": source, "mtime": now}
         event = _append_event_unlocked(
-            workspace=ws,
+            workspace=meta_ws,
             file_path=rel,
             source=source,
             revision=new_rev,
+            display_path=SHARED_CATEGORIES if rel == SHARED_CATEGORIES else None,
+            broadcast=rel == SHARED_CATEGORIES,
         )
         result = {
             "ok": True,
@@ -282,206 +289,12 @@ def put_file(
             "event": event,
         }
 
-    if rel == SHARED_CATEGORIES and not skip_categories_merge:
-        merge_info = rebuild_merged_categories(trigger_workspace=ws, trigger_source=source)
-        result["categories_merge"] = merge_info
     if not skip_recalc and _path_triggers_recalc(rel) and not result.get("central_wins"):
         try:
             result["recalculate"] = recalculate_workspace(ws)
         except Exception as exc:  # noqa: BLE001
             result["recalculate_error"] = str(exc)
     return result
-
-
-def merge_categories_payloads(
-    payloads: list[dict[str, Any]],
-    *,
-    deletions: dict[str, list[str]] | None = None,
-) -> dict[str, Any]:
-    """Merge peer categories.json documents: union abbreviations and category terms.
-
-    ``deletions`` maps category name → terms that must stay removed across peers.
-    """
-    merged: dict[str, Any] = {}
-    abbr: dict[str, str] = {}
-    cats: dict[str, list[str]] = {}
-    typerules: list[Any] = []
-    other: dict[str, Any] = {}
-
-    for payload in payloads:
-        if not isinstance(payload, dict):
-            continue
-        raw_abbr = payload.get("abbreviations")
-        if isinstance(raw_abbr, dict):
-            for k, v in raw_abbr.items():
-                key = str(k)
-                if key not in abbr:
-                    abbr[key] = str(v)
-        raw_cats = payload.get("categories")
-        if isinstance(raw_cats, dict):
-            for name, terms in raw_cats.items():
-                cat = str(name)
-                bucket = cats.setdefault(cat, [])
-                seen = set(bucket)
-                if isinstance(terms, list):
-                    for term in terms:
-                        t = str(term)
-                        if t not in seen:
-                            bucket.append(t)
-                            seen.add(t)
-        raw_rules = payload.get("typerules")
-        if isinstance(raw_rules, list):
-            for rule in raw_rules:
-                if rule not in typerules:
-                    typerules.append(rule)
-        for k, v in payload.items():
-            if k in ("abbreviations", "categories", "typerules"):
-                continue
-            if k not in other:
-                other[k] = v
-
-    if deletions:
-        for cat, removed in deletions.items():
-            if cat not in cats:
-                continue
-            ban = {str(t) for t in removed}
-            cats[cat] = [t for t in cats[cat] if t not in ban]
-
-    if abbr:
-        merged["abbreviations"] = abbr
-    merged["categories"] = cats
-    if typerules:
-        merged["typerules"] = typerules
-    merged.update(other)
-    return merged
-
-
-def _deletions_path() -> Path:
-    return data_root() / DELETIONS_FILE
-
-
-def load_category_deletions() -> dict[str, list[str]]:
-    raw = _read_json_or_none(_deletions_path())
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, list[str]] = {}
-    for cat, terms in raw.items():
-        if isinstance(terms, list):
-            cleaned = [str(t) for t in terms if str(t).strip()]
-            if cleaned:
-                out[str(cat)] = cleaned
-    return out
-
-
-def save_category_deletions(deletions: dict[str, list[str]]) -> None:
-    _write_json(_deletions_path(), deletions)
-
-
-def _category_term_map(payload: Any) -> dict[str, set[str]]:
-    if not isinstance(payload, dict):
-        return {}
-    raw = payload.get("categories")
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, set[str]] = {}
-    for name, terms in raw.items():
-        if isinstance(terms, list):
-            out[str(name)] = {str(t) for t in terms if str(t).strip()}
-    return out
-
-
-def record_category_term_diff(old_payload: Any, new_payload: Any) -> dict[str, list[str]]:
-    """Update persisted deletions from a peer categories write (removes stay gone; re-adds clear)."""
-    old_map = _category_term_map(old_payload)
-    new_map = _category_term_map(new_payload)
-    deletions = load_category_deletions()
-
-    all_cats = set(old_map) | set(new_map) | set(deletions)
-    for cat in all_cats:
-        before = old_map.get(cat, set())
-        after = new_map.get(cat, set())
-        removed = before - after
-        added = after - before
-        bucket = set(deletions.get(cat, []))
-        bucket |= removed
-        bucket -= added
-        if bucket:
-            deletions[cat] = sorted(bucket)
-        else:
-            deletions.pop(cat, None)
-
-    save_category_deletions(deletions)
-    return deletions
-
-
-def rebuild_merged_categories(
-    *,
-    trigger_workspace: str | None = None,
-    trigger_source: str = "central",
-) -> dict[str, Any]:
-    """Rebuild root categories.json from all peers and push the merge to every peer."""
-    global _merging_categories
-    if _merging_categories:
-        return {"ok": True, "skipped": True, "reason": "merge already in progress"}
-
-    _merging_categories = True
-    try:
-        peers = list_workspaces()
-        payloads: list[dict[str, Any]] = []
-        for peer in peers:
-            raw = _read_json_or_none(workspace_dir(peer) / SHARED_CATEGORIES)
-            if isinstance(raw, dict):
-                payloads.append(raw)
-        deletions = load_category_deletions()
-        merged = merge_categories_payloads(payloads, deletions=deletions)
-        root_path = merged_categories_path()
-        _write_json(root_path, merged)
-
-        with _lock:
-            key = f"{MERGED_WORKSPACE}/{SHARED_CATEGORIES}"
-            meta = dict(_file_meta.get(key) or {"revision": 0})
-            new_rev = int(meta.get("revision") or 0) + 1
-            _file_meta[key] = {
-                "revision": new_rev,
-                "source": "central",
-                "mtime": time.time(),
-            }
-            event = _append_event_unlocked(
-                workspace=MERGED_WORKSPACE,
-                file_path=SHARED_CATEGORIES,
-                source="central",
-                revision=new_rev,
-                display_path=SHARED_CATEGORIES,
-                broadcast=True,
-            )
-
-        peer_results: list[dict[str, Any]] = []
-        for peer in peers:
-            peer_results.append(
-                put_file(
-                    peer,
-                    SHARED_CATEGORIES,
-                    merged,
-                    source="central",
-                    skip_categories_merge=True,
-                )
-            )
-
-        return {
-            "ok": True,
-            "merged_revision": new_rev,
-            "peers": peers,
-            "trigger_workspace": trigger_workspace,
-            "trigger_source": trigger_source,
-            "deletions": deletions,
-            "event": event,
-            "peer_writes": [
-                {"workspace": r.get("workspace"), "revision": r.get("revision"), "ok": r.get("ok")}
-                for r in peer_results
-            ],
-        }
-    finally:
-        _merging_categories = False
 
 
 def _append_event_unlocked(
@@ -521,7 +334,7 @@ def list_events(
 
     - central: all ``source=local`` events (optional workspace filter)
     - local: ``source=central`` person-file events for that workspace, plus
-      broadcast merged ``categories.json`` events (all peers)
+      broadcast ``categories.json`` events (shared root file)
     """
     with _lock:
         events = list(_events)
@@ -542,14 +355,13 @@ def list_events(
             ws = _clean_workspace(workspace)
             if ev["source"] != "central":
                 continue
-            # Merged categories → notify every peer.
+            # Shared root categories.json → notify every peer.
             if ev.get("broadcast") or (
-                ev["file_path"] == SHARED_CATEGORIES and ev["workspace"] == MERGED_WORKSPACE
+                ev["file_path"] == SHARED_CATEGORIES
+                and ev["workspace"] in (SHARED_META_WORKSPACE, MERGED_WORKSPACE)
             ):
                 out.append(ev)
                 continue
-            # Skip per-peer categories writes that are part of merge fan-out;
-            # peers react to the broadcast merged event instead.
             if ev["file_path"] == SHARED_CATEGORIES:
                 continue
             if ev["workspace"] == ws:
@@ -562,7 +374,7 @@ def list_events(
 
 def read_workspace_files(workspace: str) -> dict[str, Any]:
     root = workspace_dir(workspace)
-    categories = _read_json_or_none(root / SHARED_CATEGORIES)
+    categories = _read_json_or_none(merged_categories_path())
     people: dict[str, Any] = {}
     for name in list_person_folders(workspace):
         data = root / name / "data"

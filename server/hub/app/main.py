@@ -145,11 +145,6 @@ def api_put_file(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/api/categories/rebuild")
-def api_rebuild_categories(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    return store.rebuild_merged_categories(trigger_source="central")
-
-
 @app.post("/api/local/{workspace}/recalculate")
 def api_recalculate_workspace(
     workspace: str,

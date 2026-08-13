@@ -52,7 +52,7 @@ def active_workspace() -> str | None:
 
 
 def app_root() -> Path:
-    """Active workspace folder (person packs + categories.json) for calc."""
+    """Active workspace folder (person packs) for calc."""
     root = data_root()
     if _active_workspace:
         return (root / _active_workspace).resolve()
