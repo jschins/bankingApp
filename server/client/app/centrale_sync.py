@@ -445,9 +445,25 @@ def _worker_loop() -> None:
         if _worker_stop.wait(timeout=1.5):
             break
         try:
+            if _hub_session_active:
+                _heartbeat_session()
             poll_central_events()
         except Exception:
             pass
+
+
+def _heartbeat_session() -> None:
+    """Keep hub session list fresh; missing heartbeats drop force-killed clients."""
+    cfg = load_config()
+    if not cfg.enabled:
+        return
+    ws = cfg.workspace
+    hub_request(
+        "POST",
+        f"/api/local/{urllib.parse.quote(ws)}/session/heartbeat",
+        body={"port": cfg.port},
+        timeout=10.0,
+    )
 
 
 def start_event_worker() -> None:

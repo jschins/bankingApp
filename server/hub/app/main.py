@@ -121,6 +121,36 @@ def api_local_session_end(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/local/{workspace}/session/heartbeat")
+def api_local_session_heartbeat(
+    workspace: str,
+    request: Request,
+    body: SessionPayload = SessionPayload(),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    """Refresh last-seen so force-killed clients drop after TTL."""
+    try:
+        label = _client_session_label(request, workspace, body)
+        return store.local_session_start(label)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class ClearSessionsPayload(BaseModel):
+    label: str | None = None
+
+
+@app.post("/api/sessions/clear")
+def api_sessions_clear(
+    body: ClearSessionsPayload = ClearSessionsPayload(),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    try:
+        return store.clear_local_sessions(body.label)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/local/{workspace}/files")
 def api_get_files(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
     try:
@@ -438,6 +468,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     </label>
     <div class="actions">
       <button class="action" id="btnSave" type="button">Save as central</button>
+      <button class="action" id="btnClearSessions" type="button">Clear sessions</button>
       <button class="stop" id="btnStop" type="button">Stop hub</button>
     </div>
     <p id="err" class="err"></p>
@@ -507,6 +538,16 @@ _ADMIN_HTML = """<!DOCTYPE html>
         });
         metaEl.textContent = "saved " + (res.path || path) + " rev=" + (res.revision || "?");
         await pollEvents();
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    };
+
+    document.getElementById("btnClearSessions").onclick = async () => {
+      errEl.textContent = "";
+      try {
+        await api("POST", "/api/sessions/clear", {});
+        await refreshStatus();
       } catch (e) {
         errEl.textContent = String(e.message || e);
       }

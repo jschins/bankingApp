@@ -11,7 +11,9 @@ from typing import Any
 from app.runtime import data_root
 
 _lock = threading.Lock()
-_local_sessions: set[str] = set()
+# label -> last_seen monotonic time (force-kill never calls session/end)
+_local_sessions: dict[str, float] = {}
+_SESSION_TTL_SEC = 20.0
 _file_meta: dict[str, dict[str, Any]] = {}  # key -> {revision, source, mtime}
 _events: list[dict[str, Any]] = []
 _next_event_id = 1
@@ -32,28 +34,50 @@ _PERSON_DATA_FILES = frozenset(
 MERGED_WORKSPACE = SHARED_META_WORKSPACE
 
 
+def _prune_sessions_unlocked(now: float | None = None) -> None:
+    cutoff = (now if now is not None else time.monotonic()) - _SESSION_TTL_SEC
+    stale = [label for label, seen in _local_sessions.items() if seen < cutoff]
+    for label in stale:
+        _local_sessions.pop(label, None)
+
+
 def get_status() -> dict[str, Any]:
     with _lock:
+        _prune_sessions_unlocked()
         return {
-            "local_sessions": sorted(_local_sessions),
+            "local_sessions": sorted(_local_sessions.keys()),
             "event_count": len(_events),
             "latest_event_id": (_events[-1]["id"] if _events else 0),
             "workspaces": list_workspaces(),
+            "session_ttl_sec": _SESSION_TTL_SEC,
         }
 
 
 def local_session_start(client_addr: str) -> dict[str, Any]:
-    """Register a connected client as ``ip:port`` (shown on the hub status page)."""
+    """Register / refresh a connected client (``ip:port (workspace)``)."""
     label = _clean_client_addr(client_addr)
     with _lock:
-        _local_sessions.add(label)
+        _prune_sessions_unlocked()
+        _local_sessions[label] = time.monotonic()
     return get_status()
 
 
 def local_session_end(client_addr: str) -> dict[str, Any]:
     label = _clean_client_addr(client_addr)
     with _lock:
-        _local_sessions.discard(label)
+        _local_sessions.pop(label, None)
+        _prune_sessions_unlocked()
+    return get_status()
+
+
+def clear_local_sessions(label: str | None = None) -> dict[str, Any]:
+    """Drop one session label, or all sessions when ``label`` is empty."""
+    with _lock:
+        if label and label.strip():
+            _local_sessions.pop(_clean_client_addr(label), None)
+        else:
+            _local_sessions.clear()
+        _prune_sessions_unlocked()
     return get_status()
 
 
