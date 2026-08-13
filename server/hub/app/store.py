@@ -156,47 +156,49 @@ def recalculate_workspace(
 ) -> dict[str, Any]:
     """Run boekhouding-style recalculate for one workspace under data_root."""
     from app.matrix import recalculate_all
+    from app.paths import CALC_LOCK
     from app.runtime import set_active_workspace
     from app.settings import init_app
 
     ws = _clean_workspace(workspace)
-    set_active_workspace(ws)
-    init_app()
-    matrix = recalculate_all()
-    # Publish derived totals / categorized (optional silent put for batch announce).
-    root = workspace_dir(ws)
-    for child in root.iterdir():
-        if not child.is_dir() or not (child / "data").is_dir():
-            continue
-        totals_path = child / "data" / CATEGORY_TOTALS
-        if totals_path.is_file():
-            try:
-                content = json.loads(totals_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+    with CALC_LOCK:
+        set_active_workspace(ws)
+        init_app()
+        matrix = recalculate_all()
+        # Publish derived totals / categorized (optional silent put for batch announce).
+        root = workspace_dir(ws)
+        for child in root.iterdir():
+            if not child.is_dir() or not (child / "data").is_dir():
                 continue
-            put_file(
-                ws,
-                f"{child.name}/data/{CATEGORY_TOTALS}",
-                content,
-                source="central",
-                skip_recalc=True,
-                skip_event=skip_events,
-            )
-        cat_path = child / "data" / CATEGORIZED
-        if cat_path.is_file():
-            try:
-                content = json.loads(cat_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            put_file(
-                ws,
-                f"{child.name}/data/{CATEGORIZED}",
-                content,
-                source="central",
-                skip_recalc=True,
-                skip_event=skip_events,
-            )
-    return {"ok": True, "workspace": ws, "matrix": matrix}
+            totals_path = child / "data" / CATEGORY_TOTALS
+            if totals_path.is_file():
+                try:
+                    content = json.loads(totals_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                put_file(
+                    ws,
+                    f"{child.name}/data/{CATEGORY_TOTALS}",
+                    content,
+                    source="central",
+                    skip_recalc=True,
+                    skip_event=skip_events,
+                )
+            cat_path = child / "data" / CATEGORIZED
+            if cat_path.is_file():
+                try:
+                    content = json.loads(cat_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                put_file(
+                    ws,
+                    f"{child.name}/data/{CATEGORIZED}",
+                    content,
+                    source="central",
+                    skip_recalc=True,
+                    skip_event=skip_events,
+                )
+        return {"ok": True, "workspace": ws, "matrix": matrix}
 
 
 def derived_paths_for_workspace(workspace: str) -> list[str]:
@@ -272,6 +274,8 @@ def mutate_and_recalculate(
     recalc_all_workspaces: bool = False,
 ) -> dict[str, Any]:
     """Announce expected files, recalculate affected workspace(s), return matrix."""
+    from app.paths import CALC_LOCK
+
     primary = _clean_workspace(workspace)
     targets = list_workspaces() if recalc_all_workspaces else [primary]
     if primary not in targets:
@@ -291,14 +295,20 @@ def mutate_and_recalculate(
 
     announced = announce_mutation(primary, expected, source=source)
     matrices: dict[str, Any] = {}
-    for ws in targets:
-        matrices[ws] = recalculate_workspace(ws, skip_events=True)
+    # Hold calc lock across all workspace recalcs so active workspace / path
+    # globals cannot interleave with another request.
+    with CALC_LOCK:
+        for ws in targets:
+            matrices[ws] = recalculate_workspace(ws, skip_events=True)
     primary_result = matrices.get(primary) or {}
+    matrix_payload = primary_result.get("matrix")
+    if isinstance(matrix_payload, dict) and "workspace" not in matrix_payload:
+        matrix_payload = {**matrix_payload, "workspace": primary}
     return {
         "ok": True,
         "workspace": primary,
         "affected_files": announced,
-        "matrix": primary_result.get("matrix"),
+        "matrix": matrix_payload,
         "recalculated": list(matrices.keys()),
     }
 

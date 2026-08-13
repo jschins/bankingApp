@@ -65,6 +65,8 @@ def person_totals(pack: PersonPack) -> dict[str, str]:
 
 
 def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
+    from app.runtime import active_workspace
+
     packs = people if people is not None else get_people()
     categories = category_names(packs)
     columns = [{"short": p.short, "folder": p.folder_name} for p in packs]
@@ -78,21 +80,27 @@ def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
             if name not in cells:
                 cells[name] = {p.short: "0.00" for p in packs}
                 cells[name][pack.short] = str(amount)
-    return {
+    payload: dict[str, Any] = {
         "categories": list(cells.keys()) if cells else categories,
         "people": columns,
         "cells": cells,
     }
+    ws = active_workspace()
+    if ws:
+        payload["workspace"] = ws
+    return payload
 
 
 def recalculate_all() -> dict[str, Any]:
     from app.core.categorize import recategorize_transactions
+    from app.paths import CALC_LOCK
 
-    packs = refresh_people()
-    for pack in packs:
-        with bind_person(pack):
-            recategorize_transactions()
-    return build_matrix(packs)
+    with CALC_LOCK:
+        packs = refresh_people()
+        for pack in packs:
+            with bind_person(pack):
+                recategorize_transactions()
+        return build_matrix(packs)
 
 
 def refresh_all(
@@ -106,67 +114,73 @@ def refresh_all(
         fetch_transactions,
         needs_consent_renewal,
     )
+    from app.paths import CALC_LOCK
 
-    packs = refresh_people()
-    warnings: list[str] = []
-    results: list[dict[str, Any]] = []
+    with CALC_LOCK:
+        packs = refresh_people()
+        warnings: list[str] = []
+        results: list[dict[str, Any]] = []
 
-    for pack in packs:
-        with bind_person(pack):
-            try:
-                if needs_consent_renewal():
-                    warnings.append(
-                        f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
-                    )
+        for pack in packs:
+            with bind_person(pack):
+                try:
+                    if needs_consent_renewal():
+                        warnings.append(
+                            f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
+                        )
+                        results.append(
+                            {
+                                "short": pack.short,
+                                "folder": pack.folder_name,
+                                "skipped": True,
+                                "reason": "needs_consent_renewal",
+                            }
+                        )
+                        continue
+                    fetched = fetch_transactions(date_from=date_from, date_to=date_to)
+                    totals = process_transactions(fetched.transactions, new_year=False)
                     results.append(
                         {
                             "short": pack.short,
-                            "skipped": True,
-                            "reason": "needs_consent_renewal",
+                            "folder": pack.folder_name,
+                            "skipped": False,
+                            "transaction_count": len(fetched.transactions),
+                            "date_from": fetched.date_from,
+                            "date_to": fetched.date_to,
+                            "warnings": fetched.warnings,
+                            "account_errors": fetched.account_errors,
                         }
                     )
-                    continue
-                fetched = fetch_transactions(date_from=date_from, date_to=date_to)
-                totals = process_transactions(fetched.transactions, new_year=False)
-                results.append(
-                    {
-                        "short": pack.short,
-                        "skipped": False,
-                        "transaction_count": len(fetched.transactions),
-                        "date_from": fetched.date_from,
-                        "date_to": fetched.date_to,
-                        "warnings": fetched.warnings,
-                        "account_errors": fetched.account_errors,
-                    }
-                )
-                if fetched.warnings:
-                    for w in fetched.warnings:
-                        warnings.append(f"{pack.short}: {w}")
-                if fetched.account_errors:
-                    for err in fetched.account_errors:
-                        warnings.append(f"{pack.short}: {err}")
-                _ = totals
-            except EnableBankingError as exc:
-                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                results.append(
-                    {
-                        "short": pack.short,
-                        "skipped": True,
-                        "reason": str(exc),
-                    }
-                )
-            except Exception as exc:
-                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                results.append(
-                    {
-                        "short": pack.short,
-                        "skipped": True,
-                        "reason": str(exc),
-                    }
-                )
+                    if fetched.warnings:
+                        for w in fetched.warnings:
+                            warnings.append(f"{pack.short}: {w}")
+                    if fetched.account_errors:
+                        for err in fetched.account_errors:
+                            warnings.append(f"{pack.short}: {err}")
+                    _ = totals
+                except EnableBankingError as exc:
+                    warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
+                    results.append(
+                        {
+                            "short": pack.short,
+                            "folder": pack.folder_name,
+                            "skipped": True,
+                            "reason": str(exc),
+                        }
+                    )
+                except Exception as exc:
+                    warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
+                    results.append(
+                        {
+                            "short": pack.short,
+                            "folder": pack.folder_name,
+                            "skipped": True,
+                            "reason": str(exc),
+                        }
+                    )
 
-    matrix = build_matrix(packs)
-    return {"matrix": matrix, "results": results, "warnings": warnings}
+        matrix = build_matrix(packs)
+        return {"matrix": matrix, "results": results, "warnings": warnings}
 
 
 def save_general_terms(category_name: str, terms: list[str]) -> list[str]:

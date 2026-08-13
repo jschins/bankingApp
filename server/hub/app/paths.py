@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
 from app.runtime import app_root
+
+# Serialize all person-path binds / recalculate (uvicorn runs sync routes in a threadpool).
+CALC_LOCK = threading.RLock()
 
 DATA_DIR: Path = Path("data")
 PERSON_SHORT: str = ""
@@ -102,32 +106,33 @@ def bind_person(pack: PersonPack) -> Iterator[PersonPack]:
     global CATEGORIES_PATH, PERSONAL_CATEGORIES_PATH, CATEGORIZED_TRANSACTIONS_PATH
     global RAW_TRANSACTIONS_PATH, CATEGORY_TOTALS_PATH
 
-    snapshot = {
-        "DATA_DIR": DATA_DIR,
-        "PERSON_SHORT": PERSON_SHORT,
-        "PROFILE_PATH": PROFILE_PATH,
-        "PRIVATE_KEY_PATH": PRIVATE_KEY_PATH,
-        "CONSENT_PATH": CONSENT_PATH,
-        "CATEGORIES_PATH": CATEGORIES_PATH,
-        "PERSONAL_CATEGORIES_PATH": PERSONAL_CATEGORIES_PATH,
-        "CATEGORIZED_TRANSACTIONS_PATH": CATEGORIZED_TRANSACTIONS_PATH,
-        "RAW_TRANSACTIONS_PATH": RAW_TRANSACTIONS_PATH,
-        "CATEGORY_TOTALS_PATH": CATEGORY_TOTALS_PATH,
-    }
-    apply_person(pack)
-    try:
-        yield pack
-    finally:
-        DATA_DIR = snapshot["DATA_DIR"]
-        PERSON_SHORT = snapshot["PERSON_SHORT"]
-        PROFILE_PATH = snapshot["PROFILE_PATH"]
-        PRIVATE_KEY_PATH = snapshot["PRIVATE_KEY_PATH"]
-        CONSENT_PATH = snapshot["CONSENT_PATH"]
-        CATEGORIES_PATH = snapshot["CATEGORIES_PATH"]
-        PERSONAL_CATEGORIES_PATH = snapshot["PERSONAL_CATEGORIES_PATH"]
-        CATEGORIZED_TRANSACTIONS_PATH = snapshot["CATEGORIZED_TRANSACTIONS_PATH"]
-        RAW_TRANSACTIONS_PATH = snapshot["RAW_TRANSACTIONS_PATH"]
-        CATEGORY_TOTALS_PATH = snapshot["CATEGORY_TOTALS_PATH"]
+    with CALC_LOCK:
+        snapshot = {
+            "DATA_DIR": DATA_DIR,
+            "PERSON_SHORT": PERSON_SHORT,
+            "PROFILE_PATH": PROFILE_PATH,
+            "PRIVATE_KEY_PATH": PRIVATE_KEY_PATH,
+            "CONSENT_PATH": CONSENT_PATH,
+            "CATEGORIES_PATH": CATEGORIES_PATH,
+            "PERSONAL_CATEGORIES_PATH": PERSONAL_CATEGORIES_PATH,
+            "CATEGORIZED_TRANSACTIONS_PATH": CATEGORIZED_TRANSACTIONS_PATH,
+            "RAW_TRANSACTIONS_PATH": RAW_TRANSACTIONS_PATH,
+            "CATEGORY_TOTALS_PATH": CATEGORY_TOTALS_PATH,
+        }
+        apply_person(pack)
+        try:
+            yield pack
+        finally:
+            DATA_DIR = snapshot["DATA_DIR"]
+            PERSON_SHORT = snapshot["PERSON_SHORT"]
+            PROFILE_PATH = snapshot["PROFILE_PATH"]
+            PRIVATE_KEY_PATH = snapshot["PRIVATE_KEY_PATH"]
+            CONSENT_PATH = snapshot["CONSENT_PATH"]
+            CATEGORIES_PATH = snapshot["CATEGORIES_PATH"]
+            PERSONAL_CATEGORIES_PATH = snapshot["PERSONAL_CATEGORIES_PATH"]
+            CATEGORIZED_TRANSACTIONS_PATH = snapshot["CATEGORIZED_TRANSACTIONS_PATH"]
+            RAW_TRANSACTIONS_PATH = snapshot["RAW_TRANSACTIONS_PATH"]
+            CATEGORY_TOTALS_PATH = snapshot["CATEGORY_TOTALS_PATH"]
 
 
 def configure() -> list[PersonPack]:
