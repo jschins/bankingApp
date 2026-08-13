@@ -1,10 +1,11 @@
-"""Immediate per-file sync client for centraleBoekhouding."""
+"""Hub client for the thin BFF — no local workspace file copies."""
 from __future__ import annotations
 
 import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -12,8 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from app.runtime import (
-    app_root,
-    central_data_root,
     exe_dir,
     is_central_admin,
     is_frozen,
@@ -22,37 +21,21 @@ from app.runtime import (
     set_runtime,
 )
 
-CATEGORIZED = "categorized_transactions.json"
-PERSONAL_CATEGORIES = "personal_categories.json"
-CATEGORY_TOTALS = "category_totals.json"
-DOWNLOADED = "downloaded_transactions.json"
-SHARED_CATEGORIES = "categories.json"
-
-_local_session_active = False
+_hub_session_active = False
 _last_error: str | None = None
-_file_revisions: dict[str, int] = {}
 _last_event_id = 0
 _pending_notifications: list[dict[str, Any]] = []
 _state_lock = threading.Lock()
 _worker_thread: threading.Thread | None = None
 _worker_stop = threading.Event()
-_push_wake = threading.Event()
-_push_pending: set[str] = set()
 _NOTIFY_TTL_SEC = 15.0
-_config_cache: CentraleConfig | None = None
-_central_wins_alerts: list[dict[str, Any]] = []
-_next_alert_id = 1
+_config_cache: HubConfig | None = None
 _data_epoch = 0
-_recalc_after_pull = False
-
-_CENTRAL_WINS_MESSAGE = (
-    "modification refused due to coincidental (same time, same file) "
-    "modification by central administrator"
-)
+_cached_has_secrets: bool = False
 
 
 @dataclass(frozen=True)
-class CentraleConfig:
+class HubConfig:
     url: str
     workspace: str
     api_key: str
@@ -60,13 +43,10 @@ class CentraleConfig:
     port: int
     role: str  # "local" | "central_admin"
     workspaces: tuple[str, ...] = ()
-    centrale_data_root: str | None = None
 
 
-def _default_central_data_root() -> Path:
-    from app.runtime import workspaces_root
-
-    return workspaces_root()
+# Back-compat alias used by older imports.
+CentraleConfig = HubConfig
 
 
 def config_path() -> Path:
@@ -84,12 +64,12 @@ def config_path() -> Path:
     return root / "client_config.json"
 
 
-def load_config(*, force_reload: bool = False) -> CentraleConfig:
+def load_config(*, force_reload: bool = False) -> HubConfig:
     global _config_cache
     if _config_cache is not None and not force_reload:
         if selected_workspace() and selected_workspace() != _config_cache.workspace:
             ws = selected_workspace() or _config_cache.workspace
-            _config_cache = CentraleConfig(
+            _config_cache = HubConfig(
                 url=_config_cache.url,
                 workspace=ws,
                 api_key=_config_cache.api_key,
@@ -97,7 +77,6 @@ def load_config(*, force_reload: bool = False) -> CentraleConfig:
                 port=_config_cache.port,
                 role=_config_cache.role,
                 workspaces=_config_cache.workspaces,
-                centrale_data_root=_config_cache.centrale_data_root,
             )
         return _config_cache
 
@@ -160,16 +139,9 @@ def load_config(*, force_reload: bool = False) -> CentraleConfig:
     except (TypeError, ValueError):
         port = default_port
 
-    data_root = _default_central_data_root()
-    set_runtime(
-        workspace=workspace,
-        allowed_workspaces=list(workspaces),
-        role=role,
-        central_data_root=data_root,
-        local_deploy_root=None,
-    )
+    set_runtime(workspace=workspace, allowed_workspaces=list(workspaces))
 
-    _config_cache = CentraleConfig(
+    _config_cache = HubConfig(
         url=url,
         workspace=workspace,
         api_key=api_key,
@@ -177,28 +149,28 @@ def load_config(*, force_reload: bool = False) -> CentraleConfig:
         port=port,
         role=role,
         workspaces=workspaces,
-        centrale_data_root=str(data_root),
     )
     return _config_cache
-
-
-def _push_source() -> str:
-    return "central" if is_central_admin() else "local"
 
 
 def _events_viewer() -> str:
     return "central" if is_central_admin() else "local"
 
 
+def _push_source() -> str:
+    return "central" if is_central_admin() else "local"
 
-def _request(
+
+def hub_request(
     method: str,
     path: str,
     *,
     body: dict[str, Any] | None = None,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
 ) -> dict[str, Any]:
     cfg = load_config()
+    if not cfg.enabled:
+        raise RuntimeError("hub sync disabled in client_config.json")
     url = f"{cfg.url}{path}"
     data = None
     headers = {"Accept": "application/json"}
@@ -208,11 +180,51 @@ def _request(
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode("utf-8")
-        if not raw:
-            return {}
-        return json.loads(raw)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            if not raw:
+                return {}
+            return json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"hub {exc.code}: {detail or exc.reason}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"hub unreachable: {exc.reason}") from exc
+
+
+# Back-compat name used internally before rename.
+_request = hub_request
+
+
+def workspace_path(suffix: str = "") -> str:
+    cfg = load_config()
+    base = f"/api/local/{urllib.parse.quote(cfg.workspace)}"
+    return f"{base}{suffix}" if suffix.startswith("/") or not suffix else f"{base}/{suffix}"
+
+
+def hub_get(suffix: str, *, timeout: float = 60.0) -> dict[str, Any]:
+    return hub_request("GET", workspace_path(suffix), timeout=timeout)
+
+
+def hub_post(suffix: str, body: dict[str, Any] | None = None, *, timeout: float = 120.0) -> dict[str, Any]:
+    return hub_request("POST", workspace_path(suffix), body=body, timeout=timeout)
+
+
+def hub_put(suffix: str, body: dict[str, Any], *, timeout: float = 120.0) -> dict[str, Any]:
+    return hub_request("PUT", workspace_path(suffix), body=body, timeout=timeout)
+
+
+def refresh_capabilities() -> dict[str, Any]:
+    global _cached_has_secrets, _last_error
+    try:
+        data = hub_get("/capabilities", timeout=15.0)
+        _cached_has_secrets = bool(data.get("has_secrets"))
+        _last_error = None
+        return data
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        raise
 
 
 def sync_status() -> dict[str, Any]:
@@ -223,7 +235,7 @@ def sync_status() -> dict[str, Any]:
         "enabled": cfg.enabled,
         "workspace": cfg.workspace,
         "centrale_url": cfg.url,
-        "local_session_active": _local_session_active,
+        "local_session_active": _hub_session_active,
         "error": _last_error,
         "last_event_id": _last_event_id,
         "notifications": notes,
@@ -231,20 +243,9 @@ def sync_status() -> dict[str, Any]:
         "role": cfg.role,
         "workspaces": list(cfg.workspaces) if cfg.workspaces else [cfg.workspace],
         "data_epoch": _data_epoch,
-        "has_secrets": _workspace_has_secrets(),
+        "has_secrets": _cached_has_secrets,
         "layout": "central" if cfg.role == "central_admin" else "local",
     }
-
-
-def _workspace_has_secrets() -> bool:
-    root = app_root()
-    if not root.is_dir():
-        return False
-    for child in root.iterdir():
-        if child.is_dir() and (child / "secret").is_dir() and (child / "data").is_dir():
-            if any((child / "secret").glob("*.pem")):
-                return True
-    return False
 
 
 def pop_notifications() -> dict[str, Any]:
@@ -253,43 +254,18 @@ def pop_notifications() -> dict[str, Any]:
     return {"notifications": notes}
 
 
-def _queue_central_wins_alert(rel_path: str) -> None:
-    """Sticky alert for local peers when hub rejects a push (central wins)."""
-    global _next_alert_id
-    if is_central_admin():
-        return
-    with _state_lock:
-        alert_id = _next_alert_id
-        _next_alert_id += 1
-        _central_wins_alerts.append(
-            {
-                "id": alert_id,
-                "path": rel_path,
-                "message": _CENTRAL_WINS_MESSAGE,
-            }
-        )
-
-
 def pop_central_wins_alerts() -> dict[str, Any]:
-    with _state_lock:
-        return {"alerts": list(_central_wins_alerts)}
+    # No local file races when clients do not mirror files.
+    return {"alerts": []}
 
 
 def ack_central_wins_alert(alert_id: int) -> dict[str, Any]:
-    with _state_lock:
-        before = len(_central_wins_alerts)
-        _central_wins_alerts[:] = [
-            a for a in _central_wins_alerts if int(a.get("id") or 0) != int(alert_id)
-        ]
-        removed = before - len(_central_wins_alerts)
-        remaining = list(_central_wins_alerts)
-    return {"ok": True, "removed": removed, "alerts": remaining}
+    return {"ok": True, "removed": 0, "alerts": []}
 
 
 def _active_notifications_unlocked() -> list[dict[str, Any]]:
     now = time.time()
     alive = [n for n in _pending_notifications if float(n.get("expires_at", 0)) > now]
-    # One chip per file path (keep the latest expiry if duplicates slipped in).
     by_path: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for n in alive:
@@ -307,7 +283,6 @@ def _active_notifications_unlocked() -> list[dict[str, Any]]:
 
 
 def _queue_notification(display_path: str) -> None:
-    """Show a 15s chip for ``display_path``; replace any existing chip for that path."""
     key = display_path.replace("\\", "/").strip()
     if not key:
         return
@@ -326,326 +301,44 @@ def _queue_notification(display_path: str) -> None:
         )
 
 
-def apply_local_path(rel_path: str, content: Any) -> None:
-    root = app_root()
-    rel = rel_path.replace("\\", "/").lstrip("/")
-    path = root / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def read_local_path(rel_path: str) -> Any | None:
-    path = app_root() / rel_path.replace("\\", "/").lstrip("/")
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def collect_local_files() -> dict[str, Any]:
-    root = app_root()
-    categories = read_local_path(SHARED_CATEGORIES)
-    people: dict[str, Any] = {}
-    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
-        if not child.is_dir() or not (child / "data").is_dir():
-            continue
-        data = child / "data"
-        people[child.name] = {
-            "categorized_transactions": read_local_path(f"{child.name}/data/{CATEGORIZED}"),
-            "personal_categories": read_local_path(f"{child.name}/data/{PERSONAL_CATEGORIES}"),
-            "category_totals": read_local_path(f"{child.name}/data/{CATEGORY_TOTALS}"),
-            "downloaded_transactions": read_local_path(f"{child.name}/data/{DOWNLOADED}"),
-        }
-    return {"categories": categories, "people": people}
-
-
-def apply_remote_files(payload: dict[str, Any]) -> None:
-    if payload.get("categories") is not None:
-        apply_local_path(SHARED_CATEGORIES, payload["categories"])
-    people = payload.get("people") or {}
-    if not isinstance(people, dict):
-        return
-    for person, files in people.items():
-        if not isinstance(files, dict):
-            continue
-        safe = Path(person).name
-        if files.get("categorized_transactions") is not None:
-            apply_local_path(
-                f"{safe}/data/{CATEGORIZED}",
-                files["categorized_transactions"],
-            )
-        if files.get("personal_categories") is not None:
-            apply_local_path(
-                f"{safe}/data/{PERSONAL_CATEGORIES}",
-                files["personal_categories"],
-            )
-        if files.get("category_totals") is not None:
-            apply_local_path(
-                f"{safe}/data/{CATEGORY_TOTALS}",
-                files["category_totals"],
-            )
-        if files.get("downloaded_transactions") is not None:
-            apply_local_path(
-                f"{safe}/data/{DOWNLOADED}",
-                files["downloaded_transactions"],
-            )
-
-
-def push_paths(paths: list[str]) -> dict[str, Any]:
-    """Immediately PUT each local tracked file to centrale.
-
-    Unchanged files (same JSON as hub) are skipped so they do not create
-    notifications for unrelated people.
-    """
-    global _last_error
+def list_hub_workspaces() -> list[str]:
     cfg = load_config()
+    configured = list(cfg.workspaces) if cfg.workspaces else [cfg.workspace]
     if not cfg.enabled:
-        return {"ok": True, "skipped": True, "reason": "sync disabled"}
-    if not _local_session_active:
-        return {"ok": True, "skipped": True, "reason": "session inactive"}
-
-    results: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for rel in paths:
-        rel_n = rel.replace("\\", "/").lstrip("/")
-        if rel_n in seen:
-            continue
-        seen.add(rel_n)
-        content = read_local_path(rel_n)
-        if content is None:
-            results.append({"path": rel_n, "ok": False, "error": "missing local file"})
-            continue
-        try:
-            hub = _hub_file(cfg.workspace, rel_n)
-            rev = int(hub.get("revision") or 0)
-            _file_revisions[rel_n] = rev
-            if _json_equal(hub.get("content"), content):
-                results.append({"path": rel_n, "ok": True, "skipped": True, "reason": "unchanged"})
-                continue
-            res = _request(
-                "PUT",
-                f"/api/local/{cfg.workspace}/file",
-                body={
-                    "path": rel_n,
-                    "content": content,
-                    "source": _push_source(),
-                    "client_revision": rev,
-                },
-            )
-            if res.get("central_wins"):
-                if res.get("content") is not None:
-                    apply_local_path(rel_n, res["content"])
-                _file_revisions[rel_n] = int(res.get("revision") or rev)
-                _queue_central_wins_alert(rel_n)
-                results.append({"path": rel_n, "ok": True, "central_wins": True})
-            else:
-                _file_revisions[rel_n] = int(res.get("revision") or rev + 1)
-                results.append({"path": rel_n, "ok": True, "central_wins": False})
-        except Exception as exc:  # noqa: BLE001
-            _last_error = str(exc)
-            results.append({"path": rel_n, "ok": False, "error": str(exc)})
-    ok = all(r.get("ok") for r in results) if results else True
-    if ok:
-        _last_error = None
-    return {"ok": ok, "results": results}
-
-
-def _json_equal(a: Any, b: Any) -> bool:
+        return configured
     try:
-        return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(
-            b, sort_keys=True, ensure_ascii=False
-        )
-    except (TypeError, ValueError):
-        return False
-
-
-def _hub_file(workspace: str, rel_path: str) -> dict[str, Any]:
-    q = urllib.parse.urlencode({"path": rel_path})
-    return _request("GET", f"/api/local/{workspace}/file?{q}", timeout=10.0)
-
-
-def _hub_revision(workspace: str, rel_path: str) -> int:
-    try:
-        data = _hub_file(workspace, rel_path)
-        rev = int(data.get("revision") or 0)
-        _file_revisions[rel_path] = rev
-        return rev
+        status = hub_request("GET", "/api/status", timeout=10.0)
+        names = status.get("workspaces") or []
+        if isinstance(names, list) and names:
+            hub = [str(n) for n in names]
+            return [w for w in configured if w in hub] or configured
     except Exception:
-        return int(_file_revisions.get(rel_path, 0))
-
-
-
-def mark_and_push(paths: list[str]) -> dict[str, Any]:
-    """Queue paths for background up-sync; return immediately (UI must not wait)."""
-    normalized = [
-        p.replace("\\", "/").lstrip("/")
-        for p in paths
-        if p and str(p).strip()
-    ]
-    if not normalized:
-        return {"ok": True, "queued": False, "paths": []}
-    with _state_lock:
-        _push_pending.update(normalized)
-    _push_wake.set()
-    return {"ok": True, "queued": True, "paths": normalized}
-
-
-def flush_pending_pushes() -> dict[str, Any]:
-    """Synchronously push any queued paths (used on shutdown)."""
-    with _state_lock:
-        paths = sorted(_push_pending)
-        _push_pending.clear()
-    _push_wake.clear()
-    if not paths:
-        return {"ok": True, "skipped": True, "reason": "nothing queued"}
-    return push_paths(paths)
-
-
-def _drain_push_queue() -> None:
-    with _state_lock:
-        paths = sorted(_push_pending)
-        _push_pending.clear()
-    if paths:
-        try:
-            push_paths(paths)
-        except Exception:
-            pass
-
-
-def _path_needs_totals_recalc(local_rel: str) -> bool:
-    rel = local_rel.replace("\\", "/").lstrip("/")
-    if rel == SHARED_CATEGORIES:
-        return True
-    if rel.endswith(f"/data/{CATEGORIZED}"):
-        return True
-    if rel.endswith(f"/data/{PERSONAL_CATEGORIES}"):
-        return True
-    return False
-
-
-def request_hub_recalculate(*, timeout: float = 120.0) -> dict[str, Any]:
-    """Ask the hub to run boekhouding-style recalculate for the active workspace."""
-    cfg = load_config()
-    if not cfg.enabled:
-        return {"ok": False, "skipped": True, "reason": "sync disabled"}
-    try:
-        data = _request(
-            "POST",
-            f"/api/local/{cfg.workspace}/recalculate",
-            timeout=timeout,
-        )
-        if isinstance(data, dict):
-            return data
-        return {"ok": True, "matrix": data}
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)}
-
-
-def hub_recalculate_or_local() -> dict[str, Any]:
-    """Prefer hub calculation; fall back to local when sync is off."""
-    cfg = load_config()
-    if cfg.enabled:
-        flush_pending_pushes()
-        hub = request_hub_recalculate()
-        if hub.get("ok") and isinstance(hub.get("matrix"), dict):
-            return hub["matrix"]
-        if hub.get("ok"):
-            from app.matrix import build_matrix
-
-            return build_matrix()
-        raise RuntimeError(hub.get("error") or "hub recalculate failed")
-    from app.matrix import recalculate_all
-
-    return recalculate_all()
-
-
-def pull_event_file(event: dict[str, Any]) -> bool:
-    """Apply a hub change event to the active workspace when relevant.
-
-    Returns True if local files for the active workspace were updated.
-    """
-    global _data_epoch, _recalc_after_pull
-    cfg = load_config()
-    fp = str(event.get("file_path") or "")
-    ev_ws = str(event.get("workspace") or cfg.workspace)
-    display = str(event.get("display_path") or f"{ev_ws}/{fp}")
-    applied = False
-
-    if is_central_admin():
-        # Central sees every local change as a chip; only apply into the
-        # currently selected workspace tree.
-        _queue_notification(display)
-        if event.get("broadcast") or fp == SHARED_CATEGORIES:
-            # Peer categories.json from another workspace: notify only.
-            if not event.get("broadcast") and ev_ws != cfg.workspace:
-                return False
-            remote_ws = cfg.workspace
-            remote_path = SHARED_CATEGORIES
-            local_rel = SHARED_CATEGORIES
-        else:
-            if ev_ws != cfg.workspace:
-                return False
-            remote_ws = ev_ws
-            remote_path = fp
-            local_rel = fp
-    else:
-        # Local peer: apply matching central/broadcast updates.
-        if event.get("broadcast") or fp == SHARED_CATEGORIES:
-            local_rel = SHARED_CATEGORIES
-            remote_ws = cfg.workspace
-            remote_path = SHARED_CATEGORIES
-        else:
-            local_rel = fp
-            remote_ws = ev_ws
-            remote_path = fp
-            if remote_ws != cfg.workspace:
-                return False
-        _queue_notification(display)
-
-    q = urllib.parse.urlencode({"path": remote_path})
-    data = _request("GET", f"/api/local/{remote_ws}/file?{q}", timeout=15.0)
-    content = data.get("content")
-    if content is not None:
-        apply_local_path(local_rel, content)
-        _file_revisions[local_rel] = int(data.get("revision") or 0)
-        applied = True
-        _data_epoch += 1
-        if _path_needs_totals_recalc(local_rel):
-            _recalc_after_pull = True
-    return applied
+        pass
+    return configured
 
 
 def poll_central_events() -> dict[str, Any]:
-    global _last_event_id, _last_error, _recalc_after_pull
+    """Poll hub events for UI chips + data_epoch; do not write local files."""
+    global _last_event_id, _last_error, _data_epoch
     cfg = load_config()
-    if not cfg.enabled or not _local_session_active:
+    if not cfg.enabled or not _hub_session_active:
         return {"ok": True, "skipped": True}
     try:
         params: dict[str, Any] = {
             "viewer": _events_viewer(),
             "since_id": _last_event_id,
         }
-        # Local peers must scope to their workspace. Central admin omits
-        # workspace so it receives every source=local event (all peers).
         if not is_central_admin():
             params["workspace"] = cfg.workspace
         q = urllib.parse.urlencode(params)
-        data = _request("GET", f"/api/events?{q}", timeout=10.0)
+        data = hub_request("GET", f"/api/events?{q}", timeout=10.0)
         applied_any = False
-        _recalc_after_pull = False
         for ev in data.get("events") or []:
-            if pull_event_file(ev):
-                applied_any = True
-            # Advance only through delivered (viewer-filtered) events.
-            # Do NOT jump to unfiltered latest_id — merge fan-out events are
-            # invisible to some viewers and would skip later person-file events.
+            display = str(ev.get("display_path") or f"{ev.get('workspace')}/{ev.get('file_path')}")
+            _queue_notification(display)
+            applied_any = True
             _last_event_id = max(_last_event_id, int(ev.get("id") or 0))
-        if _recalc_after_pull:
-            # Hub owns calculation; clients only refresh UI after pulling derived files.
-            _recalc_after_pull = False
-            global _data_epoch
+        if applied_any:
             _data_epoch += 1
         _last_error = None
         return {
@@ -659,178 +352,96 @@ def poll_central_events() -> dict[str, Any]:
         return {"ok": False, "error": _last_error}
 
 
-def list_hub_workspaces() -> list[str]:
-    """Workspaces this BFF may open (from config), intersected with hub if available."""
+def switch_workspace(workspace: str) -> dict[str, Any]:
+    global _last_error, _last_event_id, _data_epoch
     cfg = load_config()
-    configured = list(cfg.workspaces) if cfg.workspaces else [cfg.workspace]
-    if cfg.enabled:
-        try:
-            status = _request("GET", "/api/status", timeout=10.0)
-            names = status.get("workspaces") or []
-            if isinstance(names, list) and names:
-                hub = [str(n) for n in names]
-                return [w for w in configured if w in hub] or configured
-        except Exception:
-            pass
-    root = central_data_root()
-    if root is not None and root.is_dir():
-        found = [
-            c.name
-            for c in sorted(root.iterdir(), key=lambda p: p.name.lower())
-            if c.is_dir()
-            and not c.name.startswith("_")
-            and (
-                (c / SHARED_CATEGORIES).is_file()
-                or any(p.is_dir() and (p / "data").is_dir() for p in c.iterdir() if p.is_dir())
-            )
-        ]
-        if found:
-            return [w for w in configured if w in found] or configured
-    return configured
-
-
-def _seed_revisions(ws: str, files: dict[str, Any]) -> None:
-    people = files.get("people") or {}
-    rels = [SHARED_CATEGORIES]
-    for name in people:
-        rels.extend(
-            [
-                f"{name}/data/{CATEGORIZED}",
-                f"{name}/data/{PERSONAL_CATEGORIES}",
-                f"{name}/data/{CATEGORY_TOTALS}",
-                f"{name}/data/{DOWNLOADED}",
-            ]
+    ws = workspace.strip()
+    if cfg.workspaces and ws not in cfg.workspaces:
+        return {"ok": False, "error": f"Workspace {ws!r} not in config"}
+    set_runtime(workspace=ws, allowed_workspaces=list(cfg.workspaces or [ws]))
+    load_config(force_reload=True)
+    with _state_lock:
+        _pending_notifications.clear()
+    try:
+        caps = refresh_capabilities()
+        events = hub_request(
+            "GET",
+            f"/api/events?{urllib.parse.urlencode({'viewer': _events_viewer(), 'since_id': 0, 'workspace': ws})}",
+            timeout=10.0,
         )
-    for rel in rels:
-        try:
-            _hub_revision(ws, rel)
-        except Exception:
-            pass
+        _last_event_id = int(events.get("latest_id") or 0)
+        _data_epoch += 1
+        _last_error = None
+        return {"ok": True, "workspace": ws, "people": caps.get("people") or []}
+    except Exception as exc:  # noqa: BLE001
+        _last_error = str(exc)
+        return {"ok": False, "error": _last_error, "workspace": ws}
 
 
 def start_session_and_pull() -> dict[str, Any]:
-    global _local_session_active, _last_error, _last_event_id
+    """Connect to hub (no file pull). Hub must be reachable."""
+    global _hub_session_active, _last_error, _last_event_id
     load_config(force_reload=True)
     cfg = load_config()
     if not cfg.enabled:
-        _local_session_active = True
-        return {"ok": True, "skipped": True, "reason": "sync disabled"}
+        _hub_session_active = False
+        return {"ok": False, "error": "hub sync disabled — enable client_config.enabled"}
     ws = cfg.workspace
     try:
-        # Central admin does not register as a lokale peer session.
+        hub_request("GET", "/api/health", timeout=10.0)
         if not is_central_admin():
-            _request("POST", f"/api/local/{ws}/session/start")
-        files = _request("GET", f"/api/local/{ws}/files")
-        apply_remote_files(files)
-        _local_session_active = True
-        _seed_revisions(ws, files)
-        events = _request(
+            hub_request("POST", f"/api/local/{urllib.parse.quote(ws)}/session/start")
+        caps = refresh_capabilities()
+        events = hub_request(
             "GET",
             f"/api/events?{urllib.parse.urlencode({'viewer': _events_viewer(), 'workspace': ws, 'since_id': 0})}",
             timeout=10.0,
         )
         _last_event_id = int(events.get("latest_id") or 0)
+        _hub_session_active = True
         _last_error = None
-        return {"ok": True, "workspace": ws, "people": list((files.get("people") or {}).keys())}
+        return {
+            "ok": True,
+            "workspace": ws,
+            "people": [p.get("short") for p in (caps.get("people") or [])],
+        }
     except Exception as exc:  # noqa: BLE001
         _last_error = str(exc)
-        _local_session_active = True
-        return {"ok": False, "error": _last_error, "workspace": ws}
-
-
-def switch_workspace(workspace: str) -> dict[str, Any]:
-    """Central-admin: change active workspace, flush pushes, re-pull hub files."""
-    global _last_event_id, _file_revisions, _last_error, _config_cache
-    if not is_central_admin():
-        return {"ok": False, "error": "workspace switch only available in central_admin role"}
-    ws = workspace.strip()
-    if not ws:
-        return {"ok": False, "error": "workspace required"}
-    flush_pending_pushes()
-    root = central_data_root() or _default_central_data_root()
-    set_runtime(workspace=ws, allowed_workspaces=list(load_config().workspaces or [ws]))
-    if _config_cache is not None:
-        _config_cache = CentraleConfig(
-            url=_config_cache.url,
-            workspace=ws,
-            api_key=_config_cache.api_key,
-            enabled=_config_cache.enabled,
-            port=_config_cache.port,
-            role=_config_cache.role,
-            workspaces=_config_cache.workspaces,
-            centrale_data_root=_config_cache.centrale_data_root or str(root),
-        )
-    _file_revisions = {}
-    with _state_lock:
-        _pending_notifications.clear()
-    cfg = load_config()
-    try:
-        if cfg.enabled:
-            files = _request("GET", f"/api/local/{ws}/files")
-            apply_remote_files(files)
-            _seed_revisions(ws, files)
-            events = _request(
-                "GET",
-                f"/api/events?{urllib.parse.urlencode({'viewer': 'central', 'since_id': 0})}",
-                timeout=10.0,
-            )
-            _last_event_id = int(events.get("latest_id") or 0)
-        _last_error = None
-        return {"ok": True, "workspace": ws}
-    except Exception as exc:  # noqa: BLE001
-        _last_error = str(exc)
+        _hub_session_active = False
         return {"ok": False, "error": _last_error, "workspace": ws}
 
 
 def end_session_and_push() -> dict[str, Any]:
-    """Best-effort push of all tracked files, then end session (local peers only)."""
-    global _local_session_active, _last_error
+    global _hub_session_active, _last_error
     cfg = load_config()
-    if not _local_session_active:
-        return {"ok": True, "skipped": True, "reason": "no active local session"}
+    if not _hub_session_active:
+        return {"ok": True, "skipped": True, "reason": "no active hub session"}
     if not cfg.enabled:
-        _local_session_active = False
+        _hub_session_active = False
         return {"ok": True, "skipped": True, "reason": "sync disabled"}
     ws = cfg.workspace
-    paths = [SHARED_CATEGORIES]
-    root = app_root()
-    if root.is_dir():
-        for child in root.iterdir():
-            if child.is_dir() and (child / "data").is_dir():
-                paths.append(f"{child.name}/data/{CATEGORIZED}")
-                paths.append(f"{child.name}/data/{PERSONAL_CATEGORIES}")
-                paths.append(f"{child.name}/data/{CATEGORY_TOTALS}")
-                paths.append(f"{child.name}/data/{DOWNLOADED}")
-    flush_pending_pushes()
-    push = push_paths(paths)
     if is_central_admin():
-        _local_session_active = False
-        return {"ok": bool(push.get("ok")), "push": push, "workspace": ws}
+        _hub_session_active = False
+        return {"ok": True, "workspace": ws}
     try:
-        _request("POST", f"/api/local/{ws}/session/end")
+        hub_request("POST", f"/api/local/{urllib.parse.quote(ws)}/session/end")
         _last_error = None
-        result: dict[str, Any] = {"ok": bool(push.get("ok")), "push": push, "workspace": ws}
+        result: dict[str, Any] = {"ok": True, "workspace": ws}
     except Exception as exc:  # noqa: BLE001
         _last_error = str(exc)
-        result = {"ok": False, "error": _last_error, "push": push, "workspace": ws}
-    _local_session_active = False
+        result = {"ok": False, "error": _last_error, "workspace": ws}
+    _hub_session_active = False
     return result
 
 
 def _worker_loop() -> None:
     while not _worker_stop.is_set():
-        woken = _push_wake.wait(timeout=1.5)
-        if _worker_stop.is_set():
+        if _worker_stop.wait(timeout=1.5):
             break
-        if woken:
-            _push_wake.clear()
-            _drain_push_queue()
         try:
             poll_central_events()
         except Exception:
             pass
-    # Final drain on stop.
-    _drain_push_queue()
 
 
 def start_event_worker() -> None:
@@ -838,16 +449,11 @@ def start_event_worker() -> None:
     if _worker_thread and _worker_thread.is_alive():
         return
     _worker_stop.clear()
-    _push_wake.clear()
-    _worker_thread = threading.Thread(target=_worker_loop, name="centrale-events", daemon=True)
+    _worker_thread = threading.Thread(target=_worker_loop, name="hub-events", daemon=True)
     _worker_thread.start()
 
 
 def stop_event_worker() -> None:
-    global _worker_thread
     _worker_stop.set()
-    _push_wake.set()  # unblock wait so shutdown can drain
     if _worker_thread and _worker_thread.is_alive():
         _worker_thread.join(timeout=5.0)
-    flush_pending_pushes()
-    _worker_thread = None

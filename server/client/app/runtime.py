@@ -1,4 +1,4 @@
-"""Runtime for identical BFF: data under server/workspaces/<workspace>."""
+"""Runtime for identical BFF: config selects workspace; data lives on the hub."""
 from __future__ import annotations
 
 import sys
@@ -35,13 +35,6 @@ def server_root() -> Path:
     return project_root().parent
 
 
-def workspaces_root() -> Path:
-    env_root = __import__("os").environ.get("BOEKHOUDING_DATA_ROOT", "").strip()
-    if env_root:
-        return Path(env_root).resolve()
-    return (server_root() / "workspaces").resolve()
-
-
 def set_runtime(
     *,
     workspace: str | None = None,
@@ -66,10 +59,6 @@ def role() -> str:
     return "central_admin" if is_central_admin() else "local"
 
 
-def central_data_root() -> Path | None:
-    return workspaces_root()
-
-
 def selected_workspace() -> str | None:
     return _selected_workspace
 
@@ -84,14 +73,6 @@ def set_selected_workspace(workspace: str) -> None:
 
 def allowed_workspaces() -> list[str]:
     return list(_allowed_workspaces)
-
-
-def app_root() -> Path:
-    """Active workspace folder under server/workspaces/."""
-    root = workspaces_root()
-    if _selected_workspace:
-        return (root / _selected_workspace).resolve()
-    return root
 
 
 def bundle_dir() -> Path | None:

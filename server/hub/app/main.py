@@ -163,6 +163,187 @@ def api_recalculate_workspace(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+class SettingsTermsRequest(BaseModel):
+    terms: list[str] = Field(default_factory=list)
+    source: str = "local"
+
+
+class AddTermRequest(BaseModel):
+    category_name: str
+    term: str
+    general: bool = False
+    person: str | None = None
+    source: str = "local"
+
+
+class ModificationRequest(BaseModel):
+    transaction: dict[str, Any]
+    source: str = "local"
+
+
+class RefreshRequest(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+@app.get("/api/local/{workspace}/capabilities")
+def api_capabilities(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.capabilities(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/local/{workspace}/people")
+def api_people(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.people(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/local/{workspace}/matrix")
+def api_matrix(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.matrix(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/local/{workspace}/transactions/{short}/{category_name}")
+def api_transactions(
+    workspace: str,
+    short: str,
+    category_name: str,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.transactions(workspace, short, category_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/local/{workspace}/transactions/{short}/modification")
+def api_modification(
+    workspace: str,
+    short: str,
+    body: ModificationRequest,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.record_modification(
+            workspace, short, body.transaction, source=body.source
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/local/{workspace}/settings")
+def api_settings(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.settings(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/local/{workspace}/settings/{group}/{category_name}")
+def api_update_settings(
+    workspace: str,
+    group: str,
+    category_name: str,
+    body: SettingsTermsRequest,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.update_settings(
+            workspace, group, category_name, body.terms, source=body.source
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/local/{workspace}/settings/add-term")
+def api_add_term(
+    workspace: str,
+    body: AddTermRequest,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.add_term(
+            workspace,
+            category_name=body.category_name,
+            term=body.term,
+            general=body.general,
+            person=body.person,
+            source=body.source,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/local/{workspace}/refresh")
+def api_refresh(
+    workspace: str,
+    body: RefreshRequest | None = None,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    req = body or RefreshRequest()
+    try:
+        return workspace_api.refresh(
+            workspace, date_from=req.date_from, date_to=req.date_to
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 _ADMIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
