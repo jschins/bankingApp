@@ -19,7 +19,7 @@ bankingApp/server/
       <person>/secret/
     jl/
       ...
-  hub/                        # :8400 — sync events + ALL calculation + domain UI API
+  hub/                        # :8200 — sync events + ALL calculation + domain UI API + consent callback
   client/                     # identical BFF + frontend :8300+ (thin hub proxy)
 ```
 
@@ -33,7 +33,7 @@ bankingApp/server/
 
 | Process | Port | Config |
 |---------|------|--------|
-| Hub | 8400 | `CENTRALE_DATA_ROOT` → `server/workspaces` (default) |
+| Hub | 8200 | `CENTRALE_DATA_ROOT` → `server/workspaces` (default); also Enable Banking callback |
 | Client | 8300 / 8301 / 8302 | `client_config.json`: `server_url`, `port`, `author`, `workspaces: [...]` |
 
 **Hub must be running** for the UI to load data. Clients never fall back to a local workspace copy.
@@ -79,8 +79,8 @@ uv run python scripts/build_onefile.py
 
 Output: `server/workspaces/server.exe` — run it from that folder (data root is the exe directory).
 
-### Stop the hub (:8400)
+### Stop the hub (:8200)
 
-Open [http://127.0.0.1:8400/](http://127.0.0.1:8400/) and click **Stop hub**.
+Open [http://127.0.0.1:8200/](http://127.0.0.1:8200/) and click **Stop hub**.
 
 (`Ctrl+C` in the hub terminal also works.)

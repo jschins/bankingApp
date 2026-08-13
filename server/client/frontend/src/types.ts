@@ -9,18 +9,22 @@ export interface MatrixResponse {
   cells: Record<string, Record<string, string>>;
 }
 
+export interface RefreshPersonResult {
+  short: string;
+  folder?: string;
+  skipped: boolean;
+  reason?: string;
+  transaction_count?: number;
+  date_from?: string;
+  date_to?: string;
+  warnings?: string[];
+  account_errors?: string[];
+  authorization_url?: string | null;
+}
+
 export interface RefreshResponse {
   matrix: MatrixResponse;
-  results: Array<{
-    short: string;
-    skipped: boolean;
-    reason?: string;
-    transaction_count?: number;
-    date_from?: string;
-    date_to?: string;
-    warnings?: string[];
-    account_errors?: string[];
-  }>;
+  results: RefreshPersonResult[];
   warnings: string[];
 }
 

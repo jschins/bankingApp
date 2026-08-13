@@ -131,15 +131,32 @@ def refresh_all(
             with bind_person(pack):
                 try:
                     if needs_consent_renewal():
-                        warnings.append(
-                            f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
-                        )
+                        from app.core.single_client import get_authorization_url
+                        from app.runtime import active_workspace
+
+                        auth_url: str | None = None
+                        try:
+                            auth_url = get_authorization_url(
+                                workspace=active_workspace(),
+                                person_short=pack.short,
+                                folder=pack.folder_name,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            warnings.append(
+                                f"{pack.short} ({pack.folder_name}): "
+                                f"consent renewal required — could not get authorization URL ({exc})"
+                            )
+                        else:
+                            warnings.append(
+                                f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
+                            )
                         results.append(
                             {
                                 "short": pack.short,
                                 "folder": pack.folder_name,
                                 "skipped": True,
                                 "reason": "needs_consent_renewal",
+                                "authorization_url": auth_url,
                             }
                         )
                         continue

@@ -406,7 +406,7 @@ def api_refresh(
 
 @app.post("/api/shutdown")
 def api_shutdown(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    """Stop the hub process (for the Stop button on http://127.0.0.1:8400/)."""
+    """Stop the hub process (for the Stop button on http://127.0.0.1:8200/)."""
     import threading
     import time
 
@@ -416,6 +416,109 @@ def api_shutdown(_: None = Depends(require_api_key)) -> dict[str, Any]:
 
     threading.Thread(target=_stop, name="hub-shutdown", daemon=True).start()
     return {"ok": True, "stopping": True}
+
+
+@app.get("/api/consent/callback")
+def consent_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> HTMLResponse:
+    """Enable Banking redirect target (via deoudegracht → ``:8200``).
+
+    No API key: the bank browser hits this URL. ``state`` selects the person
+    registered when the authorization link was created.
+    """
+    from app import consent_flow
+    from app.core.single_client import EnableBankingError, complete_authorization
+    from app.paths import CALC_LOCK, bind_person
+    from app.people import get_person
+    from app.runtime import set_active_workspace
+    from app.settings import init_app
+
+    if error:
+        detail = error_description or error
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Bank consent failed</title></head><body>"
+                f"<h1>Bank consent failed</h1><p>{detail}</p>"
+                "<p>You can close this tab and return to Boekhouding.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    if not code or not str(code).strip():
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Missing code</title></head><body>"
+                "<h1>No authorization code received</h1>"
+                "<p>You can close this tab and try the authorization link again.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    pending = consent_flow.take_pending(state)
+    if not pending:
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Unknown consent</title></head><body>"
+                "<h1>Unknown or expired authorization</h1>"
+                "<p>Start Refresh again to get a new authorization link, then retry.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
+    ws = str(pending.get("workspace") or "")
+    short = str(pending.get("short") or "")
+    folder = str(pending.get("folder") or short)
+    raw_code = str(code).strip()
+    try:
+        with CALC_LOCK:
+            set_active_workspace(ws)
+            init_app()
+            pack = get_person(short)
+            with bind_person(pack):
+                complete_authorization(raw_code)
+    except (EnableBankingError, KeyError, FileNotFoundError, ValueError) as exc:
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Bank consent failed</title></head><body>"
+                f"<h1>Bank consent failed ({short})</h1><p>{exc}</p>"
+                "<p>You can close this tab and return to Boekhouding.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<title>Bank consent failed</title></head><body>"
+                f"<h1>Bank consent failed ({short})</h1><p>{exc}</p>"
+                "</body></html>"
+            ),
+            status_code=500,
+        )
+
+    return HTMLResponse(
+        content=(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>Bank consent received</title></head><body>"
+            f"<h1>Bank consent received — {short}</h1>"
+            f"<p>Updated consent for {folder} in workspace {ws}.</p>"
+            "<p>Return to Boekhouding and run Refresh again. You can close this tab.</p>"
+            "<script>window.close();</script>"
+            "</body></html>"
+        )
+    )
 
 
 _ADMIN_HTML = """<!DOCTYPE html>
@@ -533,7 +636,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     };
 
     document.getElementById("btnStop").onclick = async () => {
-      if (!window.confirm("Stop the hub on port 8400?")) return;
+      if (!window.confirm("Stop the hub on port 8200?")) return;
       errEl.textContent = "";
       try {
         await api("POST", "/api/shutdown", {});
@@ -580,7 +683,7 @@ def run() -> None:
     logging.getLogger("uvicorn.access").addFilter(_MutePollAccess())
 
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8400"))
+    port = int(os.environ.get("PORT", "8200"))
     uvicorn.run("app.main:app", host=host, port=port, reload=False)
 
 

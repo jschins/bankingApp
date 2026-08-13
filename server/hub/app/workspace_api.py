@@ -367,13 +367,13 @@ def refresh(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict[str, Any]:
+    from app.matrix import refresh_all
+
     with _workspace_scope(workspace) as ws:
         if not _has_secrets(ws):
             raise PermissionError(
                 "Bank refresh requires secrets under workspaces/<ws>/<person>/secret/."
             )
-        from app.matrix import refresh_all
-
         result = refresh_all(date_from=date_from, date_to=date_to)
         inputs: list[str] = []
         root = store.workspace_dir(ws)
@@ -398,11 +398,17 @@ def refresh(
                     skip_recalc=True,
                     skip_event=True,
                 )
-        mut = store.mutate_and_recalculate(ws, inputs, source="central")
-        matrix_payload = mut.get("matrix") or result.get("matrix") or {}
-        if isinstance(matrix_payload, dict):
-            matrix_payload = {**matrix_payload, "workspace": ws}
-        result["workspace"] = ws
-        result["matrix"] = matrix_payload
-        result["affected_files"] = mut.get("affected_files") or []
-        return result
+
+    mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    matrix_payload = mut.get("matrix") or result.get("matrix") or {}
+    if isinstance(matrix_payload, dict):
+        matrix_payload = {**matrix_payload, "workspace": ws}
+    # Keep per-person fetch stats (transaction_count, skipped, …) from refresh_all.
+    return {
+        **result,
+        "workspace": ws,
+        "matrix": matrix_payload,
+        "affected_files": mut.get("affected_files") or [],
+        "results": list(result.get("results") or []),
+        "warnings": list(result.get("warnings") or []),
+    }

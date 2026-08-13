@@ -5,7 +5,7 @@ Thin BFF + frontend. All data comes from the hub (no local workspace copies). Se
 ## Run
 
 ```powershell
-# hub must be running on :8400 first
+# hub must be running on :8200 first
 cd server\client
 uv sync
 uv run client

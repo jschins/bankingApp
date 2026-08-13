@@ -20,12 +20,56 @@ import {
 import type {
   MatrixResponse,
   PersonInfo,
+  RefreshPersonResult,
   SettingsResponse,
   Transaction,
   TransactionsResponse,
 } from "./types";
 
 const CHANNEL = "boekhouding";
+const REFRESH_STATUS_KEY = "boekhouding-refresh-status";
+
+type StoredRefreshStatus = {
+  results: RefreshPersonResult[];
+  warnings: string[];
+};
+
+function loadStoredRefreshStatus(): StoredRefreshStatus | null {
+  try {
+    const raw = sessionStorage.getItem(REFRESH_STATUS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredRefreshStatus | string;
+    // Older builds stored a plain string summary.
+    if (typeof parsed === "string") {
+      return { results: [], warnings: [parsed] };
+    }
+    if (parsed && Array.isArray(parsed.results)) {
+      return {
+        results: parsed.results,
+        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveStoredRefreshStatus(payload: StoredRefreshStatus): void {
+  try {
+    sessionStorage.setItem(REFRESH_STATUS_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStoredRefreshStatus(): void {
+  try {
+    sessionStorage.removeItem(REFRESH_STATUS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 type CellSelection = { short: string; category: string };
 
@@ -339,7 +383,9 @@ function MainApp({ author }: { author: string }) {
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<StoredRefreshStatus | null>(() =>
+    loadStoredRefreshStatus()
+  );
   const [hasSecrets, setHasSecrets] = useState(false);
   const [dateFrom, setDateFrom] = useState(() => previousMonthRange().from);
   const [dateTo, setDateTo] = useState(() => previousMonthRange().to);
@@ -529,29 +575,19 @@ function MainApp({ author }: { author: string }) {
     setRefreshing(true);
     setError(null);
     setRefreshStatus(null);
+    clearStoredRefreshStatus();
     refreshAll({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
     })
       .then((res) => {
         setMatrix(res.matrix);
-        const parts: string[] = [];
-        for (const r of res.results) {
-          if (r.skipped) {
-            parts.push(`${r.short}: skipped${r.reason ? ` (${r.reason})` : ""}`);
-          } else {
-            parts.push(`${r.short}: ${r.transaction_count ?? 0} transactions`);
-            if (r.date_from && r.date_to) {
-              parts.push(`(${r.date_from} .. ${r.date_to})`);
-            }
-          }
-          if (r.warnings?.length) parts.push(...r.warnings.map((w) => `${r.short}: ${w}`));
-          if (r.account_errors?.length) {
-            parts.push(...r.account_errors.map((w) => `${r.short}: ${w}`));
-          }
-        }
-        if (res.warnings?.length) parts.push(...res.warnings);
-        setRefreshStatus(parts.join(" · ") || "Refreshed");
+        const payload: StoredRefreshStatus = {
+          results: res.results || [],
+          warnings: res.warnings || [],
+        };
+        saveStoredRefreshStatus(payload);
+        setRefreshStatus(payload);
         setSelection(null);
         setDetail(null);
       })
@@ -595,7 +631,66 @@ function MainApp({ author }: { author: string }) {
               <button className="refresh-button" onClick={doRefresh} disabled={refreshing}>
                 {refreshing ? "Refreshing…" : "↻ Refresh all"}
               </button>
-              {refreshStatus && <div className="refresh-status">{refreshStatus}</div>}
+              {refreshStatus && (
+                <div className="refresh-status">
+                  {(refreshStatus.results || []).map((r) => (
+                    <div key={r.short} className="refresh-status-line">
+                      {r.skipped ? (
+                        r.reason === "needs_consent_renewal" ? (
+                          <>
+                            <span>
+                              {r.short}: consent renewal required
+                              {!r.authorization_url ? " (no authorization URL)" : ""}
+                            </span>
+                            {r.authorization_url ? (
+                              <a
+                                className="refresh-auth-link"
+                                href={r.authorization_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Open bank authorization — {r.short}
+                                {r.folder ? ` (${r.folder})` : ""}
+                              </a>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span>
+                            {r.short}: skipped
+                            {r.reason ? ` (${r.reason})` : ""}
+                          </span>
+                        )
+                      ) : (
+                        <span>
+                          {r.short}: {r.transaction_count ?? 0} transaction
+                          {(r.transaction_count ?? 0) === 1 ? "" : "s"}
+                          {r.date_from && r.date_to
+                            ? ` (${r.date_from} .. ${r.date_to})`
+                            : ""}
+                        </span>
+                      )}
+                      {(r.warnings || []).map((w) => (
+                        <div key={`${r.short}-w-${w}`} className="refresh-status-note">
+                          {r.short}: {w}
+                        </div>
+                      ))}
+                      {(r.account_errors || []).map((w) => (
+                        <div key={`${r.short}-e-${w}`} className="refresh-status-note">
+                          {r.short}: {w}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {(refreshStatus.warnings || []).map((w) => (
+                    <div key={w} className="refresh-status-note">
+                      {w}
+                    </div>
+                  ))}
+                  {!refreshStatus.results?.length && !refreshStatus.warnings?.length ? (
+                    <div>Refreshed (no person results)</div>
+                  ) : null}
+                </div>
+              )}
             </>
           )}
         </div>

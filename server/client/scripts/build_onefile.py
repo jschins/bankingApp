@@ -62,7 +62,7 @@ def _ensure_deploy_config() -> None:
         return
     dest.write_text(
         "{\n"
-        '  "server_url": "http://127.0.0.1:8400",\n'
+        '  "server_url": "http://127.0.0.1:8200",\n'
         '  "port": 8300,\n'
         '  "workspaces": ["dkg", "jl"],\n'
         '  "author": "dkg",\n'
@@ -145,7 +145,7 @@ def main() -> int:
     _ensure_deploy_config()
     print(f"\nBuilt: {built}")
     print("Place client_config.json next to the exe (server_url, port, workspaces).")
-    print("Hub must be running (default http://127.0.0.1:8400).")
+    print("Hub must be running (default http://127.0.0.1:8200).")
     return 0
 
 

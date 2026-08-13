@@ -147,12 +147,15 @@ class SingleDockerClient(EnableBankingClient):
             raise EnableBankingError(f"Private key file not found: {paths.PRIVATE_KEY_PATH}")
         return cls(app_id, paths.PRIVATE_KEY_PATH.read_bytes())
 
-    def start_authorization(self, profile: dict[str, Any], valid_until: str) -> dict[str, Any]:
+    def start_authorization(
+        self, profile: dict[str, Any], valid_until: str, state: str | None = None
+    ) -> dict[str, Any]:
         return super().start_authorization(
             aspsp_name=profile["aspsp"],
             country=profile["country"],
             redirect_url=profile["redirect_url"],
             valid_until=valid_until,
+            state=state,
         )
 
     def _fetch_transactions_pages(
@@ -755,14 +758,56 @@ def _is_already_authorized_error(exc: EnableBankingError) -> bool:
     return "ALREADY_AUTHORIZED" in str(exc)
 
 
-def get_authorization_url() -> str:
+def get_authorization_url(
+    *,
+    workspace: str | None = None,
+    person_short: str | None = None,
+    folder: str | None = None,
+) -> str:
+    """Start Enable Banking auth; returns the bank authorization URL (not the local callback)."""
+    from app import consent_flow
+    from app.runtime import active_workspace
+
     profile = load_profile()
     client = SingleDockerClient.from_profile(profile)
     valid_until = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
+    # Do not override Enable Banking ``state`` — keep the auth request as before.
     auth = client.start_authorization(profile, valid_until)
-    url = auth.get("url", "")
+    url = str(auth.get("url") or "").strip()
     if not url:
         raise EnableBankingError("Enable Banking did not return an authorization URL.")
+    lower = url.lower()
+    if (
+        "127.0.0.1" in lower
+        or "localhost" in lower
+        or "/api/consent/callback" in lower
+        or not lower.startswith("https://")
+    ):
+        raise EnableBankingError(
+            "Enable Banking did not return a bank authorization URL "
+            f"(got {url!r}). Check redirect_url in profile.json."
+        )
+
+    ws = (workspace or active_workspace() or "").strip()
+    short = (person_short or str(profile.get("person") or "").strip() or "").strip()
+    fold = (folder or "").strip() or short
+    # Bind callback to whatever state Enable Banking put on the auth URL / response.
+    state = str(auth.get("state") or "").strip()
+    if not state:
+        try:
+            state = (parse_qs(urlparse(url).query).get("state") or [""])[0].strip()
+        except Exception:
+            state = ""
+    if not state:
+        state = str(auth.get("authorization_id") or "").strip()
+    if ws and short and state:
+        consent_flow.register_pending(
+            workspace=ws, short=short, folder=fold, state=state
+        )
+    elif ws and short:
+        consent_flow.register_pending(
+            workspace=ws, short=short, folder=fold, state=None
+        )
     return url
 
 

@@ -94,7 +94,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         os.environ.get("CENTRALE_URL", "").strip()
         or os.environ.get("SERVER_URL", "").strip()
         or str(file_cfg.get("server_url") or file_cfg.get("centrale_url") or "").strip()
-        or "http://127.0.0.1:8400"
+        or "http://127.0.0.1:8200"
     ).rstrip("/")
 
     raw_ws = file_cfg.get("workspaces")
