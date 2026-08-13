@@ -34,7 +34,7 @@ bankingApp/server/
 | Process | Port | Config |
 |---------|------|--------|
 | Hub | 8400 | `CENTRALE_DATA_ROOT` → `server/workspaces` (default) |
-| Client | 8300 / 8301 / 8302 | `client_config.json`: `server_url`, `port`, `workspaces: [...]` |
+| Client | 8300 / 8301 / 8302 | `client_config.json`: `server_url`, `port`, `author`, `workspaces: [...]` |
 
 **Hub must be running** for the UI to load data. Clients never fall back to a local workspace copy.
 

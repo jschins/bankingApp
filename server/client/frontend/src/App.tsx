@@ -91,15 +91,24 @@ function WorkspaceSwitcher({
 function SyncNotifyShell({
   children,
   onWorkspaceChanged,
+  termsView = false,
 }: {
-  children: ReactNode;
+  children: (author: string) => ReactNode;
   onWorkspaceChanged?: () => void;
+  termsView?: boolean;
 }) {
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
   const [notes, setNotes] = useState<SyncNotification[]>([]);
   const [switching, setSwitching] = useState(false);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
   const dataEpochRef = useRef<number | null>(null);
+  // Title / branding use config author, not the switcher selection.
+  const author = (status?.author || "").trim();
+
+  useEffect(() => {
+    const base = author ? `Boekhouding ${author}` : "Boekhouding";
+    document.title = termsView ? `${base} — Terms` : base;
+  }, [author, termsView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +228,7 @@ function SyncNotifyShell({
           </div>
         </div>
       )}
-      {children}
+      {children(author)}
     </div>
   );
 }
@@ -309,13 +318,22 @@ export default function App() {
   const isTerms = new URLSearchParams(window.location.search).get("view") === "terms";
   const [wsEpoch, setWsEpoch] = useState(0);
   return (
-    <SyncNotifyShell onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}>
-      {isTerms ? <TermsApp key={wsEpoch} /> : <MainApp key={wsEpoch} />}
+    <SyncNotifyShell
+      termsView={isTerms}
+      onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}
+    >
+      {(author) =>
+        isTerms ? (
+          <TermsApp key={wsEpoch} author={author} />
+        ) : (
+          <MainApp key={wsEpoch} author={author} />
+        )
+      }
     </SyncNotifyShell>
   );
 }
 
-function MainApp() {
+function MainApp({ author }: { author: string }) {
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [selection, setSelection] = useState<CellSelection | null>(null);
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
@@ -405,7 +423,6 @@ function MainApp() {
 
   useEffect(() => {
     window.name = "boekhouding-main";
-    document.title = "Boekhouding";
     void loadMatrixOnly();
   }, []);
 
@@ -547,7 +564,9 @@ function MainApp() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1 className="app-heading">Boekhouding</h1>
+        <h1 className="app-heading">
+          {author ? `Boekhouding ${author}` : "Boekhouding"}
+        </h1>
 
         <div className="fetch-form">
           {hasSecrets && (
@@ -639,14 +658,13 @@ function MainApp() {
   );
 }
 
-function TermsApp() {
+function TermsApp({ author }: { author: string }) {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     window.name = "boekhouding-terms";
-    document.title = "Boekhouding — Terms";
     getSettings()
       .then(setSettings)
       .catch((e: Error) => setError(e.message));
@@ -702,7 +720,7 @@ function TermsApp() {
       <aside className="sidebar">
         <div className="winbar">
           <button className="win-link" onClick={() => openView("main")}>
-            ← Boekhouding (Alt+M) ↗
+            ← {author ? `Boekhouding ${author}` : "Boekhouding"} (Alt+M) ↗
           </button>
         </div>
         <p className="win-hint">

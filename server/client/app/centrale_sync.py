@@ -37,7 +37,8 @@ _cached_has_secrets: bool = False
 @dataclass(frozen=True)
 class HubConfig:
     url: str
-    workspace: str
+    workspace: str  # currently selected target (from workspaces / switcher)
+    author: str  # fixed identity from client_config "author" key
     api_key: str
     enabled: bool
     port: int
@@ -72,6 +73,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             _config_cache = HubConfig(
                 url=_config_cache.url,
                 workspace=ws,
+                author=_config_cache.author,
                 api_key=_config_cache.api_key,
                 enabled=_config_cache.enabled,
                 port=_config_cache.port,
@@ -101,18 +103,20 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     else:
         one = (
             os.environ.get("LOKALE_WORKSPACE", "").strip()
-            or str(file_cfg.get("workspace") or "").strip()
+            or str(file_cfg.get("author") or "").strip()
             or "dkg"
         )
         workspaces = (one,)
 
-    workspace = (
-        os.environ.get("LOKALE_WORKSPACE", "").strip()
-        or str(file_cfg.get("workspace") or "").strip()
+    # ``author`` in config = stable client identity (hub session label / UI title).
+    author = (
+        os.environ.get("LOKALE_AUTHOR", "").strip()
+        or str(file_cfg.get("author") or "").strip()
         or workspaces[0]
     )
-    if selected_workspace():
-        workspace = selected_workspace() or workspace
+    workspace = selected_workspace() or (
+        author if author in workspaces else workspaces[0]
+    )
     if workspace not in workspaces:
         workspace = workspaces[0]
 
@@ -129,7 +133,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         enabled = bool(file_cfg.get("enabled", True))
 
     role = "central_admin" if len(workspaces) > 1 else "local"
-    default_port = 8300 if role == "central_admin" else (8302 if workspace == "jl" else 8301)
+    default_port = 8300 if role == "central_admin" else (8302 if author == "jl" else 8301)
     try:
         port = int(
             os.environ.get("PORT", "").strip()
@@ -144,6 +148,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     _config_cache = HubConfig(
         url=url,
         workspace=workspace,
+        author=author,
         api_key=api_key,
         enabled=enabled,
         port=port,
@@ -234,6 +239,7 @@ def sync_status() -> dict[str, Any]:
     return {
         "enabled": cfg.enabled,
         "workspace": cfg.workspace,
+        "author": cfg.author,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,
         "error": _last_error,
@@ -394,7 +400,7 @@ def start_session_and_pull() -> dict[str, Any]:
         hub_request(
             "POST",
             f"/api/local/{urllib.parse.quote(ws)}/session/start",
-            body={"port": cfg.port},
+            body={"port": cfg.port, "author": cfg.author},
         )
         caps = refresh_capabilities()
         events = hub_request(
@@ -429,7 +435,7 @@ def end_session_and_push() -> dict[str, Any]:
         hub_request(
             "POST",
             f"/api/local/{urllib.parse.quote(ws)}/session/end",
-            body={"port": cfg.port},
+            body={"port": cfg.port, "author": cfg.author},
         )
         _last_error = None
         result: dict[str, Any] = {"ok": True, "workspace": ws}
@@ -461,7 +467,7 @@ def _heartbeat_session() -> None:
     hub_request(
         "POST",
         f"/api/local/{urllib.parse.quote(ws)}/session/heartbeat",
-        body={"port": cfg.port},
+        body={"port": cfg.port, "author": cfg.author},
         timeout=10.0,
     )
 

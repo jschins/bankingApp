@@ -37,12 +37,13 @@ class FilePutPayload(BaseModel):
 
 
 class SessionPayload(BaseModel):
-    """Client listen port (BFF); hub combines with request IP → ``ip:port``."""
+    """Client listen port (BFF) + author id; hub shows ``ip:port (author)``."""
     port: int | None = None
+    author: str | None = None
 
 
 def _client_session_label(
-    request: Request, workspace: str, body: SessionPayload
+    request: Request, _workspace: str, body: SessionPayload
 ) -> str:
     host = "unknown"
     if request.client is not None and request.client.host:
@@ -58,8 +59,8 @@ def _client_session_label(
         if port is not None and 1 <= int(port) <= 65535
         else host
     )
-    ws = (workspace or "").strip() or "?"
-    return f"{addr} ({ws})"
+    author = (body.author or "").strip() or "?"
+    return f"{addr} ({author})"
 
 
 @app.get("/api/health")

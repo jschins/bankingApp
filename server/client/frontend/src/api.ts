@@ -100,6 +100,8 @@ export interface SyncNotification {
 export interface CentraleSyncStatus {
   enabled: boolean;
   workspace: string;
+  /** Fixed identity from client_config ``author`` (does not follow switcher). */
+  author?: string;
   centrale_url: string;
   local_session_active: boolean;
   error: string | null;
