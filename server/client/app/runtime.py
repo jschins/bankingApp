@@ -6,6 +6,7 @@ from pathlib import Path
 
 _selected_workspace: str | None = None
 _allowed_workspaces: list[str] = []
+_access_mode: str = "local"  # central | local | personal
 
 
 def is_frozen() -> bool:
@@ -39,9 +40,13 @@ def set_runtime(
     *,
     workspace: str | None = None,
     allowed_workspaces: list[str] | None = None,
+    access: str | None = None,
     **_ignored: object,
 ) -> None:
-    global _selected_workspace, _allowed_workspaces
+    global _selected_workspace, _allowed_workspaces, _access_mode
+    if access is not None:
+        mode = str(access).strip().lower()
+        _access_mode = mode if mode in ("central", "local", "personal") else "local"
     if allowed_workspaces is not None:
         _allowed_workspaces = [str(w).strip() for w in allowed_workspaces if str(w).strip()]
     if workspace:
@@ -50,9 +55,13 @@ def set_runtime(
         _selected_workspace = _allowed_workspaces[0]
 
 
+def access_mode() -> str:
+    return _access_mode
+
+
 def is_central_admin() -> bool:
-    """True when this BFF may switch among multiple workspaces."""
-    return len(_allowed_workspaces) > 1
+    """True when this BFF may switch among all hub workspaces."""
+    return _access_mode == "central"
 
 
 def role() -> str:
@@ -66,7 +75,7 @@ def selected_workspace() -> str | None:
 def set_selected_workspace(workspace: str) -> None:
     global _selected_workspace
     ws = workspace.strip()
-    if _allowed_workspaces and ws not in _allowed_workspaces:
+    if _access_mode != "central" and _allowed_workspaces and ws not in _allowed_workspaces:
         raise ValueError(f"Workspace {ws!r} not in config: {_allowed_workspaces}")
     _selected_workspace = ws
 
@@ -80,10 +89,6 @@ def bundle_dir() -> Path | None:
     return Path(base) if base else None
 
 
-def _has_ui(dist: Path) -> bool:
-    return (dist / "index.html").is_file()
-
-
 def frontend_dist_dir() -> Path:
     candidates: list[Path] = []
     bundle = bundle_dir()
@@ -95,6 +100,10 @@ def frontend_dist_dir() -> Path:
         if _has_ui(path):
             return path
     return candidates[0] if candidates else root / "frontend" / "dist"
+
+
+def _has_ui(dist: Path) -> bool:
+    return (dist / "index.html").is_file()
 
 
 def frontend_dist_ok() -> bool:

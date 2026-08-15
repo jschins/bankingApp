@@ -6,10 +6,11 @@ Thin BFF + frontend. All data comes from the hub (no local workspace copies). Se
 
 | Key | Meaning |
 |-----|---------|
-| `workspace` | Identity (title / hub session) |
-| `access` | Allowed workspaces (ignored when `person` is set) |
-| `person` | Empty/absent = all people; set = personal user (no Add person) |
+| `access` | `central` (all workspaces) \| `local` (one workspace) \| `personal` (one person) |
+| `workspace` | Required for local/personal; optional for central |
+| `person` | Required when `access` is `personal` |
 | `server_url` | Hub URL |
+| `port` | Client listen port |
 
 ## Run
 

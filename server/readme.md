@@ -31,11 +31,11 @@ bankingApp/server/
 
 ## Client roles (`client_config.json`)
 
-| Role | Rights | Config | “Add person” |
-|------|--------|--------|--------------|
-| Personal user | Own data only | `"person": "<short>"` set | Hidden |
-| Local administrator | One workspace, all people in it | `"person"` empty/absent; `"access"` empty/absent → defaults to `["workspace"]` | Shown |
-| Central administrator | All listed workspaces | `"person"` empty/absent; `"access": ["dkg","jl",…]` | Shown |
+| Role | Rights | Config | “Add person” | Title |
+|------|--------|--------|--------------|-------|
+| Central | All hub workspaces | `"access": "central"` | Shown | `Centrale Boekhouding` |
+| Local | One workspace, all people | `"access": "local"`, `"workspace": "<ws>"` | Shown | `Boekhouding {workspace}` |
+| Personal | One person only | `"access": "personal"`, `"workspace": "<ws>"`, `"person": "<short>"` | Hidden | `Boekhouding {workspace}/{person}` |
 
 Config keys (no legacy aliases):
 
@@ -43,13 +43,11 @@ Config keys (no legacy aliases):
 |-----|---------|
 | `server_url` | Hub base URL (e.g. `http://192.168.x.x:8200`) |
 | `port` | Client BFF listen port |
-| `workspace` | Fixed identity (UI title / hub session label) |
-| `access` | Allowed data workspaces; ignored when `person` is set |
-| `person` | Empty/absent = all people in the workspace; set = only that short |
+| `access` | `central` \| `local` \| `personal` |
+| `workspace` | Required for local/personal; optional starting workspace for central |
+| `person` | Required when `access` is `personal` (person short) |
 | `api_key` | Optional hub Bearer token |
 | `enabled` | Hub sync on/off |
-
-Priority: when `person` is set, `access` is ignored and the client locks to the single `workspace` identity.
 
 ## Processes
 

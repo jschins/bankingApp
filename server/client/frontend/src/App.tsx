@@ -74,6 +74,20 @@ function clearStoredRefreshStatus(): void {
 
 type CellSelection = { short: string; category: string };
 
+function brandTitle(status: CentraleSyncStatus | null): string {
+  const access = (status?.access || "").trim().toLowerCase();
+  if (access === "central") return "Centrale Boekhouding";
+  const ws = (status?.author || status?.workspace || "").trim();
+  if (access === "personal") {
+    const person = (status?.person || "").trim();
+    if (ws && person) return `Boekhouding ${ws}/${person}`;
+    if (ws) return `Boekhouding ${ws}`;
+    return "Boekhouding";
+  }
+  // local (default)
+  return ws ? `Boekhouding ${ws}` : "Boekhouding";
+}
+
 function WorkspaceSwitcher({
   workspace,
   workspaces,
@@ -147,13 +161,11 @@ function SyncNotifyShell({
   const [switching, setSwitching] = useState(false);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
   const dataEpochRef = useRef<number | null>(null);
-  // Branding: person short when client_config has ``person``, else workspace identity.
-  const brandName =
-    (status?.person || "").trim() || (status?.author || "").trim();
+
+  const brandName = brandTitle(status);
 
   useEffect(() => {
-    const base = brandName ? `Boekhouding ${brandName}` : "Boekhouding";
-    document.title = termsView ? `${base} — Terms` : base;
+    document.title = termsView ? `${brandName} — Terms` : brandName;
   }, [brandName, termsView]);
 
   useEffect(() => {
@@ -199,22 +211,17 @@ function SyncNotifyShell({
   }, [onWorkspaceChanged]);
 
   const isCentralAdmin = status?.role === "central_admin";
-  // Multi-workspace config: all listed workspaces. Single-workspace: display only.
+  // Multi-workspace (central admin): switcher only when ``access`` has multiple values.
   const workspaces = isCentralAdmin
     ? status?.workspaces?.length
       ? status.workspaces
       : status?.workspace
         ? [status.workspace]
         : []
-    : status?.workspace
-      ? [status.workspace]
-      : [];
+    : [];
 
   function handleSelect(ws: string) {
-    if (!isCentralAdmin) {
-      // Local peer: dropdown is display-only (single workspace).
-      return;
-    }
+    if (!isCentralAdmin) return;
     setSwitching(true);
     setWorkspace(ws)
       .then(() => {
@@ -246,11 +253,13 @@ function SyncNotifyShell({
       {showBar && (
         <div className="centrale-status-bar">
           <div className="centrale-status-left">
-            <WorkspaceSwitcher
-              workspace={status?.workspace || "…"}
-              workspaces={workspaces}
-              onSelect={handleSelect}
-            />
+            {isCentralAdmin ? (
+              <WorkspaceSwitcher
+                workspace={status?.workspace || "…"}
+                workspaces={workspaces}
+                onSelect={handleSelect}
+              />
+            ) : null}
             {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
             {status?.error ? <span> · sync error: {status.error}</span> : null}
           </div>
@@ -691,9 +700,7 @@ function MainApp({ brandName }: { brandName: string }) {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1 className="app-heading">
-          {brandName ? `Boekhouding ${brandName}` : "Boekhouding"}
-        </h1>
+        <h1 className="app-heading">{brandName}</h1>
 
         <div
           className={
@@ -702,8 +709,8 @@ function MainApp({ brandName }: { brandName: string }) {
         >
           {hasSecrets && (
             <>
-              <label>
-                date-from
+              <label className="sidebar-field">
+                <span className="sidebar-field-legend">date-from</span>
                 <input
                   type="date"
                   value={dateFrom}
@@ -712,8 +719,8 @@ function MainApp({ brandName }: { brandName: string }) {
                   onChange={(e) => setDateFrom(e.target.value)}
                 />
               </label>
-              <label>
-                date-to
+              <label className="sidebar-field">
+                <span className="sidebar-field-legend">date-to</span>
                 <input
                   type="date"
                   value={dateTo}
@@ -724,14 +731,19 @@ function MainApp({ brandName }: { brandName: string }) {
                 />
               </label>
               {!awaitingPostConsentFetch ? (
-                <button
-                  type="button"
-                  className="sidebar-knob"
-                  onClick={doRefresh}
-                  disabled={refreshing || Boolean(fetchingShort)}
-                >
-                  {refreshing ? "Refreshing…" : "↻ Refresh all"}
-                </button>
+                <div className="sidebar-field">
+                  <span className="sidebar-field-legend" aria-hidden="true">
+                    {"\u00a0"}
+                  </span>
+                  <button
+                    type="button"
+                    className="sidebar-knob"
+                    onClick={doRefresh}
+                    disabled={refreshing || Boolean(fetchingShort)}
+                  >
+                    {refreshing ? "Refreshing…" : "↻ Refresh all"}
+                  </button>
+                </div>
               ) : null}
               {refreshStatus && (
                 <div className="refresh-status">
@@ -758,14 +770,19 @@ function MainApp({ brandName }: { brandName: string }) {
                               </span>
                             ) : null}
                             {!consentReady[r.short] && r.authorization_url ? (
-                              <a
-                                className="sidebar-knob"
-                                href={r.authorization_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                {`renew ${r.short}`}
-                              </a>
+                              <div className="sidebar-field">
+                                <span className="sidebar-field-legend" aria-hidden="true">
+                                  {"\u00a0"}
+                                </span>
+                                <a
+                                  className="sidebar-knob"
+                                  href={r.authorization_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {`renew ${r.short}`}
+                                </a>
+                              </div>
                             ) : null}
                             {consentReady[r.short] ? (
                               <>
@@ -783,16 +800,21 @@ function MainApp({ brandName }: { brandName: string }) {
                                   />
                                   new year (overwrite {r.short} only)
                                 </label>
-                                <button
-                                  type="button"
-                                  className="sidebar-knob"
-                                  disabled={Boolean(refreshing || fetchingShort)}
-                                  onClick={() => doRefreshPerson(r.short)}
-                                >
-                                  {fetchingShort === r.short
-                                    ? `Fetching ${r.short}…`
-                                    : `fetch for ${r.short}`}
-                                </button>
+                                <div className="sidebar-field">
+                                  <span className="sidebar-field-legend" aria-hidden="true">
+                                    {"\u00a0"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="sidebar-knob"
+                                    disabled={Boolean(refreshing || fetchingShort)}
+                                    onClick={() => doRefreshPerson(r.short)}
+                                  >
+                                    {fetchingShort === r.short
+                                      ? `Fetching ${r.short}…`
+                                      : `fetch for ${r.short}`}
+                                  </button>
+                                </div>
                               </>
                             ) : null}
                           </>
@@ -848,31 +870,46 @@ function MainApp({ brandName }: { brandName: string }) {
 
         <div className="winbar">
           {canAddPerson && addPersonUrl ? (
-            <a
-              className="sidebar-knob"
-              href={addPersonUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Add person
-            </a>
+            <div className="sidebar-field">
+              <span className="sidebar-field-legend" aria-hidden="true">
+                {"\u00a0"}
+              </span>
+              <a
+                className="sidebar-knob"
+                href={addPersonUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Add person
+              </a>
+            </div>
           ) : null}
-          <button
-            type="button"
-            className="sidebar-knob"
-            onClick={() => openView("terms")}
-            title="Open the terms window"
-          >
-            {"⚙ Edit Terms (Alt+T)"}
-          </button>
+          <div className="sidebar-field">
+            <span className="sidebar-field-legend" aria-hidden="true">
+              {"\u00a0"}
+            </span>
+            <button
+              type="button"
+              className="sidebar-knob"
+              onClick={() => openView("terms")}
+              title="Open the terms window"
+            >
+              {"⚙ Edit Terms (Alt+T)"}
+            </button>
+          </div>
         </div>
 
         {inPView && matrix && (
           <>
             <div className="winbar">
-              <button type="button" className="sidebar-knob" onClick={backToMatrix}>
-                ← Matrix
-              </button>
+              <div className="sidebar-field">
+                <span className="sidebar-field-legend" aria-hidden="true">
+                  {"\u00a0"}
+                </span>
+                <button type="button" className="sidebar-knob" onClick={backToMatrix}>
+                  ← Matrix
+                </button>
+              </div>
             </div>
             <PersonColumnTable
               matrix={matrix}
@@ -976,9 +1013,14 @@ function TermsApp({ brandName }: { brandName: string }) {
     <div className="app terms-app">
       <aside className="sidebar">
         <div className="winbar">
-          <button type="button" className="sidebar-knob" onClick={() => openView("main")}>
-            ← {brandName ? `Boekhouding ${brandName}` : "Boekhouding"} (Alt+M) ↗
-          </button>
+          <div className="sidebar-field">
+            <span className="sidebar-field-legend" aria-hidden="true">
+              {"\u00a0"}
+            </span>
+            <button type="button" className="sidebar-knob" onClick={() => openView("main")}>
+              ← {brandName} (Alt+M) ↗
+            </button>
+          </div>
         </div>
         <p className="win-hint">
           Term Window. Return to overview using <kbd>Ctrl</kbd>+<kbd>Tab</kbd> or{" "}

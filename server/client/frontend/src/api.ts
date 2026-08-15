@@ -118,6 +118,8 @@ export interface CentraleSyncStatus {
   workspace: string;
   /** Fixed identity from client_config ``workspace`` (does not follow switcher). */
   author?: string;
+  /** central | local | personal — from client_config ``access``. */
+  access?: "central" | "local" | "personal";
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
   centrale_url: string;

@@ -128,7 +128,7 @@ def api_set_workspace(body: WorkspaceRequest) -> dict[str, Any]:
 
     cfg = load_config()
     if cfg.role != "central_admin":
-        raise HTTPException(status_code=400, detail="workspace switch requires multiple workspaces in config")
+        raise HTTPException(status_code=400, detail="workspace switch requires access=central")
     names = list_hub_workspaces()
     if body.workspace not in names and names:
         raise HTTPException(status_code=404, detail=f"Unknown workspace: {body.workspace!r}")
@@ -440,7 +440,7 @@ def run() -> None:
     port = int(os.environ.get("PORT", str(cfg.port)))
     print(
         f"boekhouding-client → hub {cfg.url} "
-        f"(workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
+        f"(access={cfg.access}, workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
     )
 
     if is_frozen():

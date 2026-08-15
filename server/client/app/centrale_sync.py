@@ -38,13 +38,14 @@ _cached_has_secrets: bool = False
 class HubConfig:
     url: str
     workspace: str  # currently selected target (from access / switcher)
-    author: str  # fixed identity from client_config "workspace" key (title / hub session)
-    person: str  # empty = all people; otherwise only that short (e.g. "as")
+    author: str  # fixed identity from client_config "workspace" (hub session label)
+    person: str  # empty unless access=personal
+    access: str  # central | local | personal
     api_key: str
     enabled: bool
     port: int
     role: str  # "local" | "central_admin"
-    workspaces: tuple[str, ...] = ()  # allowed targets from client_config "access"
+    workspaces: tuple[str, ...] = ()  # locked targets for local/personal; empty for central
 
 
 def config_path() -> Path:
@@ -67,6 +68,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
                 workspace=ws,
                 author=_config_cache.author,
                 person=_config_cache.person,
+                access=_config_cache.access,
                 api_key=_config_cache.api_key,
                 enabled=_config_cache.enabled,
                 port=_config_cache.port,
@@ -89,32 +91,39 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         or "http://127.0.0.1:8200"
     ).rstrip("/")
 
-    # ``workspace`` = fixed identity (title / hub session).
-    author = str(file_cfg.get("workspace") or "").strip() or "dkg"
+    access = str(file_cfg.get("access") or "local").strip().lower()
+    if access not in ("central", "local", "personal"):
+        access = "local"
 
-    # ``person`` empty → full workspace; otherwise only that person's short name.
-    person = (
+    workspace_key = str(file_cfg.get("workspace") or "").strip()
+    person_key = (
         os.environ.get("CLIENT_PERSON", "").strip()
         or str(file_cfg.get("person") or "").strip()
     )
 
-    # When ``person`` is set, ``access`` is ignored — lock to the identity workspace.
-    if person:
+    if access == "central":
+        person = ""
+        role = "central_admin"
+        author = workspace_key or "central"
+        workspaces: tuple[str, ...] = ()
+        workspace = selected_workspace() or workspace_key
+        if not workspace:
+            workspace = _first_hub_workspace(url) or "dkg"
+    elif access == "personal":
+        person = person_key
+        if not person:
+            raise ValueError('client_config access=personal requires a non-empty "person"')
+        role = "local"
+        author = workspace_key or "dkg"
         workspaces = (author,)
         workspace = author
     else:
-        raw_access = file_cfg.get("access")
-        if isinstance(raw_access, list):
-            workspaces = tuple(str(w).strip() for w in raw_access if str(w).strip())
-        else:
-            workspaces = ()
-        if not workspaces:
-            workspaces = (author,)
-        workspace = selected_workspace() or (
-            author if author in workspaces else workspaces[0]
-        )
-        if workspace not in workspaces:
-            workspace = workspaces[0]
+        # local — one workspace, all people; ignore person key
+        person = ""
+        role = "local"
+        author = workspace_key or "dkg"
+        workspaces = (author,)
+        workspace = author
 
     api_key = (
         os.environ.get("CENTRALE_API_KEY", "").strip()
@@ -128,7 +137,6 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     else:
         enabled = bool(file_cfg.get("enabled", True))
 
-    role = "central_admin" if len(workspaces) > 1 else "local"
     default_port = 8300 if role == "central_admin" else (8302 if author == "jl" else 8301)
     try:
         port = int(
@@ -139,13 +147,18 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     except (TypeError, ValueError):
         port = default_port
 
-    set_runtime(workspace=workspace, allowed_workspaces=list(workspaces))
+    set_runtime(
+        workspace=workspace,
+        allowed_workspaces=list(workspaces),
+        access=access,
+    )
 
     _config_cache = HubConfig(
         url=url,
         workspace=workspace,
         author=author,
         person=person,
+        access=access,
         api_key=api_key,
         enabled=enabled,
         port=port,
@@ -153,6 +166,24 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         workspaces=workspaces,
     )
     return _config_cache
+
+
+def _first_hub_workspace(url: str) -> str | None:
+    """Best-effort first workspace name from hub status (central bootstrap)."""
+    try:
+        req = urllib.request.Request(
+            f"{url.rstrip('/')}/api/status",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        names = data.get("workspaces") or []
+        if isinstance(names, list) and names:
+            return str(names[0]).strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
 def configured_person() -> str:
@@ -364,6 +395,7 @@ def sync_status() -> dict[str, Any]:
         "workspace": cfg.workspace,
         "author": cfg.author,
         "person": cfg.person,
+        "access": cfg.access,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,
         "error": _last_error,
@@ -434,18 +466,18 @@ def _queue_notification(display_path: str) -> None:
 
 def list_hub_workspaces() -> list[str]:
     cfg = load_config()
-    configured = list(cfg.workspaces) if cfg.workspaces else [cfg.workspace]
+    if cfg.access != "central":
+        return [cfg.workspace]
     if not cfg.enabled:
-        return configured
+        return [cfg.workspace] if cfg.workspace else []
     try:
         status = hub_request("GET", "/api/status", timeout=10.0)
         names = status.get("workspaces") or []
         if isinstance(names, list) and names:
-            hub = [str(n) for n in names]
-            return [w for w in configured if w in hub] or configured
+            return [str(n).strip() for n in names if str(n).strip()]
     except Exception:
         pass
-    return configured
+    return [cfg.workspace] if cfg.workspace else []
 
 
 def poll_central_events() -> dict[str, Any]:
@@ -489,9 +521,12 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
     global _last_error, _last_event_id, _data_epoch
     cfg = load_config()
     ws = workspace.strip()
-    if cfg.workspaces and ws not in cfg.workspaces:
-        return {"ok": False, "error": f"Workspace {ws!r} not in config"}
-    set_runtime(workspace=ws, allowed_workspaces=list(cfg.workspaces or [ws]))
+    if cfg.access != "central":
+        return {"ok": False, "error": "Workspace switch requires access=central"}
+    names = list_hub_workspaces()
+    if names and ws not in names:
+        return {"ok": False, "error": f"Workspace {ws!r} not on hub"}
+    set_runtime(workspace=ws, allowed_workspaces=[], access="central")
     load_config(force_reload=True)
     with _state_lock:
         _pending_notifications.clear()
