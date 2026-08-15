@@ -856,6 +856,23 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
     .ok { color: #166534; margin-top: 0.5rem; }
     .meta { font-size: 0.85rem; color: #666; margin-top: 1rem; }
     code { font-size: 0.85em; }
+    .remind {
+      margin: 0.85rem 0 0; padding: 0.75rem 0.9rem;
+      background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: 0.9rem; line-height: 1.45;
+    }
+    .remind h2 {
+      margin: 0 0 0.45rem; font-size: 0.95rem; color: #1e3a5f; font-weight: 700;
+    }
+    .remind ol { margin: 0.35rem 0 0; padding-left: 1.25rem; }
+    .remind li { margin: 0.35rem 0; }
+    .remind dl {
+      margin: 0.35rem 0 0; display: grid;
+      grid-template-columns: minmax(9rem, 38%) 1fr; gap: 0.25rem 0.75rem;
+    }
+    .remind dt { color: #475569; margin: 0; }
+    .remind dd { margin: 0; word-break: break-all; }
+    .remind .note { margin: 0.55rem 0 0; color: #475569; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -886,10 +903,42 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
 
     <div id="step2" class="step">
       <p>Folder created for <strong id="createdLabel"></strong>.</p>
-      <p>Open Enable Banking and add an application (download the private key once):</p>
       <div class="actions">
         <a class="link-btn" id="ebLink" href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener noreferrer">Open Enable Banking applications</a>
       </div>
+
+      <div class="remind">
+        <h2>1. Create the API application — fill in:</h2>
+        <dl>
+          <dt>Application name</dt><dd>e.g. <code id="hintAppName">boekh-js</code></dd>
+          <dt>Redirect URL</dt><dd><code id="hintRedirect">https://deoudegracht.nl/banking-callback.html</code></dd>
+          <dt>Description of app</dt><dd>e.g. <code>boekhouding</code></dd>
+          <dt>Data protection email</dt><dd>e.g. <code>j.m.schins@gmail.com</code></dd>
+          <dt>Privacy policy URL</dt><dd><a href="https://deoudegracht.nl/privacy.html" target="_blank" rel="noopener noreferrer">https://deoudegracht.nl/privacy.html</a></dd>
+          <dt>Terms of service URL</dt><dd><a href="https://deoudegracht.nl/terms.html" target="_blank" rel="noopener noreferrer">https://deoudegracht.nl/terms.html</a></dd>
+        </dl>
+        <p class="note">Download / save the private key (<code>.pem</code>) when Enable Banking offers it — you only get it once. Keep the filename (Application ID).</p>
+      </div>
+
+      <div class="remind">
+        <h2>2. After creating the app, link it:</h2>
+        <dl>
+          <dt>Country</dt><dd>e.g. <code id="hintCountry">Netherlands</code></dd>
+          <dt>ASPSP</dt><dd>e.g. <code id="hintAspsp">ING</code></dd>
+          <dt>Usage type</dt><dd><code>personal</code></dd>
+        </dl>
+        <p class="note">Then hit <strong>Link</strong>.</p>
+      </div>
+
+      <div class="remind">
+        <h2>3. Upload the key here</h2>
+        <ol>
+          <li>Save the <code>.pem</code> on this laptop (do not rename if possible — stem becomes <code>app_id</code>).</li>
+          <li>Return to this wizard and choose the file below.</li>
+          <li>Click <strong>Upload PEM &amp; fetch YTD</strong>.</li>
+        </ol>
+      </div>
+
       <p style="margin-top:1rem">Upload the downloaded <code>.pem</code> (filename should be the Application ID):</p>
       <input id="pemFile" type="file" accept=".pem,application/x-pem-file,application/octet-stream"/>
       <div class="actions">
@@ -959,22 +1008,35 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       }
     }
 
+    const COUNTRY_LABELS = { NL: "Netherlands", BE: "Belgium", DE: "Germany", FR: "France" };
+
     document.getElementById("btnCreate").onclick = async () => {
       errEl.textContent = "";
       const workspace = document.getElementById("workspace").value;
+      const person = document.getElementById("person").value.trim();
+      const countryCode = document.getElementById("country").value.trim().toUpperCase() || "NL";
+      const aspsp = document.getElementById("aspsp").value.trim() || "ING";
+      const redirect = document.getElementById("redirect").value.trim()
+        || "https://deoudegracht.nl/banking-callback.html";
       const body = {
         folder: document.getElementById("folder").value,
-        person: document.getElementById("person").value,
+        person,
         account_name: document.getElementById("accountName").value,
-        country: document.getElementById("country").value,
-        aspsp: document.getElementById("aspsp").value,
-        redirect_url: document.getElementById("redirect").value,
+        country: countryCode,
+        aspsp,
+        redirect_url: redirect,
       };
       try {
         created = await api("POST", `/api/local/${encodeURIComponent(workspace)}/people/create`, body);
         document.getElementById("createdLabel").textContent =
           `${created.person} (${created.folder}) in ${created.workspace}`;
         document.getElementById("ebLink").href = created.enable_banking_url || "https://enablebanking.com/cp/applications";
+        document.getElementById("hintAppName").textContent =
+          `boekh-${(created.person || person || "js").toLowerCase()}`;
+        document.getElementById("hintRedirect").textContent = redirect;
+        document.getElementById("hintCountry").textContent =
+          COUNTRY_LABELS[countryCode] || countryCode;
+        document.getElementById("hintAspsp").textContent = aspsp;
         showStep("step2");
       } catch (e) {
         errEl.textContent = String(e.message || e);

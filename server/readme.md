@@ -82,8 +82,15 @@ Onboarding for a new bank person lives on the **hub**, not in the client executa
 1. Local/central administrator clicks **Add person** in the client (hidden for personal users).
 2. Browser opens `http://<hub>:8200/add-person?workspace=<ws>` (reachable from any admin PC on the LAN).
 3. Wizard collects folder name, person alias (short), and bank-account name; creates `workspaces/<ws>/<folder>/{data,secret}/` with empty data stubs + draft `profile.json`.
-4. Administrator creates an Enable Banking application at [https://enablebanking.com/cp/applications](https://enablebanking.com/cp/applications) and downloads the `.pem`.
-5. Wizard uploads the PEM into `secret/`, sets `app_id` / `key_file` from the PEM filename stem, then fetches transactions from **1 Jan of the current year** through **today**.
+4. Administrator creates an Enable Banking application at [https://enablebanking.com/cp/applications](https://enablebanking.com/cp/applications). The wizard reminds them of the fields to use, for example:
+   - Application name: `boekh-<alias>`
+   - Redirect URL: `https://deoudegracht.nl/banking-callback.html`
+   - Description: `boekhouding`
+   - Data protection email: `j.m.schins@gmail.com`
+   - Privacy: [https://deoudegracht.nl/privacy.html](https://deoudegracht.nl/privacy.html)
+   - Terms: [https://deoudegracht.nl/terms.html](https://deoudegracht.nl/terms.html)
+5. After creating the app, link it (country e.g. Netherlands, ASPSP e.g. ING, usage type **personal**), save the `.pem` on the laptop, return to the wizard, and upload it.
+6. Wizard stores the PEM in `secret/`, sets `app_id` / `key_file` from the PEM filename stem, then fetches transactions from **1 Jan of the current year** through **today**.
 
 PEM never has to be copied by hand onto the server; the browser uploads it to the hub.
 
