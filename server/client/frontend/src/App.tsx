@@ -1450,6 +1450,9 @@ function termsColumnWidths(
   });
 }
 
+/** Stable empty list so `?? EMPTY_TERMS` does not allocate a new [] every render. */
+const EMPTY_TERMS: string[] = [];
+
 function TermsTables({
   settings,
   onUpdate,
@@ -1469,7 +1472,7 @@ function TermsTables({
           <TermsColumnTable
             columns={columns}
             columnWidths={columnWidths}
-            termsForCategory={(name) => general[name] ?? []}
+            termsForCategory={(name) => general[name] ?? EMPTY_TERMS}
             onCommit={(name, terms) => onUpdate("general", name, terms)}
           />
         </section>
@@ -1483,7 +1486,7 @@ function TermsTables({
             <TermsColumnTable
               columns={columns}
               columnWidths={columnWidths}
-              termsForCategory={(name) => personal[p.short]?.[name] ?? []}
+              termsForCategory={(name) => personal[p.short]?.[name] ?? EMPTY_TERMS}
               onCommit={(name, terms) => onUpdate(p.short, name, terms)}
             />
           </section>
@@ -1551,11 +1554,19 @@ function EditableCell({
   const [add, setAdd] = useState("");
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // Sync from props only when content changes. A new `[]` every parent render
+  // (empty categories + 1s status poll) used to clear the "+ term" field mid-typing.
+  const termsKey = terms.join("\0");
+  const prevTermsKey = useRef(termsKey);
 
   useEffect(() => {
-    setDraft(sortTerms(terms));
+    if (prevTermsKey.current === termsKey) return;
+    prevTermsKey.current = termsKey;
+    const next = sortTerms(terms);
+    draftRef.current = next;
+    setDraft(next);
     setAdd("");
-  }, [terms]);
+  }, [terms, termsKey]);
 
   function commit(next: string[]) {
     const cleaned = sortTerms(next.map((t) => t.trim()).filter(Boolean));
@@ -1568,8 +1579,9 @@ function EditableCell({
   }
 
   function commitAdd() {
-    if (!add.trim()) return;
-    commit([...draftRef.current, add]);
+    const t = add.trim();
+    if (!t) return;
+    commit([...draftRef.current, t]);
     setAdd("");
   }
 

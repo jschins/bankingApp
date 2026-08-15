@@ -23,7 +23,9 @@ def main() -> int:
     DEPLOY.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
         "--clean",
         "--noconfirm",
