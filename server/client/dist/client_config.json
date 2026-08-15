@@ -1,9 +1,8 @@
 {
-  "server_url": "http://192.168.7.230:8200",
+  "server_url": "http://192.168.178.49:8200",
   "port": 8300,
   "access": ["dkg", "jl"],
   "workspace": "jl",
-  "person": "",
   "api_key": "",
   "enabled": true
 }

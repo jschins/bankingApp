@@ -738,6 +738,8 @@ def run() -> None:
             "GET /api/events",
             "GET /api/status",
             "/capabilities",
+            "/consent-ready",
+            "/session/heartbeat",
         )
 
         def filter(self, record: logging.LogRecord) -> bool:
