@@ -37,33 +37,24 @@ _cached_has_secrets: bool = False
 @dataclass(frozen=True)
 class HubConfig:
     url: str
-    workspace: str  # currently selected target (from workspaces / switcher)
-    author: str  # fixed identity from client_config "author" key
+    workspace: str  # currently selected target (from access / switcher)
+    author: str  # fixed identity from client_config "workspace" key (title / hub session)
     person: str  # empty = all people; otherwise only that short (e.g. "as")
     api_key: str
     enabled: bool
     port: int
     role: str  # "local" | "central_admin"
-    workspaces: tuple[str, ...] = ()
-
-
-# Back-compat alias used by older imports.
-CentraleConfig = HubConfig
+    workspaces: tuple[str, ...] = ()  # allowed targets from client_config "access"
 
 
 def config_path() -> Path:
     """``client_config.json`` next to the client project / exe."""
-    env = os.environ.get("CLIENT_CONFIG", "").strip() or os.environ.get("LOKALE_CONFIG", "").strip()
+    env = os.environ.get("CLIENT_CONFIG", "").strip()
     if env:
         return Path(env)
     if is_frozen():
         return exe_dir() / "client_config.json"
-    root = project_root()
-    for name in ("client_config.json", "lokale_config.json"):
-        p = root / name
-        if p.is_file():
-            return p
-    return root / "client_config.json"
+    return project_root() / "client_config.json"
 
 
 def load_config(*, force_reload: bool = False) -> HubConfig:
@@ -93,40 +84,37 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             file_cfg = {}
 
     url = (
-        os.environ.get("CENTRALE_URL", "").strip()
-        or os.environ.get("SERVER_URL", "").strip()
-        or str(file_cfg.get("server_url") or file_cfg.get("centrale_url") or "").strip()
+        os.environ.get("SERVER_URL", "").strip()
+        or str(file_cfg.get("server_url") or "").strip()
         or "http://127.0.0.1:8200"
     ).rstrip("/")
 
-    raw_ws = file_cfg.get("workspaces")
-    if isinstance(raw_ws, list) and raw_ws:
-        workspaces = tuple(str(w).strip() for w in raw_ws if str(w).strip())
-    else:
-        one = (
-            os.environ.get("LOKALE_WORKSPACE", "").strip()
-            or str(file_cfg.get("author") or "").strip()
-            or "dkg"
-        )
-        workspaces = (one,)
-
-    # ``author`` in config = stable client identity (hub session label / UI title).
-    author = (
-        os.environ.get("LOKALE_AUTHOR", "").strip()
-        or str(file_cfg.get("author") or "").strip()
-        or workspaces[0]
-    )
-    workspace = selected_workspace() or (
-        author if author in workspaces else workspaces[0]
-    )
-    if workspace not in workspaces:
-        workspace = workspaces[0]
+    # ``workspace`` = fixed identity (title / hub session).
+    author = str(file_cfg.get("workspace") or "").strip() or "dkg"
 
     # ``person`` empty → full workspace; otherwise only that person's short name.
     person = (
         os.environ.get("CLIENT_PERSON", "").strip()
         or str(file_cfg.get("person") or "").strip()
     )
+
+    # When ``person`` is set, ``access`` is ignored — lock to the identity workspace.
+    if person:
+        workspaces = (author,)
+        workspace = author
+    else:
+        raw_access = file_cfg.get("access")
+        if isinstance(raw_access, list):
+            workspaces = tuple(str(w).strip() for w in raw_access if str(w).strip())
+        else:
+            workspaces = ()
+        if not workspaces:
+            workspaces = (author,)
+        workspace = selected_workspace() or (
+            author if author in workspaces else workspaces[0]
+        )
+        if workspace not in workspaces:
+            workspace = workspaces[0]
 
     api_key = (
         os.environ.get("CENTRALE_API_KEY", "").strip()

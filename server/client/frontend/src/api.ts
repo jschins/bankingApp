@@ -116,7 +116,7 @@ export interface ConsentReadyPerson {
 export interface CentraleSyncStatus {
   enabled: boolean;
   workspace: string;
-  /** Fixed identity from client_config ``author`` (does not follow switcher). */
+  /** Fixed identity from client_config ``workspace`` (does not follow switcher). */
   author?: string;
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
