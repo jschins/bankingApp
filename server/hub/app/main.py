@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -250,6 +250,20 @@ class PersonRefreshRequest(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     new_year: bool = False
+
+
+class CreatePersonRequest(BaseModel):
+    folder: str
+    person: str
+    account_name: str
+    country: str = "NL"
+    aspsp: str = "ING"
+    redirect_url: str | None = None
+
+
+class BootstrapFetchRequest(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
 
 
 @app.get("/api/local/{workspace}/capabilities")
@@ -585,6 +599,86 @@ def api_consent_ready_clear(
     }
 
 
+@app.post("/api/local/{workspace}/people/create")
+def api_create_person(
+    workspace: str,
+    body: CreatePersonRequest,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.create_person(
+            workspace,
+            folder=body.folder,
+            person=body.person,
+            account_name=body.account_name,
+            country=body.country,
+            aspsp=body.aspsp,
+            redirect_url=body.redirect_url,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/local/{workspace}/people/{short}/pem")
+async def api_upload_person_pem(
+    workspace: str,
+    short: str,
+    file: UploadFile = File(...),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    raw = await file.read()
+    try:
+        return workspace_api.upload_person_pem(
+            workspace,
+            short,
+            filename=file.filename or "key.pem",
+            content=raw,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/local/{workspace}/people/{short}/bootstrap-fetch")
+def api_bootstrap_person_fetch(
+    workspace: str,
+    short: str,
+    body: BootstrapFetchRequest | None = None,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    req = body or BootstrapFetchRequest()
+    try:
+        return workspace_api.bootstrap_person_fetch(
+            workspace,
+            short,
+            date_from=req.date_from,
+            date_to=req.date_to,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 _ADMIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -623,6 +717,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     <div class="status" id="status">Loading…</div>
     <div class="notify-wrap" id="notify" aria-live="polite"></div>
     <div class="actions">
+      <a class="action" href="/add-person" style="text-decoration:none;display:inline-block">Add person</a>
       <button class="action" id="btnClearSessions" type="button">Clear sessions</button>
       <button class="stop" id="btnStop" type="button">Stop hub</button>
     </div>
@@ -724,6 +819,215 @@ _ADMIN_HTML = """<!DOCTYPE html>
 @app.get("/", response_class=HTMLResponse)
 def admin_page() -> str:
     return _ADMIN_HTML
+
+
+_ADD_PERSON_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Add person — hub</title>
+  <style>
+    :root { font-family: Georgia, "Times New Roman", serif; color: #1a1a1a; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+           background: linear-gradient(160deg, #e8eef5 0%, #f7f4ef 55%, #dde6f0 100%); }
+    main { width: min(40rem, 94vw); padding: 2rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+    p.lead { margin: 0 0 1rem; color: #444; line-height: 1.45; }
+    table { width: 100%; border-collapse: collapse; margin: 0.75rem 0 1rem; }
+    th, td { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid #cbd5e1;
+             vertical-align: middle; font-size: 0.95rem; }
+    th { width: 42%; color: #334155; font-weight: 600; }
+    input[type="text"], input[type="password"], select {
+      width: 100%; box-sizing: border-box; font: inherit; padding: 0.35rem 0.45rem;
+      border: 1px solid #94a3b8; border-radius: 4px; background: #fff;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+    button, .link-btn {
+      font: inherit; cursor: pointer; padding: 0.5rem 0.9rem;
+      border: 1px solid #2a5a8c; background: #c1f4ff; color: #0f172a; border-radius: 6px;
+      font-weight: 600; text-decoration: none; display: inline-block;
+    }
+    button:disabled { opacity: 0.6; cursor: progress; }
+    .step { display: none; margin-top: 1rem; padding: 0.85rem 1rem;
+            background: rgba(255,255,255,0.8); border-left: 4px solid #2a5a8c; }
+    .step.active { display: block; }
+    .err { color: #a33; margin-top: 0.75rem; min-height: 1.2em; white-space: pre-wrap; }
+    .ok { color: #166534; margin-top: 0.5rem; }
+    .meta { font-size: 0.85rem; color: #666; margin-top: 1rem; }
+    code { font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Add person</h1>
+    <p class="lead">Create a person pack on this hub, register Enable Banking, upload the PEM, then fetch YTD transactions. No shell access on the server required.</p>
+
+    <label>Workspace
+      <select id="workspace"></select>
+    </label>
+    <label style="display:block;margin-top:0.5rem">API key (only if hub requires Bearer)
+      <input id="apiKey" type="password" placeholder="optional" autocomplete="off"/>
+    </label>
+
+    <div id="step1" class="step active">
+      <table>
+        <tr><th>folder name</th><td><input id="folder" type="text" placeholder="juleon_schins"/></td></tr>
+        <tr><th>person alias</th><td><input id="person" type="text" placeholder="js"/></td></tr>
+        <tr><th>name on bank account</th><td><input id="accountName" type="text" placeholder="Hr Dr J M Schins"/></td></tr>
+        <tr><th>country</th><td><input id="country" type="text" value="NL"/></td></tr>
+        <tr><th>bank (aspsp)</th><td><input id="aspsp" type="text" value="ING"/></td></tr>
+        <tr><th>redirect URL</th><td><input id="redirect" type="text" value="https://deoudegracht.nl/banking-callback.html"/></td></tr>
+      </table>
+      <div class="actions">
+        <button type="button" id="btnCreate">Create folder</button>
+      </div>
+    </div>
+
+    <div id="step2" class="step">
+      <p>Folder created for <strong id="createdLabel"></strong>.</p>
+      <p>Open Enable Banking and add an application (download the private key once):</p>
+      <div class="actions">
+        <a class="link-btn" id="ebLink" href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener noreferrer">Open Enable Banking applications</a>
+      </div>
+      <p style="margin-top:1rem">Upload the downloaded <code>.pem</code> (filename should be the Application ID):</p>
+      <input id="pemFile" type="file" accept=".pem,application/x-pem-file,application/octet-stream"/>
+      <div class="actions">
+        <button type="button" id="btnPem">Upload PEM &amp; fetch YTD</button>
+      </div>
+    </div>
+
+    <div id="step3" class="step">
+      <p class="ok" id="doneMsg">Done.</p>
+      <p>Return to Boekhouding and use <strong>Refresh</strong> / consent renewal if the bank still requires authorization.</p>
+      <pre id="fetchOut" style="white-space:pre-wrap;font-size:0.8rem;background:#f8fafc;padding:0.75rem;overflow:auto"></pre>
+    </div>
+
+    <p id="err" class="err"></p>
+    <p class="meta"><a href="/">← Hub status</a></p>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const errEl = document.getElementById("err");
+    let created = null;
+
+    function apiKey() {
+      return (document.getElementById("apiKey").value || "").trim();
+    }
+
+    function headers(json) {
+      const h = { "Accept": "application/json" };
+      if (json) h["Content-Type"] = "application/json";
+      const key = apiKey();
+      if (key) h["Authorization"] = "Bearer " + key;
+      return h;
+    }
+
+    async function api(method, path, body) {
+      const opts = { method, headers: headers(body !== undefined) };
+      if (body !== undefined) opts.body = JSON.stringify(body);
+      const r = await fetch(path, opts);
+      const text = await r.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { detail: text }; }
+      if (!r.ok) throw new Error(data.detail || text || r.statusText);
+      return data;
+    }
+
+    function showStep(id) {
+      for (const el of document.querySelectorAll(".step")) el.classList.remove("active");
+      document.getElementById(id).classList.add("active");
+    }
+
+    async function loadWorkspaces() {
+      const sel = document.getElementById("workspace");
+      sel.replaceChildren();
+      let names = [];
+      try {
+        const s = await api("GET", "/api/status");
+        names = s.workspaces || [];
+      } catch (_) {}
+      const preferred = (params.get("workspace") || "").trim();
+      if (preferred && !names.includes(preferred)) names = [preferred, ...names];
+      if (!names.length) names = [preferred || "dkg"];
+      for (const ws of names) {
+        const opt = document.createElement("option");
+        opt.value = ws;
+        opt.textContent = ws;
+        if (ws === preferred) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    document.getElementById("btnCreate").onclick = async () => {
+      errEl.textContent = "";
+      const workspace = document.getElementById("workspace").value;
+      const body = {
+        folder: document.getElementById("folder").value,
+        person: document.getElementById("person").value,
+        account_name: document.getElementById("accountName").value,
+        country: document.getElementById("country").value,
+        aspsp: document.getElementById("aspsp").value,
+        redirect_url: document.getElementById("redirect").value,
+      };
+      try {
+        created = await api("POST", `/api/local/${encodeURIComponent(workspace)}/people/create`, body);
+        document.getElementById("createdLabel").textContent =
+          `${created.person} (${created.folder}) in ${created.workspace}`;
+        document.getElementById("ebLink").href = created.enable_banking_url || "https://enablebanking.com/cp/applications";
+        showStep("step2");
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    };
+
+    document.getElementById("btnPem").onclick = async () => {
+      errEl.textContent = "";
+      if (!created) { errEl.textContent = "Create the folder first."; return; }
+      const fileInput = document.getElementById("pemFile");
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { errEl.textContent = "Choose a .pem file."; return; }
+      const workspace = created.workspace;
+      const short = created.person;
+      try {
+        const fd = new FormData();
+        fd.append("file", file, file.name);
+        const h = { "Accept": "application/json" };
+        const key = apiKey();
+        if (key) h["Authorization"] = "Bearer " + key;
+        const up = await fetch(
+          `/api/local/${encodeURIComponent(workspace)}/people/${encodeURIComponent(short)}/pem`,
+          { method: "POST", headers: h, body: fd }
+        );
+        const upText = await up.text();
+        let upData = {};
+        try { upData = upText ? JSON.parse(upText) : {}; } catch (_) { upData = { detail: upText }; }
+        if (!up.ok) throw new Error(upData.detail || upText || up.statusText);
+
+        const fetchResult = await api(
+          "POST",
+          `/api/local/${encodeURIComponent(workspace)}/people/${encodeURIComponent(short)}/bootstrap-fetch`,
+          {}
+        );
+        document.getElementById("doneMsg").textContent =
+          `PEM saved as ${upData.key_file}. Bootstrap fetch finished for ${short}.`;
+        document.getElementById("fetchOut").textContent = JSON.stringify(fetchResult, null, 2);
+        showStep("step3");
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    };
+
+    loadWorkspaces().catch((e) => { errEl.textContent = String(e.message || e); });
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/add-person", response_class=HTMLResponse)
+def add_person_page() -> str:
+    return _ADD_PERSON_HTML
 
 
 def run() -> None:

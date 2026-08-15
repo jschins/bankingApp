@@ -468,3 +468,182 @@ def refresh_person(
         "results": list(result.get("results") or []),
         "warnings": list(result.get("warnings") or []),
     }
+
+
+_DEFAULT_REDIRECT = "https://deoudegracht.nl/banking-callback.html"
+
+
+def _valid_folder_name(name: str) -> str:
+    cleaned = name.strip()
+    if not cleaned or ".." in cleaned or "/" in cleaned or "\\" in cleaned:
+        raise ValueError(f"Invalid folder name: {name!r}")
+    if not all(c.isalnum() or c in "_-" for c in cleaned):
+        raise ValueError(
+            f"Folder name must be alphanumeric/underscore/hyphen: {name!r}"
+        )
+    return cleaned
+
+
+def _valid_person_short(short: str) -> str:
+    cleaned = short.strip().lower()
+    if not cleaned or not all(c.isalnum() or c == "_" for c in cleaned):
+        raise ValueError(f"Invalid person alias: {short!r}")
+    if len(cleaned) > 16:
+        raise ValueError(f"Person alias too long: {short!r}")
+    return cleaned
+
+
+def create_person(
+    workspace: str,
+    *,
+    folder: str,
+    person: str,
+    account_name: str,
+    country: str = "NL",
+    aspsp: str = "ING",
+    redirect_url: str | None = None,
+) -> dict[str, Any]:
+    """Scaffold a person pack under ``workspaces/<ws>/<folder>/``."""
+    from app.people import list_people
+    from app.settings import refresh_people
+
+    folder_name = _valid_folder_name(folder)
+    short = _valid_person_short(person)
+    holder = (account_name or "").strip()
+    if not holder:
+        raise ValueError("account_name is required")
+    country_s = (country or "NL").strip().upper()
+    if len(country_s) != 2:
+        raise ValueError(f"country must be ISO alpha-2: {country!r}")
+    aspsp_s = (aspsp or "ING").strip()
+    if not aspsp_s:
+        raise ValueError("aspsp is required")
+    redirect = (redirect_url or _DEFAULT_REDIRECT).strip()
+    if not redirect.startswith("https://"):
+        raise ValueError("redirect_url must be https://…")
+
+    with _workspace_scope(workspace) as ws:
+        root = store.workspace_dir(ws)
+        target = root / folder_name
+        if target.exists():
+            raise ValueError(f"Folder already exists: {folder_name}")
+        for pack in list_people(root):
+            if pack.short.lower() == short:
+                raise ValueError(f"Person alias already used: {short}")
+
+        data_dir = target / "data"
+        secret_dir = target / "secret"
+        data_dir.mkdir(parents=True, exist_ok=False)
+        secret_dir.mkdir(parents=True, exist_ok=False)
+
+        (data_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
+        (data_dir / store.DOWNLOADED).write_text("[]\n", encoding="utf-8")
+        (data_dir / store.CATEGORIZED).write_text(
+            json.dumps({"transactions": []}, indent=2) + "\n", encoding="utf-8"
+        )
+        (data_dir / store.CATEGORY_TOTALS).write_text("{}\n", encoding="utf-8")
+
+        profile = {
+            "person": short,
+            "app_id": "",
+            "key_file": "",
+            "country": country_s,
+            "aspsp": aspsp_s,
+            "redirect_url": redirect,
+            "account_name": holder,
+        }
+        (secret_dir / "profile.json").write_text(
+            json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        refresh_people()
+
+    return {
+        "ok": True,
+        "workspace": ws,
+        "folder": folder_name,
+        "person": short,
+        "account_name": holder,
+        "profile": profile,
+        "enable_banking_url": "https://enablebanking.com/cp/applications",
+    }
+
+
+def upload_person_pem(
+    workspace: str,
+    short: str,
+    *,
+    filename: str,
+    content: bytes,
+) -> dict[str, Any]:
+    """Store the Enable Banking private key and update profile app_id from the filename."""
+    from pathlib import Path
+
+    from app.people import get_person
+    from app.settings import refresh_people
+
+    person = _valid_person_short(short)
+    name = Path(filename).name
+    if not name.lower().endswith(".pem"):
+        raise ValueError("PEM upload must be a .pem file")
+    stem = Path(name).stem.strip()
+    if not stem:
+        raise ValueError("PEM filename stem (Application ID) is empty")
+    if not content or b"PRIVATE KEY" not in content:
+        raise ValueError("File does not look like an RSA private key PEM")
+
+    with _workspace_scope(workspace) as ws:
+        pack = get_person(person)
+        secret = pack.secret_dir
+        secret.mkdir(parents=True, exist_ok=True)
+        for old in secret.glob("*.pem"):
+            old.unlink(missing_ok=True)
+        pem_path = secret / f"{stem}.pem"
+        pem_path.write_bytes(content)
+
+        profile_path = pack.profile_path
+        if not profile_path.is_file():
+            profile_path = secret / "profile.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        if not isinstance(profile, dict):
+            profile = {}
+        profile["person"] = person
+        profile["app_id"] = stem
+        profile["key_file"] = pem_path.name
+        profile_path.write_text(
+            json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        refresh_people()
+
+    return {
+        "ok": True,
+        "workspace": ws,
+        "person": person,
+        "folder": pack.folder_name,
+        "app_id": stem,
+        "key_file": pem_path.name,
+        "profile": profile,
+    }
+
+
+def bootstrap_person_fetch(
+    workspace: str,
+    short: str,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict[str, Any]:
+    """First fetch after PEM install (defaults: 1 Jan current year … today)."""
+    from datetime import date
+
+    today = date.today()
+    start = date_from or f"{today.year}-01-01"
+    end = date_to or today.isoformat()
+    return refresh_person(
+        workspace,
+        short,
+        date_from=start,
+        date_to=end,
+        new_year=True,
+    )

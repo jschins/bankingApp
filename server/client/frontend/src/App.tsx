@@ -391,6 +391,8 @@ function MainApp({ author }: { author: string }) {
     loadStoredRefreshStatus()
   );
   const [hasSecrets, setHasSecrets] = useState(false);
+  const [canAddPerson, setCanAddPerson] = useState(false);
+  const [addPersonUrl, setAddPersonUrl] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState(() => previousMonthRange().from);
   const [dateTo, setDateTo] = useState(() => previousMonthRange().to);
   const prevMonth = previousMonthRange();
@@ -407,9 +409,22 @@ function MainApp({ author }: { author: string }) {
     getCentraleStatus()
       .then((s) => {
         setHasSecrets(Boolean(s.has_secrets));
+        const scoped = Boolean((s.person || "").trim());
+        setCanAddPerson(!scoped);
+        const hub = (s.centrale_url || "").replace(/\/$/, "");
+        const ws = (s.workspace || "").trim();
+        if (hub && ws) {
+          setAddPersonUrl(`${hub}/add-person?workspace=${encodeURIComponent(ws)}`);
+        } else if (hub) {
+          setAddPersonUrl(`${hub}/add-person`);
+        } else {
+          setAddPersonUrl(null);
+        }
       })
       .catch(() => {
         setHasSecrets(false);
+        setCanAddPerson(false);
+        setAddPersonUrl(null);
       });
   }, []);
 
@@ -831,6 +846,17 @@ function MainApp({ author }: { author: string }) {
         </div>
 
         <div className="winbar">
+          {canAddPerson && addPersonUrl ? (
+            <a
+              className="refresh-button"
+              href={addPersonUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ marginBottom: "0.5rem", display: "block", textAlign: "center" }}
+            >
+              Add person
+            </a>
+          ) : null}
           <button
             className="win-link"
             onClick={() => openView("terms")}
