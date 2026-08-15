@@ -189,33 +189,44 @@ def api_centrale_refusal_ack(body: RefusalAckRequest) -> dict[str, Any]:
 
 @app.get("/api/people")
 def api_people() -> dict[str, Any]:
-    from app.centrale_sync import hub_get
+    from app.centrale_sync import hub_get, scope_people
 
     try:
-        return hub_get("/people")
+        payload = hub_get("/people")
+        if isinstance(payload, dict):
+            payload = {
+                **payload,
+                "people": scope_people(
+                    payload.get("people") if isinstance(payload.get("people"), list) else []
+                ),
+            }
+        return payload
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.get("/api/matrix")
 def api_matrix() -> dict[str, Any]:
-    from app.centrale_sync import hub_get
+    from app.centrale_sync import hub_get, scope_matrix
 
     try:
-        return hub_get("/matrix")
+        payload = hub_get("/matrix")
+        return scope_matrix(payload) if isinstance(payload, dict) else payload
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.post("/api/recalculate")
 def api_recalculate() -> dict[str, Any]:
-    from app.centrale_sync import hub_post
+    from app.centrale_sync import hub_post, scope_matrix
 
     try:
         result = hub_post("/recalculate", {})
         matrix = result.get("matrix")
         if isinstance(matrix, dict):
-            return matrix
+            return scope_matrix(matrix)
+        if isinstance(result, dict):
+            return scope_matrix(result)
         return result
     except Exception as exc:
         raise _hub_error(exc) from exc
@@ -223,27 +234,43 @@ def api_recalculate() -> dict[str, Any]:
 
 @app.post("/api/refresh")
 def api_refresh(body: RefreshRequest | None = None) -> dict[str, Any]:
-    from app.centrale_sync import hub_post
+    from app.centrale_sync import configured_person, hub_post, scope_refresh
+    import urllib.parse
 
     req = body or RefreshRequest()
     try:
-        return hub_post(
-            "/refresh",
-            {"date_from": req.date_from, "date_to": req.date_to},
-            timeout=300.0,
-        )
+        person = configured_person()
+        if person:
+            # Scoped client: refresh that person only (append-only, no new-year).
+            result = hub_post(
+                f"/refresh/{urllib.parse.quote(person)}",
+                {
+                    "date_from": req.date_from,
+                    "date_to": req.date_to,
+                    "new_year": False,
+                },
+                timeout=300.0,
+            )
+        else:
+            result = hub_post(
+                "/refresh",
+                {"date_from": req.date_from, "date_to": req.date_to},
+                timeout=300.0,
+            )
+        return scope_refresh(result) if isinstance(result, dict) else result
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.post("/api/refresh/{short}")
 def api_refresh_person(short: str, body: PersonRefreshRequest | None = None) -> dict[str, Any]:
-    from app.centrale_sync import hub_post
+    from app.centrale_sync import hub_post, require_person, scope_refresh
     import urllib.parse
 
     req = body or PersonRefreshRequest()
     try:
-        return hub_post(
+        require_person(short)
+        result = hub_post(
             f"/refresh/{urllib.parse.quote(short)}",
             {
                 "date_from": req.date_from,
@@ -252,43 +279,56 @@ def api_refresh_person(short: str, body: PersonRefreshRequest | None = None) -> 
             },
             timeout=300.0,
         )
+        return scope_refresh(result) if isinstance(result, dict) else result
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.get("/api/transactions/{short}/{category_name}")
 def api_transactions(short: str, category_name: str) -> dict[str, Any]:
-    from app.centrale_sync import hub_get
+    from app.centrale_sync import hub_get, require_person
     import urllib.parse
 
     try:
+        require_person(short)
         return hub_get(
             f"/transactions/{urllib.parse.quote(short)}/{urllib.parse.quote(category_name)}"
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.put("/api/transactions/{short}/modification")
 def api_modification(short: str, body: ModificationRequest) -> dict[str, Any]:
-    from app.centrale_sync import hub_put
+    from app.centrale_sync import hub_put, require_person, scope_matrix
     import urllib.parse
 
     try:
-        return hub_put(
+        require_person(short)
+        result = hub_put(
             f"/transactions/{urllib.parse.quote(short)}/modification",
             {"transaction": body.transaction, "source": _source()},
         )
+        if isinstance(result, dict) and isinstance(result.get("matrix"), dict):
+            result = {**result, "matrix": scope_matrix(result["matrix"])}
+        return result
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.get("/api/settings")
 def api_settings() -> dict[str, Any]:
-    from app.centrale_sync import hub_get
+    from app.centrale_sync import hub_get, scope_settings
 
     try:
-        return hub_get("/settings")
+        payload = hub_get("/settings")
+        return scope_settings(payload) if isinstance(payload, dict) else payload
     except Exception as exc:
         raise _hub_error(exc) from exc
 
@@ -297,24 +337,36 @@ def api_settings() -> dict[str, Any]:
 def api_update_settings(
     group: str, category_name: str, body: SettingsTermsRequest
 ) -> dict[str, Any]:
-    from app.centrale_sync import hub_put
+    from app.centrale_sync import hub_put, person_allowed, require_person, scope_matrix, scope_settings
     import urllib.parse
 
     try:
-        return hub_put(
+        # Personal term groups are named by person short; general/shared stay open.
+        if group not in ("general", "shared", "categories") and not person_allowed(group):
+            require_person(group)
+        result = hub_put(
             f"/settings/{urllib.parse.quote(group)}/{urllib.parse.quote(category_name)}",
             {"terms": body.terms, "source": _source()},
         )
+        if isinstance(result, dict):
+            if isinstance(result.get("matrix"), dict):
+                result = {**result, "matrix": scope_matrix(result["matrix"])}
+            result = scope_settings(result)
+        return result
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise _hub_error(exc) from exc
 
 
 @app.post("/api/settings/add-term")
 def api_add_term(body: AddTermRequest) -> dict[str, Any]:
-    from app.centrale_sync import hub_post
+    from app.centrale_sync import hub_post, require_person, scope_matrix, scope_settings
 
     try:
-        return hub_post(
+        if not body.general and body.person:
+            require_person(body.person)
+        result = hub_post(
             "/settings/add-term",
             {
                 "category_name": body.category_name,
@@ -324,6 +376,13 @@ def api_add_term(body: AddTermRequest) -> dict[str, Any]:
                 "source": _source(),
             },
         )
+        if isinstance(result, dict):
+            if isinstance(result.get("matrix"), dict):
+                result = {**result, "matrix": scope_matrix(result["matrix"])}
+            result = scope_settings(result)
+        return result
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise _hub_error(exc) from exc
 
@@ -379,7 +438,10 @@ def run() -> None:
     cfg = load_config()
     host = os.environ.get("HOST", "127.0.0.1" if is_frozen() else "0.0.0.0")
     port = int(os.environ.get("PORT", str(cfg.port)))
-    print(f"boekhouding-client → hub {cfg.url} (workspace={cfg.workspace}, port={port})")
+    print(
+        f"boekhouding-client → hub {cfg.url} "
+        f"(workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
+    )
 
     if is_frozen():
 

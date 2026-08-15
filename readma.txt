@@ -1,3 +1,9 @@
+Windows netwerk en internet instellingen: private
+PS C:\\WINDOWS\\system32> New-NetFirewallRule -DisplayName "bankingApp-hub (TCP 8200)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8200 -Profile Any
+PS C:\\WINDOWS\\system32> Invoke-WebRequest http://192.168.1.48:8200/api/status -UseBasicParsing
+PS C:\\WINDOWS\\system32> Get-NetConnectionProfile
+PS C:\\WINDOWS\\system32> Test-NetConnection 192.168.1.48 -Port 8200
+PS C:\\WINDOWS\\system32> netstat -ano | findstr LISTENING | findstr ":8200"
 
 server-api-key  is SHA256 van "bankingApp"
 $env:API_KEY = "e7706e74e9e5c4a9a5c5994a4cff29ca67e1d970b9c0d2483624347ef1d72a2d"

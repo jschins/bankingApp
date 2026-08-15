@@ -39,6 +39,7 @@ class HubConfig:
     url: str
     workspace: str  # currently selected target (from workspaces / switcher)
     author: str  # fixed identity from client_config "author" key
+    person: str  # empty = all people; otherwise only that short (e.g. "as")
     api_key: str
     enabled: bool
     port: int
@@ -74,6 +75,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
                 url=_config_cache.url,
                 workspace=ws,
                 author=_config_cache.author,
+                person=_config_cache.person,
                 api_key=_config_cache.api_key,
                 enabled=_config_cache.enabled,
                 port=_config_cache.port,
@@ -120,6 +122,12 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     if workspace not in workspaces:
         workspace = workspaces[0]
 
+    # ``person`` empty → full workspace; otherwise only that person's short name.
+    person = (
+        os.environ.get("CLIENT_PERSON", "").strip()
+        or str(file_cfg.get("person") or "").strip()
+    )
+
     api_key = (
         os.environ.get("CENTRALE_API_KEY", "").strip()
         or str(file_cfg.get("api_key") or "").strip()
@@ -149,6 +157,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         url=url,
         workspace=workspace,
         author=author,
+        person=person,
         api_key=api_key,
         enabled=enabled,
         port=port,
@@ -156,6 +165,116 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         workspaces=workspaces,
     )
     return _config_cache
+
+
+def configured_person() -> str:
+    """Return configured person short, or ``\"\"`` when all people are visible."""
+    return (load_config().person or "").strip()
+
+
+def person_allowed(short: str) -> bool:
+    """True when ``short`` may be shown/mutated under the current person scope."""
+    scope = configured_person()
+    if not scope:
+        return True
+    return short.strip().lower() == scope.lower()
+
+
+def require_person(short: str) -> None:
+    if person_allowed(short):
+        return
+    scope = configured_person()
+    raise PermissionError(
+        f"This client is scoped to person {scope!r}; {short!r} is not available."
+    )
+
+
+def scope_people(people: list[Any] | None) -> list[Any]:
+    scope = configured_person()
+    if not scope or not isinstance(people, list):
+        return list(people or [])
+    needle = scope.lower()
+    return [
+        p
+        for p in people
+        if isinstance(p, dict) and str(p.get("short") or "").strip().lower() == needle
+    ]
+
+
+def scope_matrix(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep matrix categories but only the configured person column when scoped."""
+    scope = configured_person()
+    if not scope:
+        return payload
+    out = dict(payload)
+    people = scope_people(out.get("people") if isinstance(out.get("people"), list) else [])
+    out["people"] = people
+    shorts = {str(p.get("short") or "") for p in people if isinstance(p, dict)}
+    cells = out.get("cells")
+    if isinstance(cells, dict):
+        trimmed: dict[str, Any] = {}
+        for cat, row in cells.items():
+            if not isinstance(row, dict):
+                continue
+            trimmed[cat] = {
+                k: v for k, v in row.items() if str(k) in shorts or str(k).lower() == scope.lower()
+            }
+        out["cells"] = trimmed
+    return out
+
+
+def scope_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    scope = configured_person()
+    if not scope:
+        return payload
+    out = dict(payload)
+    out["people"] = scope_people(out.get("people") if isinstance(out.get("people"), list) else [])
+    personal = out.get("personal")
+    if isinstance(personal, dict):
+        out["personal"] = {
+            k: v
+            for k, v in personal.items()
+            if str(k).strip().lower() == scope.lower()
+        }
+    return out
+
+
+def scope_refresh(payload: dict[str, Any]) -> dict[str, Any]:
+    scope = configured_person()
+    if not scope:
+        return payload
+    out = dict(payload)
+    if isinstance(out.get("matrix"), dict):
+        out["matrix"] = scope_matrix(out["matrix"])
+    results = out.get("results")
+    if isinstance(results, list):
+        out["results"] = [
+            r
+            for r in results
+            if isinstance(r, dict) and str(r.get("short") or "").strip().lower() == scope.lower()
+        ]
+    warnings = out.get("warnings")
+    if isinstance(warnings, list):
+        needle = scope.lower()
+        out["warnings"] = [
+            w
+            for w in warnings
+            if isinstance(w, str)
+            and (w.lower().startswith(f"{needle}:") or w.lower().startswith(f"{needle} ("))
+        ]
+    return out
+
+
+def scope_consent_ready(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    scope = configured_person()
+    if not scope:
+        return items
+    needle = scope.lower()
+    return [
+        item
+        for item in items
+        if str(item.get("short") or "").strip().lower() == needle
+    ]
 
 
 def _events_viewer() -> str:
@@ -256,6 +375,7 @@ def sync_status() -> dict[str, Any]:
         "enabled": cfg.enabled,
         "workspace": cfg.workspace,
         "author": cfg.author,
+        "person": cfg.person,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,
         "error": _last_error,
@@ -267,7 +387,7 @@ def sync_status() -> dict[str, Any]:
         "data_epoch": _data_epoch,
         "has_secrets": _cached_has_secrets,
         "layout": "central" if cfg.role == "central_admin" else "local",
-        "consent_ready": consent_ready,
+        "consent_ready": scope_consent_ready(consent_ready),
     }
 
 

@@ -66,6 +66,7 @@ def _ensure_deploy_config() -> None:
         '  "port": 8300,\n'
         '  "workspaces": ["dkg", "jl"],\n'
         '  "author": "dkg",\n'
+        '  "person": "",\n'
         '  "api_key": "",\n'
         '  "enabled": true\n'
         "}\n",

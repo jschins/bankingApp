@@ -1,0 +1,9 @@
+{
+  "server_url": "http://192.168.7.230:8200",
+  "port": 8300,
+  "workspaces": ["dkg"],
+  "author": "dkg",
+  "person": "as",
+  "api_key": "",
+  "enabled": true
+}
