@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   color: #1a1a1a;
   background: #edfcff;
 }
@@ -139,7 +139,6 @@ body {
 }
 
 .central-wins-path {
-  font-family: ui-monospace, Consolas, monospace;
   font-size: 0.8rem;
   color: #475569;
 }
@@ -196,14 +195,17 @@ body {
   background: #ffffff;
   padding: 1rem;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .fetch-form {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 1rem;
-  font-size: 0.75rem;
+  gap: 0.5rem;
+  margin-bottom: 0;
+  font-size: 0.8rem;
 }
 
 .fetch-form--person-scope {
@@ -216,16 +218,54 @@ body {
 .fetch-form label {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.5rem;
   color: #475569;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* Shared size for all left-pane knobs (inputs + buttons + links). */
+.sidebar-knob,
+.fetch-form input[type="text"],
+.fetch-form input[type="date"] {
+  width: 100%;
+  height: 2.35rem;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #0f172a;
+  background: #c1f4ff;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
 }
 
 .fetch-form input[type="text"],
 .fetch-form input[type="date"] {
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  padding: 0.25rem 0.4rem;
-  font: inherit;
+  background: #fff;
+  justify-content: flex-start;
+  text-align: left;
+  cursor: text;
+}
+
+.sidebar-knob:hover:not(:disabled),
+a.sidebar-knob:hover {
+  background: #eef2ff;
+  border-color: #2563eb;
+}
+
+.sidebar-knob:disabled {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 .fetch-form label.checkbox {
@@ -283,7 +323,6 @@ body {
   margin-top: 0.1rem;
   color: #334155;
   font-size: 0.72rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .consent-banner {
@@ -300,64 +339,33 @@ body {
 }
 
 .refresh {
-  margin-bottom: 1rem;
-}
-
-.win-link,
-.refresh-button {
-  background: #c1f4ff;
-}
-
-.refresh-button {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 0.45rem 0.9rem;
-  cursor: pointer;
-  font-weight: 600;
-  color: #0f172a;
-  text-decoration: none;
-  display: inline-block;
-  box-sizing: border-box;
-  text-align: center;
-}
-
-a.refresh-button {
-  color: #0f172a;
-}
-
-.refresh-button:hover:not(:disabled) {
-  background: #eef2ff;
-  border-color: #2563eb;
-}
-
-.refresh-button:disabled {
-  cursor: progress;
-  opacity: 0.7;
+  margin-bottom: 0;
 }
 
 .refresh-status {
-  margin-top: 0.4rem;
+  margin-top: 0;
   font-size: 0.75rem;
   color: #475569;
   line-height: 1.35;
   word-break: break-word;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.5rem;
 }
 
 .refresh-status-line {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.5rem;
 }
 
 .refresh-person-newyear {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
+  gap: 0.4rem;
+  min-height: 2.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
   color: #334155;
   cursor: pointer;
 }
@@ -367,23 +375,10 @@ a.refresh-button {
 }
 
 .winbar {
-  margin-bottom: 1rem;
-}
-
-.win-link {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 0.45rem 0.9rem;
-  cursor: pointer;
-  font-weight: 600;
-  color: #0f172a;
-  /* text-align: left; */
-}
-
-.win-link:hover {
-  background: #eef2ff;
-  border-color: #2563eb;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .win-hint {
@@ -399,6 +394,7 @@ a.refresh-button {
   padding: 0 0.3rem;
   font-size: 0.7rem;
   margin: 0 0.1rem;
+  font-family: inherit;
 }
 
 .content {
@@ -502,7 +498,7 @@ th {
 }
 
 .app-heading {
-  margin: 0 0 1rem;
+  margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
   color: #0f172a;
@@ -519,7 +515,6 @@ th {
 
 .totals-table .num {
   text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

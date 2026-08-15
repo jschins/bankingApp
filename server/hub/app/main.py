@@ -703,11 +703,40 @@ _ADMIN_HTML = """<!DOCTYPE html>
     }
     .meta { margin-top: 1.25rem; font-size: 0.85rem; color: #666; }
     .err { color: #a33; margin-top: 0.75rem; min-height: 1.2em; }
-    button.action { margin-top: 0.75rem; font: inherit; cursor: pointer;
-                    padding: 0.55rem 1rem; border: 1px solid #2a5a8c; background: #2a5a8c; color: #fff; }
-    button.stop { margin-top: 0.75rem; margin-left: 0.5rem; font: inherit; cursor: pointer;
-                  padding: 0.55rem 1rem; border: 1px solid #8b3a3a; background: #8b3a3a; color: #fff; }
-    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+    a.action, button.action, button.stop {
+      box-sizing: border-box;
+      margin: 0;
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      padding: 0.55rem 1rem;
+      min-height: 2.35rem;
+      border-radius: 6px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #fff;
+    }
+    a.action, button.action {
+      border: 1px solid #2a5a8c;
+      background: #2a5a8c;
+    }
+    a.action:hover, button.action:hover {
+      background: #1e4470;
+      border-color: #1e4470;
+    }
+    button.stop {
+      border: 1px solid #8b3a3a;
+      background: #8b3a3a;
+    }
+    button.stop:hover {
+      background: #6f2e2e;
+      border-color: #6f2e2e;
+    }
   </style>
 </head>
 <body>
@@ -717,7 +746,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     <div class="status" id="status">Loading…</div>
     <div class="notify-wrap" id="notify" aria-live="polite"></div>
     <div class="actions">
-      <a class="action" href="/add-person" style="text-decoration:none;display:inline-block">Add person</a>
+      <a class="action" href="/add-person">Add person</a>
       <button class="action" id="btnClearSessions" type="button">Clear sessions</button>
       <button class="stop" id="btnStop" type="button">Stop hub</button>
     </div>

@@ -138,7 +138,7 @@ function SyncNotifyShell({
   onWorkspaceChanged,
   termsView = false,
 }: {
-  children: (author: string) => ReactNode;
+  children: (brandName: string) => ReactNode;
   onWorkspaceChanged?: () => void;
   termsView?: boolean;
 }) {
@@ -147,13 +147,14 @@ function SyncNotifyShell({
   const [switching, setSwitching] = useState(false);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
   const dataEpochRef = useRef<number | null>(null);
-  // Title / branding use config author, not the switcher selection.
-  const author = (status?.author || "").trim();
+  // Branding: person short when client_config has ``person``, else workspace identity.
+  const brandName =
+    (status?.person || "").trim() || (status?.author || "").trim();
 
   useEffect(() => {
-    const base = author ? `Boekhouding ${author}` : "Boekhouding";
+    const base = brandName ? `Boekhouding ${brandName}` : "Boekhouding";
     document.title = termsView ? `${base} — Terms` : base;
-  }, [author, termsView]);
+  }, [brandName, termsView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -273,7 +274,7 @@ function SyncNotifyShell({
           </div>
         </div>
       )}
-      {children(author)}
+      {children(brandName)}
     </div>
   );
 }
@@ -367,18 +368,18 @@ export default function App() {
       termsView={isTerms}
       onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}
     >
-      {(author) =>
+      {(brandName) =>
         isTerms ? (
-          <TermsApp key={wsEpoch} author={author} />
+          <TermsApp key={wsEpoch} brandName={brandName} />
         ) : (
-          <MainApp key={wsEpoch} author={author} />
+          <MainApp key={wsEpoch} brandName={brandName} />
         )
       }
     </SyncNotifyShell>
   );
 }
 
-function MainApp({ author }: { author: string }) {
+function MainApp({ brandName }: { brandName: string }) {
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [selection, setSelection] = useState<CellSelection | null>(null);
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
@@ -691,7 +692,7 @@ function MainApp({ author }: { author: string }) {
     <div className="app">
       <aside className="sidebar">
         <h1 className="app-heading">
-          {author ? `Boekhouding ${author}` : "Boekhouding"}
+          {brandName ? `Boekhouding ${brandName}` : "Boekhouding"}
         </h1>
 
         <div
@@ -725,7 +726,7 @@ function MainApp({ author }: { author: string }) {
               {!awaitingPostConsentFetch ? (
                 <button
                   type="button"
-                  className="refresh-button"
+                  className="sidebar-knob"
                   onClick={doRefresh}
                   disabled={refreshing || Boolean(fetchingShort)}
                 >
@@ -758,7 +759,7 @@ function MainApp({ author }: { author: string }) {
                             ) : null}
                             {!consentReady[r.short] && r.authorization_url ? (
                               <a
-                                className="refresh-button"
+                                className="sidebar-knob"
                                 href={r.authorization_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -784,7 +785,7 @@ function MainApp({ author }: { author: string }) {
                                 </label>
                                 <button
                                   type="button"
-                                  className="refresh-button"
+                                  className="sidebar-knob"
                                   disabled={Boolean(refreshing || fetchingShort)}
                                   onClick={() => doRefreshPerson(r.short)}
                                 >
@@ -848,17 +849,17 @@ function MainApp({ author }: { author: string }) {
         <div className="winbar">
           {canAddPerson && addPersonUrl ? (
             <a
-              className="refresh-button"
+              className="sidebar-knob"
               href={addPersonUrl}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ marginBottom: "0.5rem", display: "block", textAlign: "center" }}
             >
               Add person
             </a>
           ) : null}
           <button
-            className="win-link"
+            type="button"
+            className="sidebar-knob"
             onClick={() => openView("terms")}
             title="Open the terms window"
           >
@@ -869,7 +870,7 @@ function MainApp({ author }: { author: string }) {
         {inPView && matrix && (
           <>
             <div className="winbar">
-              <button type="button" className="win-link" onClick={backToMatrix}>
+              <button type="button" className="sidebar-knob" onClick={backToMatrix}>
                 ← Matrix
               </button>
             </div>
@@ -914,7 +915,7 @@ function MainApp({ author }: { author: string }) {
   );
 }
 
-function TermsApp({ author }: { author: string }) {
+function TermsApp({ brandName }: { brandName: string }) {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
@@ -975,8 +976,8 @@ function TermsApp({ author }: { author: string }) {
     <div className="app terms-app">
       <aside className="sidebar">
         <div className="winbar">
-          <button className="win-link" onClick={() => openView("main")}>
-            ← {author ? `Boekhouding ${author}` : "Boekhouding"} (Alt+M) ↗
+          <button type="button" className="sidebar-knob" onClick={() => openView("main")}>
+            ← {brandName ? `Boekhouding ${brandName}` : "Boekhouding"} (Alt+M) ↗
           </button>
         </div>
         <p className="win-hint">
