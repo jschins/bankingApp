@@ -2,9 +2,19 @@
 
 Always-on hub for `server/workspaces/`. Full architecture, roles, and add-person flow: [`../readme.md`](../readme.md).
 
-## Listen / LAN
+## Listen / client `server_url`
 
 Default `HOST=0.0.0.0` `PORT=8200`. Administrators open the hub from their own PCs (no work on the server required). Allow inbound TCP **8200** on the host firewall.
+
+Clients point at the hub via `server_url` in `client_config.json` (still plain HTTP; bank consent callback stays on public HTTPS via deoudegracht):
+
+| Where the client runs | `server_url` |
+|-----------------------|--------------|
+| Same PC as the hub | `http://127.0.0.1:8200` |
+| Another PC on the home LAN | `http://<hub-lan-ip>:8200` (e.g. `http://192.168.178.49:8200`) |
+| Another PC via [Tailscale](https://tailscale.com/) | `http://<hub-tailscale-ip>:8200` or MagicDNS name |
+
+Run several clients on one machine with different `port` values (e.g. 8300 / 8301 / 8302). Start the hub on **8200** first.
 
 ## Add person wizard
 

@@ -60,6 +60,12 @@ Config keys (no legacy aliases):
 
 **Nobody needs to work on the server machine.** Administrators use a LAN client (or open the hub wizard in a browser). The hub listens on `0.0.0.0:8200`; firewall must allow TCP 8200.
 
+## Network
+
+1. **Now:** same LAN — `server_url` is the hub’s LAN address (e.g. `http://192.168.x.x:8200`).
+2. **Remote (no code change):** install [Tailscale](https://tailscale.com/) on hub + clients; repoint `server_url` to the hub’s Tailscale IP or MagicDNS name (still `http://…:8200`).
+3. **Bank consent callback stays public HTTPS** via `https://deoudegracht.nl/banking-callback.html` → hub. Tailscale does not replace that redirect.
+
 ## Data flow
 
 ```text

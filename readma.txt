@@ -119,3 +119,33 @@ PS C:\Coding\bankingApp\centraleBoekhouding> uv run --group build python scripts
 3. backend voor lokale administrator (slechts één workspace optie):
 PS C:\Coding\bankingApp\lokaleBoekhouding> uv run --group build python scripts/build_onefile.py  
 
+
+
+Client location	server_url that works
+Same PC as hub
+http://127.0.0.1:8200
+Home LAN
+http://ipconfig's IPv4:8200
+Away (elsewhere)
+http://100.87.15.71:8200 (or MagicDNS), with Tailscale up on both sides
+So: hub machine should keep Tailscale connected whenever remote clients need access; remote laptops need Tailscale running (and logged into your tailnet) whenever they use the client with the Tailscale URL.
+
+
+would that still work?
+
+No. From outside the home LAN, http://192.168.178.49:8200 will not reach the hub. That address only works on the same private Wi‑Fi/LAN (or VPN into that LAN).
+
+Client location	server_url that works
+Same PC as hub
+http://127.0.0.1:8200
+Home LAN
+http://192.168.178.49:8200
+Away (elsewhere)
+http://100.87.15.71:8200 (or MagicDNS), with Tailscale up on both sides
+So: hub machine should keep Tailscale connected whenever remote clients need access; remote laptops need Tailscale running (and logged into your tailnet) whenever they use the client with the Tailscale URL.
+
+
+After you sign in on the remote laptop with the same Tailscale account / tailnet:
+The device shows up automatically in the Tailscale admin console (and often in the Tailscale app’s machine list).
+On the hub machine you don’t have to click anything special — if both are online on the same tailnet, they can reach each other.
+Only if your tailnet has device approval / key expiry policies enabled, a new machine stays pending until you Approve it once in the admin console (not inside a special “server Tailscale” UI). Check Machines there if the remote laptop can’t ping 100.87.15.71.
