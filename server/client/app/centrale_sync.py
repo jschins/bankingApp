@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 import time
 import urllib.error
@@ -546,6 +547,20 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
         return {"ok": False, "error": _last_error, "workspace": ws}
 
 
+def _session_body() -> dict[str, Any]:
+    """Payload for hub session start / end / heartbeat."""
+    cfg = load_config()
+    try:
+        hostname = socket.gethostname().strip() or None
+    except OSError:
+        hostname = None
+    return {
+        "port": cfg.port,
+        "author": cfg.author,
+        "hostname": hostname,
+    }
+
+
 def start_session_and_pull() -> dict[str, Any]:
     """Connect to hub (no file pull). Hub must be reachable."""
     global _hub_session_active, _last_error, _last_event_id
@@ -560,7 +575,7 @@ def start_session_and_pull() -> dict[str, Any]:
         hub_request(
             "POST",
             f"/api/local/{urllib.parse.quote(ws)}/session/start",
-            body={"port": cfg.port, "author": cfg.author},
+            body=_session_body(),
         )
         caps = refresh_capabilities()
         events = hub_request(
@@ -595,7 +610,7 @@ def end_session_and_push() -> dict[str, Any]:
         hub_request(
             "POST",
             f"/api/local/{urllib.parse.quote(ws)}/session/end",
-            body={"port": cfg.port, "author": cfg.author},
+            body=_session_body(),
         )
         _last_error = None
         result: dict[str, Any] = {"ok": True, "workspace": ws}
@@ -627,7 +642,7 @@ def _heartbeat_session() -> None:
     hub_request(
         "POST",
         f"/api/local/{urllib.parse.quote(ws)}/session/heartbeat",
-        body={"port": cfg.port, "author": cfg.author},
+        body=_session_body(),
         timeout=10.0,
     )
 

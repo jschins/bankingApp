@@ -1,3 +1,14 @@
+nstalleer node.js met
+> winget install OpenJS.NodeJS.LTS
+installeer tsc met
+> npm install
+daarna hoort
+>npm run build
+in frontend te werken
+
+voor python: installeer uv met
+> powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
 Windows netwerk en internet instellingen: private
 PS C:\\WINDOWS\\system32> New-NetFirewallRule -DisplayName "bankingApp-hub (TCP 8200)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8200 -Profile Any
 PS C:\\WINDOWS\\system32> Invoke-WebRequest http://192.168.1.48:8200/api/status -UseBasicParsing

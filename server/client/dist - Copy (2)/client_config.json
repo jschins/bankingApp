@@ -1,5 +1,5 @@
 {
-  "server_url": "http://192.168.178.49:8200",
+  "server_url": "http://100.116.99.89:8200",
   "port": 8302,
   "access": "local",
   "workspace": "jl",

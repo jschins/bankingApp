@@ -37,9 +37,10 @@ class FilePutPayload(BaseModel):
 
 
 class SessionPayload(BaseModel):
-    """Client listen port (BFF) + author id; hub shows ``ip:port (author)``."""
+    """Client listen port, config author, and optional computer hostname."""
     port: int | None = None
     author: str | None = None
+    hostname: str | None = None
 
 
 def _client_session_label(
@@ -60,6 +61,9 @@ def _client_session_label(
         else host
     )
     author = (body.author or "").strip() or "?"
+    computer = (body.hostname or "").strip()
+    if computer:
+        return f"{computer} @ {addr} ({author})"
     return f"{addr} ({author})"
 
 
@@ -689,11 +693,11 @@ _ADMIN_HTML = """<!DOCTYPE html>
     :root { font-family: Georgia, "Times New Roman", serif; color: #1a1a1a; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center;
            background: linear-gradient(160deg, #e8eef5 0%, #f7f4ef 55%, #dde6f0 100%); }
-    main { width: min(36rem, 94vw); padding: 2rem; }
+    main { width: min(42rem, 94vw); padding: 2rem; }
     h1 { font-size: 1.75rem; margin: 0 0 0.35rem; }
     p.lead { margin: 0 0 1.25rem; color: #444; line-height: 1.45; }
     .status { padding: 0.85rem 1rem; margin-bottom: 1rem; border-left: 4px solid #2a5a8c;
-              background: rgba(255,255,255,0.75); }
+              background: rgba(255,255,255,0.75); white-space: pre-wrap; line-height: 1.45; }
     .notify-wrap { display: flex; flex-direction: column; gap: 0.5rem; min-height: 3rem; }
     .notify-btn {
       font: inherit; text-align: left; padding: 0.45rem 0.85rem;
@@ -786,9 +790,13 @@ _ADMIN_HTML = """<!DOCTYPE html>
 
     async function refreshStatus() {
       const s = await api("GET", "/api/status");
+      const sessions = s.local_sessions || [];
+      const sessionText = sessions.length
+        ? sessions.map((label) => "• " + label).join("\\n")
+        : "(none)";
       statusEl.textContent =
-        "Sessions: " + ((s.local_sessions || []).join(", ") || "(none)") +
-        " · workspaces: " + ((s.workspaces || []).join(", ") || "(none)");
+        "Sessions:\\n" + sessionText +
+        "\\n\\nworkspaces: " + ((s.workspaces || []).join(", ") || "(none)");
       metaEl.textContent = "latest_event_id=" + (s.latest_event_id || 0);
     }
 
