@@ -1,0 +1,22 @@
+{
+  "hub_ips": [
+    "100.87.15.71",
+    "192.168.1.188",
+    "127.0.0.1"
+  ],
+  "grants": [
+    {
+      "id": "rb",
+      "label": "Rafael Bidarra",
+      "token": "",
+      "ips": [
+        "192.168.1.58",
+        "192.168.1.111",
+        "192.168.1.188"
+      ],
+      "paths": [
+        "dkg/rafael_bidarra/data/uploaded.json"
+      ]
+    }
+  ]
+}

@@ -4,15 +4,44 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import store
 
 API_KEY = os.environ.get("CENTRALE_API_KEY", "").strip()
 
 app = FastAPI(title="boekhouding-hub", version="0.1")
+
+# Bank redirect hop must stay reachable even when hub_ips is set.
+_HUB_IP_EXEMPT_PREFIXES = (
+    "/api/consent/callback",
+)
+
+
+class _HubIpAllowlistMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        path = request.url.path or ""
+        if any(path.startswith(p) for p in _HUB_IP_EXEMPT_PREFIXES):
+            return await call_next(request)
+        from app import upload_acl
+
+        hub_ips = upload_acl.hub_allowed_ips()
+        if not hub_ips:
+            return await call_next(request)
+        ip = upload_acl.client_ip(request.client.host if request.client else None)
+        # Full hub access (root, APIs, clients, …)
+        if ip in hub_ips:
+            return await call_next(request)
+        # Upload-only: grant IPs may use /upload + /api/upload, not the rest.
+        if upload_acl.is_upload_http_path(path) and upload_acl.ip_matches_any_grant(ip):
+            return await call_next(request)
+        return Response(status_code=404, content="Not Found")
+
+
+app.add_middleware(_HubIpAllowlistMiddleware)
 
 
 def require_api_key(authorization: str | None = Header(default=None)) -> None:
@@ -43,9 +72,19 @@ class SessionPayload(BaseModel):
     hostname: str | None = None
 
 
+def _short_computer_name(raw: str) -> str:
+    name = (raw or "").strip().rstrip(".")
+    if not name:
+        return ""
+    # MagicDNS / FQDN → first label (e.g. my-laptop.tail123.ts.net → my-laptop)
+    return name.split(".", 1)[0]
+
+
 def _client_session_label(
     request: Request, _workspace: str, body: SessionPayload
 ) -> str:
+    import socket
+
     host = "unknown"
     if request.client is not None and request.client.host:
         host = request.client.host
@@ -61,7 +100,13 @@ def _client_session_label(
         else host
     )
     author = (body.author or "").strip() or "?"
-    computer = (body.hostname or "").strip()
+    computer = _short_computer_name(body.hostname or "")
+    if not computer and host not in ("unknown", "127.0.0.1"):
+        # Fallback when client is an older build: reverse-DNS / Tailscale MagicDNS.
+        try:
+            computer = _short_computer_name(socket.gethostbyaddr(host)[0])
+        except OSError:
+            computer = ""
     if computer:
         return f"{computer} @ {addr} ({author})"
     return f"{addr} ({author})"
@@ -751,6 +796,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     <div class="notify-wrap" id="notify" aria-live="polite"></div>
     <div class="actions">
       <a class="action" href="/add-person">Add person</a>
+      <a class="action" href="/upload">Upload data</a>
       <button class="action" id="btnClearSessions" type="button">Clear sessions</button>
       <button class="stop" id="btnStop" type="button">Stop hub</button>
     </div>
@@ -1127,6 +1173,242 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
 @app.get("/add-person", response_class=HTMLResponse)
 def add_person_page() -> str:
     return _ADD_PERSON_HTML
+
+
+_UPLOAD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Upload data — hub</title>
+  <style>
+    :root { font-family: Georgia, "Times New Roman", serif; color: #1a1a1a; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+           background: linear-gradient(160deg, #e8eef5 0%, #f7f4ef 55%, #dde6f0 100%); }
+    main { width: min(40rem, 94vw); padding: 2rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+    p.lead { margin: 0 0 1rem; color: #444; line-height: 1.45; }
+    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; color: #334155; font-weight: 600; }
+    input[type="text"], input[type="password"], select {
+      width: 100%; box-sizing: border-box; font: inherit; padding: 0.4rem 0.5rem;
+      border: 1px solid #94a3b8; border-radius: 4px; background: #fff; margin-top: 0.25rem;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+    button, .link-btn {
+      font: inherit; cursor: pointer; padding: 0.5rem 0.9rem; border-radius: 6px;
+      border: 1px solid #2a5a8c; background: #c1f4ff; color: #0f172a; font-weight: 700;
+      text-decoration: none; display: inline-flex; align-items: center;
+    }
+    button.primary { background: #2a5a8c; color: #fff; }
+    .panel { margin-top: 1rem; padding: 0.85rem 1rem; background: rgba(255,255,255,0.85);
+             border-left: 4px solid #2a5a8c; border-radius: 0 6px 6px 0; }
+    .panel h2 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .panel ul { margin: 0.35rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; }
+    .err { color: #a33; margin-top: 0.75rem; min-height: 1.2em; white-space: pre-wrap; }
+    .ok { color: #166534; margin-top: 0.75rem; white-space: pre-wrap; font-weight: 700; }
+    .meta { font-size: 0.85rem; color: #666; margin-top: 1rem; }
+    code { font-size: 0.85em; }
+    #grantBox { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Upload data</h1>
+    <p class="lead">Authenticated upload into the hub data root. Your IP must match the grant, and the destination path must be on that grant’s allow-list.</p>
+
+    <label>Upload token
+      <input id="token" type="password" autocomplete="off" placeholder="from upload_acl.json"/>
+    </label>
+    <div class="actions">
+      <button type="button" id="btnCheck" class="primary">Check grant</button>
+    </div>
+
+    <div id="grantBox" class="panel">
+      <h2 id="grantLabel"></h2>
+      <div>Your IP: <code id="yourIp"></code></div>
+      <div>Allowed destinations:</div>
+      <ul id="pathList"></ul>
+      <label>Destination path (under data root)
+        <input id="dest" type="text" list="pathSuggestions" placeholder="jl/person/data/downloaded_transactions.json"/>
+        <datalist id="pathSuggestions"></datalist>
+      </label>
+      <label>File
+        <input id="file" type="file"/>
+      </label>
+      <div class="actions">
+        <button type="button" id="btnUpload" class="primary">Upload</button>
+      </div>
+    </div>
+
+    <p id="err" class="err"></p>
+    <p id="ok" class="ok"></p>
+    <p class="meta"><a href="/">← Hub status</a> · ACL file: <code>workspaces/upload_acl.json</code></p>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const errEl = document.getElementById("err");
+    const okEl = document.getElementById("ok");
+    const tokenEl = document.getElementById("token");
+    if (params.get("t")) tokenEl.value = params.get("t");
+
+    function token() { return (tokenEl.value || "").trim(); }
+
+    async function api(method, path, body, isForm) {
+      const opts = { method, headers: { "Accept": "application/json" } };
+      const t = token();
+      if (t) opts.headers["Authorization"] = "Bearer " + t;
+      if (isForm) {
+        opts.body = body;
+      } else if (body !== undefined) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(body);
+      }
+      const r = await fetch(path, opts);
+      const text = await r.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { detail: text }; }
+      if (!r.ok) throw new Error(data.detail || text || r.statusText);
+      return data;
+    }
+
+    function showGrant(g) {
+      document.getElementById("grantBox").style.display = "block";
+      document.getElementById("grantLabel").textContent = (g.label || g.id) + " (" + g.id + ")";
+      document.getElementById("yourIp").textContent = g.client_ip || "?";
+      const ul = document.getElementById("pathList");
+      ul.replaceChildren();
+      const dl = document.getElementById("pathSuggestions");
+      dl.replaceChildren();
+      for (const p of (g.paths || [])) {
+        const li = document.createElement("li");
+        li.innerHTML = "<code>" + p + "</code>";
+        ul.appendChild(li);
+        if (!p.endsWith("/")) {
+          const opt = document.createElement("option");
+          opt.value = p;
+          dl.appendChild(opt);
+        }
+      }
+      const exact = (g.paths || []).filter((p) => !p.endsWith("/"));
+      if (exact.length === 1) document.getElementById("dest").value = exact[0];
+    }
+
+    document.getElementById("btnCheck").onclick = async () => {
+      errEl.textContent = "";
+      okEl.textContent = "";
+      try {
+        const g = await api("GET", "/api/upload/grant");
+        showGrant(g);
+        okEl.textContent = "Grant OK — choose a destination and file.";
+      } catch (e) {
+        document.getElementById("grantBox").style.display = "none";
+        errEl.textContent = String(e.message || e);
+      }
+    };
+
+    document.getElementById("btnUpload").onclick = async () => {
+      errEl.textContent = "";
+      okEl.textContent = "";
+      const fileInput = document.getElementById("file");
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { errEl.textContent = "Choose a file."; return; }
+      const dest = (document.getElementById("dest").value || "").trim();
+      try {
+        const fd = new FormData();
+        fd.append("file", file, file.name);
+        if (dest) fd.append("path", dest);
+        const res = await api("POST", "/api/upload", fd, true);
+        okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
+        window.setTimeout(() => { location.assign("/upload"); }, 5000);
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    };
+
+    if (tokenEl.value) document.getElementById("btnCheck").click();
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/upload", response_class=HTMLResponse)
+def upload_page() -> str:
+    from app import upload_acl
+
+    upload_acl.ensure_example_acl()
+    return _UPLOAD_HTML
+
+
+@app.get("/api/upload/grant")
+def api_upload_grant(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    from app import upload_acl
+
+    token = _upload_token(authorization, None)
+    grant = upload_acl.find_grant_by_token(token)
+    if grant is None:
+        raise HTTPException(status_code=401, detail="Invalid upload token")
+    ip = upload_acl.client_ip(request.client.host if request.client else None)
+    if not upload_acl.grant_allows_ip(grant, ip):
+        raise HTTPException(
+            status_code=403,
+            detail=f"IP {ip} is not allowed for this grant",
+        )
+    return {
+        "id": grant.id,
+        "label": grant.label,
+        "paths": list(grant.paths),
+        "ips": list(grant.ips),
+        "client_ip": ip,
+        "ip_restricted": bool(grant.ips),
+    }
+
+
+@app.post("/api/upload")
+async def api_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    path: str | None = Form(None),
+    token: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    from app import upload_acl
+
+    auth_token = _upload_token(authorization, token)
+    grant = upload_acl.find_grant_by_token(auth_token)
+    if grant is None:
+        raise HTTPException(status_code=401, detail="Invalid upload token")
+    ip = upload_acl.client_ip(request.client.host if request.client else None)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    # Cap uploads at 32 MiB
+    if len(content) > 32 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
+    dest = (path or "").strip()
+    try:
+        return upload_acl.save_upload(
+            grant=grant,
+            ip=ip,
+            rel_path=dest,
+            content=content,
+            filename=file.filename,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _upload_token(authorization: str | None, form_token: str | None) -> str:
+    if form_token and form_token.strip():
+        return form_token.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return ""
 
 
 def run() -> None:

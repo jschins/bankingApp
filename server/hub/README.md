@@ -16,6 +16,36 @@ Clients point at the hub via `server_url` in `client_config.json` (still plain H
 
 Run several clients on one machine with different `port` values (e.g. 8300 / 8301 / 8302). Start the hub on **8200** first.
 
+## Hub IP gate + scoped upload
+
+Config: `server/workspaces/upload_acl.json`
+
+```json
+{
+  "hub_ips": ["127.0.0.1", "100.87.15.71", "100.11.22.33"],
+  "grants": [
+    {
+      "id": "remote-jl",
+      "label": "JL laptop uploads",
+      "token": "long-random-secret",
+      "ips": ["100.11.22.33"],
+      "paths": [
+        "jl/some_person/data/downloaded_transactions.json"
+      ]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `hub_ips` | Full access to **all** of `:8200` (root, clients, admin). Others get 404 on `/`. `127.0.0.1` always included. Omit/`[]` = no hub-wide gate. |
+| `token` | Upload secret (`Bearer` / `?t=` / form). Use `""` for no secret (IP + path only). |
+| `ips` (per grant) | May use **`/upload` only** (not the root page). Need not be in `hub_ips`. |
+| `paths` | Exact paths or directory prefixes under the data root |
+
+Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>`).
+
 ## Add person wizard
 
 - UI: [http://127.0.0.1:8200/add-person](http://127.0.0.1:8200/add-person) (pass `?workspace=dkg`)

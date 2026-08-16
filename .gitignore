@@ -10,10 +10,9 @@ frontend/dist/
 single-docker/people/
 single-docker/dist/boekh_onedir/
 boekh-multiperson/boekhouding/
-lokaleBoekhouding/dkg/
-lokaleBoekhouding/jl/
+dkg/
+jl/
 centraleBoekhouding/boekhouding/
-server/workspaces/
 secret/
 data/
 

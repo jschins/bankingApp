@@ -1,10 +1,10 @@
-nstalleer node.js met
+installeer node.js met
 > winget install OpenJS.NodeJS.LTS
 installeer tsc met
 > npm install
-daarna hoort
->npm run build
-in frontend te werken
+daarna werkt
+> npm run build
+in frontend 
 
 voor python: installeer uv met
 > powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"

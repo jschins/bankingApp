@@ -550,14 +550,22 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
 def _session_body() -> dict[str, Any]:
     """Payload for hub session start / end / heartbeat."""
     cfg = load_config()
-    try:
-        hostname = socket.gethostname().strip() or None
-    except OSError:
-        hostname = None
+    hostname = (
+        os.environ.get("COMPUTERNAME", "").strip()
+        or os.environ.get("HOSTNAME", "").strip()
+    )
+    if not hostname:
+        try:
+            hostname = socket.gethostname().strip()
+        except OSError:
+            hostname = ""
+    # Prefer short name over FQDN.
+    if hostname:
+        hostname = hostname.split(".", 1)[0]
     return {
         "port": cfg.port,
         "author": cfg.author,
-        "hostname": hostname,
+        "hostname": hostname or None,
     }
 
 
