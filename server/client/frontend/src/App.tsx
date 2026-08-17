@@ -554,6 +554,12 @@ function MainApp({ brandName }: { brandName: string }) {
   }, [refreshStatus]);
 
   useEffect(() => {
+    const busy = refreshing || Boolean(fetchingShort);
+    document.documentElement.classList.toggle("refresh-busy", busy);
+    return () => document.documentElement.classList.remove("refresh-busy");
+  }, [refreshing, fetchingShort]);
+
+  useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
 

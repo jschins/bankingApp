@@ -12,6 +12,16 @@ body {
   margin: 0;
 }
 
+html.refresh-busy,
+html.refresh-busy body {
+  background: #e6e6e6;
+}
+
+html.refresh-busy .lock-shell,
+html.refresh-busy .lock-shell * {
+  background-color: #e6e6e6 !important;
+}
+
 .lock-shell {
   min-height: 100vh;
   height: 100vh;
