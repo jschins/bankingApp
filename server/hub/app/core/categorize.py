@@ -679,20 +679,29 @@ def build_category_totals(
     return {name: _amount_str(cents) for name, cents in totals.items()}
 
 
-def _write_category_totals(merged: dict[str, Any], general: dict[str, list[str]]) -> dict[str, str]:
-    totals = build_category_totals(merged, list(general.keys()))
+def _totals_payload_with_balances(categories: dict[str, str]) -> dict[str, Any]:
+    """Bank balances when available; otherwise keep existing account_balances (Excel files)."""
+    existing = _load_json_object(paths.CATEGORY_TOTALS_PATH)
+    existing_accounts = existing.get("account_balances")
     try:
         from app.core.single_client import current_balance_payload, ensure_consent_credit_card_labels
 
         ensure_consent_credit_card_labels()
-
-        payload = {
-            "categories": totals,
-            **current_balance_payload(),
-        }
+        bank = current_balance_payload()
+        accounts = bank.get("account_balances")
+        if isinstance(accounts, list) and accounts:
+            return {"categories": categories, **bank}
     except Exception:
-        payload = {"categories": totals}
-    _write_json(paths.CATEGORY_TOTALS_PATH, payload)
+        pass
+    payload: dict[str, Any] = {"categories": categories}
+    if isinstance(existing_accounts, list) and existing_accounts:
+        payload["account_balances"] = existing_accounts
+    return payload
+
+
+def _write_category_totals(merged: dict[str, Any], general: dict[str, list[str]]) -> dict[str, str]:
+    totals = build_category_totals(merged, list(general.keys()))
+    _write_json(paths.CATEGORY_TOTALS_PATH, _totals_payload_with_balances(totals))
     return totals
 
 
@@ -704,14 +713,7 @@ def refresh_category_totals_balances() -> dict[str, str]:
         general = _category_map(_read_json(paths.CATEGORIES_PATH))
         merged = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
         categories = build_category_totals(merged, list(general.keys()))
-    try:
-        from app.core.single_client import current_balance_payload, ensure_consent_credit_card_labels
-
-        ensure_consent_credit_card_labels()
-        payload = {"categories": categories, **current_balance_payload()}
-    except Exception:
-        payload = {"categories": categories}
-    _write_json(paths.CATEGORY_TOTALS_PATH, payload)
+    _write_json(paths.CATEGORY_TOTALS_PATH, _totals_payload_with_balances(categories))
     return {str(name): str(amount) for name, amount in categories.items()}
 
 

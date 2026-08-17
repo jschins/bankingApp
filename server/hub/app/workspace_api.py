@@ -407,10 +407,6 @@ def refresh(
     from app.matrix import refresh_all
 
     with _workspace_scope(workspace) as ws:
-        if not _has_secrets(ws):
-            raise PermissionError(
-                "Bank refresh requires secrets under workspaces/<ws>/<person>/secret/."
-            )
         result = refresh_all(date_from=date_from, date_to=date_to)
         inputs = _ingest_person_data_files(ws)
 
@@ -442,10 +438,6 @@ def refresh_person(
     from app.people import get_person
 
     with _workspace_scope(workspace) as ws:
-        if not _has_secrets(ws):
-            raise PermissionError(
-                "Bank refresh requires secrets under workspaces/<ws>/<person>/secret/."
-            )
         pack = get_person(short)
         result = matrix_refresh_person(
             short,

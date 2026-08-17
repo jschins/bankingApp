@@ -31,6 +31,10 @@ const CHANNEL = "boekhouding";
 const REFRESH_STATUS_KEY = "boekhouding-refresh-status";
 const BANK_SALDO_CATEGORY = "banksaldo";
 
+function categoryLabel(category: string): string {
+  return category === BANK_SALDO_CATEGORY ? "Banksaldo" : category;
+}
+
 type HeaderAction = {
   id: string;
   label: string;
@@ -1137,9 +1141,9 @@ function MatrixTable({
         {categories.map((cat) => (
           <tr
             key={cat}
-            className={selection?.category === cat ? "active" : ""}
+            className={`${selection?.category === cat ? "active" : ""}${cat === BANK_SALDO_CATEGORY ? " banksaldo-row" : ""}`}
           >
-            <td className="cat">{cat}</td>
+            <td className="cat">{categoryLabel(cat)}</td>
             {people.map((p) => {
               const amount = cells[cat]?.[p.short] ?? "";
               const isActive =
@@ -1184,8 +1188,11 @@ function PersonColumnTable({
       </thead>
       <tbody>
         {categories.map((cat) => (
-          <tr key={cat} className={cat === selectedCategory ? "active" : ""}>
-            <td className="cat">{cat}</td>
+          <tr
+            key={cat}
+            className={`${cat === selectedCategory ? "active" : ""}${cat === BANK_SALDO_CATEGORY ? " banksaldo-row" : ""}`}
+          >
+            <td className="cat">{categoryLabel(cat)}</td>
             {(() => {
               const amount = cells[cat]?.[personShort] ?? "";
               const clickable = cat !== BANK_SALDO_CATEGORY && amount !== "";

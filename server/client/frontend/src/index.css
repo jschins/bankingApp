@@ -545,6 +545,10 @@ th {
   font-size: 0.7rem;
 }
 
+.totals-table tr.banksaldo-row td {
+  font-weight: 700;
+}
+
 .p-panel {
   min-width: min-content;
 }

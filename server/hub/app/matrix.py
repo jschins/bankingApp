@@ -148,22 +148,141 @@ def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
         else:
             to_run = packs
         for pack in to_run:
+            if not pack.has_secret_folder:
+                continue
             with bind_person(pack):
                 recategorize_transactions()
         return build_matrix(packs)
+
+
+def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
+    from app.core.excel_import import import_person_excel
+    from app.paths import shared_categories_path
+
+    info = import_person_excel(data_dir=pack.data_dir, categories_path=shared_categories_path())
+    return {
+        "short": pack.short,
+        "folder": pack.folder_name,
+        "skipped": False,
+        "source": "excel",
+        "transaction_count": info.get("transaction_count", 0),
+        "files": info.get("files") or [],
+        "new_files": info.get("new_files") or [],
+        "balance_updated": bool(info.get("balance_updated")),
+        "balance": info.get("balance"),
+    }
+
+
+def _bank_refresh_one(
+    pack: PersonPack,
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    new_year: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    from app.core.categorize import process_transactions
+    from app.core.single_client import (
+        fetch_transactions,
+        get_authorization_url,
+        needs_consent_renewal,
+    )
+    from app.runtime import active_workspace
+
+    warnings: list[str] = []
+    if needs_consent_renewal():
+        auth_url: str | None = None
+        try:
+            auth_url = get_authorization_url(
+                workspace=active_workspace(),
+                person_short=pack.short,
+                folder=pack.folder_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(
+                f"{pack.short} ({pack.folder_name}): "
+                f"consent renewal required — could not get authorization URL ({exc})"
+            )
+        else:
+            warnings.append(
+                f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
+            )
+        return (
+            {
+                "short": pack.short,
+                "folder": pack.folder_name,
+                "skipped": True,
+                "reason": "needs_consent_renewal",
+                "authorization_url": auth_url,
+            },
+            warnings,
+        )
+
+    fetched = fetch_transactions(date_from=date_from, date_to=date_to)
+    process_transactions(fetched.transactions, new_year=bool(new_year))
+    if fetched.warnings:
+        for w in fetched.warnings:
+            warnings.append(f"{pack.short}: {w}")
+    if fetched.account_errors:
+        for err in fetched.account_errors:
+            warnings.append(f"{pack.short}: {err}")
+    result: dict[str, Any] = {
+        "short": pack.short,
+        "folder": pack.folder_name,
+        "skipped": False,
+        "source": "bank",
+        "transaction_count": len(fetched.transactions),
+        "date_from": fetched.date_from,
+        "date_to": fetched.date_to,
+        "warnings": fetched.warnings,
+        "account_errors": fetched.account_errors,
+    }
+    if new_year:
+        result["new_year"] = True
+    return result, warnings
+
+
+def _refresh_one_person(
+    pack: PersonPack,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    new_year: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    from app.core.single_client import EnableBankingError
+
+    try:
+        if pack.has_secret_folder:
+            return _bank_refresh_one(
+                pack, date_from=date_from, date_to=date_to, new_year=new_year
+            )
+        return _excel_refresh_result(pack), []
+    except EnableBankingError as exc:
+        return (
+            {
+                "short": pack.short,
+                "folder": pack.folder_name,
+                "skipped": True,
+                "reason": str(exc),
+            },
+            [f"{pack.short} ({pack.folder_name}): {exc}"],
+        )
+    except Exception as exc:
+        return (
+            {
+                "short": pack.short,
+                "folder": pack.folder_name,
+                "skipped": True,
+                "reason": str(exc),
+            },
+            [f"{pack.short} ({pack.folder_name}): {exc}"],
+        )
 
 
 def refresh_all(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch bank data for every person that does not need consent renewal."""
-    from app.core.categorize import process_transactions
-    from app.core.single_client import (
-        EnableBankingError,
-        fetch_transactions,
-        needs_consent_renewal,
-    )
+    """Bank fetch for secret packs; Excel conversion for everyone else."""
     from app.paths import CALC_LOCK
 
     with CALC_LOCK:
@@ -173,78 +292,11 @@ def refresh_all(
 
         for pack in packs:
             with bind_person(pack):
-                try:
-                    if needs_consent_renewal():
-                        from app.core.single_client import get_authorization_url
-                        from app.runtime import active_workspace
-
-                        auth_url: str | None = None
-                        try:
-                            auth_url = get_authorization_url(
-                                workspace=active_workspace(),
-                                person_short=pack.short,
-                                folder=pack.folder_name,
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            warnings.append(
-                                f"{pack.short} ({pack.folder_name}): "
-                                f"consent renewal required — could not get authorization URL ({exc})"
-                            )
-                        else:
-                            warnings.append(
-                                f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
-                            )
-                        results.append(
-                            {
-                                "short": pack.short,
-                                "folder": pack.folder_name,
-                                "skipped": True,
-                                "reason": "needs_consent_renewal",
-                                "authorization_url": auth_url,
-                            }
-                        )
-                        continue
-                    fetched = fetch_transactions(date_from=date_from, date_to=date_to)
-                    totals = process_transactions(fetched.transactions, new_year=False)
-                    results.append(
-                        {
-                            "short": pack.short,
-                            "folder": pack.folder_name,
-                            "skipped": False,
-                            "transaction_count": len(fetched.transactions),
-                            "date_from": fetched.date_from,
-                            "date_to": fetched.date_to,
-                            "warnings": fetched.warnings,
-                            "account_errors": fetched.account_errors,
-                        }
-                    )
-                    if fetched.warnings:
-                        for w in fetched.warnings:
-                            warnings.append(f"{pack.short}: {w}")
-                    if fetched.account_errors:
-                        for err in fetched.account_errors:
-                            warnings.append(f"{pack.short}: {err}")
-                    _ = totals
-                except EnableBankingError as exc:
-                    warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                    results.append(
-                        {
-                            "short": pack.short,
-                            "folder": pack.folder_name,
-                            "skipped": True,
-                            "reason": str(exc),
-                        }
-                    )
-                except Exception as exc:
-                    warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                    results.append(
-                        {
-                            "short": pack.short,
-                            "folder": pack.folder_name,
-                            "skipped": True,
-                            "reason": str(exc),
-                        }
-                    )
+                result, extra = _refresh_one_person(
+                    pack, date_from=date_from, date_to=date_to, new_year=False
+                )
+                results.append(result)
+                warnings.extend(extra)
 
         matrix = build_matrix(packs)
         return {"matrix": matrix, "results": results, "warnings": warnings}
@@ -257,16 +309,8 @@ def refresh_person(
     date_to: str | None = None,
     new_year: bool = False,
 ) -> dict[str, Any]:
-    """Fetch bank data for one person; optional new-year overwrite for that person only."""
-    from app.core.categorize import process_transactions
-    from app.core.single_client import (
-        EnableBankingError,
-        fetch_transactions,
-        get_authorization_url,
-        needs_consent_renewal,
-    )
+    """Refresh one person (bank fetch or Excel conversion)."""
     from app.paths import CALC_LOCK
-    from app.runtime import active_workspace
 
     with CALC_LOCK:
         packs = refresh_people()
@@ -275,75 +319,11 @@ def refresh_person(
         results: list[dict[str, Any]] = []
 
         with bind_person(pack):
-            try:
-                if needs_consent_renewal():
-                    auth_url: str | None = None
-                    try:
-                        auth_url = get_authorization_url(
-                            workspace=active_workspace(),
-                            person_short=pack.short,
-                            folder=pack.folder_name,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        warnings.append(
-                            f"{pack.short} ({pack.folder_name}): "
-                            f"consent renewal required — could not get authorization URL ({exc})"
-                        )
-                    else:
-                        warnings.append(
-                            f"{pack.short} ({pack.folder_name}): consent renewal required — skipped"
-                        )
-                    results.append(
-                        {
-                            "short": pack.short,
-                            "folder": pack.folder_name,
-                            "skipped": True,
-                            "reason": "needs_consent_renewal",
-                            "authorization_url": auth_url,
-                        }
-                    )
-                else:
-                    fetched = fetch_transactions(date_from=date_from, date_to=date_to)
-                    process_transactions(fetched.transactions, new_year=bool(new_year))
-                    results.append(
-                        {
-                            "short": pack.short,
-                            "folder": pack.folder_name,
-                            "skipped": False,
-                            "transaction_count": len(fetched.transactions),
-                            "date_from": fetched.date_from,
-                            "date_to": fetched.date_to,
-                            "warnings": fetched.warnings,
-                            "account_errors": fetched.account_errors,
-                            "new_year": bool(new_year),
-                        }
-                    )
-                    if fetched.warnings:
-                        for w in fetched.warnings:
-                            warnings.append(f"{pack.short}: {w}")
-                    if fetched.account_errors:
-                        for err in fetched.account_errors:
-                            warnings.append(f"{pack.short}: {err}")
-            except EnableBankingError as exc:
-                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                results.append(
-                    {
-                        "short": pack.short,
-                        "folder": pack.folder_name,
-                        "skipped": True,
-                        "reason": str(exc),
-                    }
-                )
-            except Exception as exc:
-                warnings.append(f"{pack.short} ({pack.folder_name}): {exc}")
-                results.append(
-                    {
-                        "short": pack.short,
-                        "folder": pack.folder_name,
-                        "skipped": True,
-                        "reason": str(exc),
-                    }
-                )
+            result, extra = _refresh_one_person(
+                pack, date_from=date_from, date_to=date_to, new_year=new_year
+            )
+            results.append(result)
+            warnings.extend(extra)
 
         matrix = build_matrix(packs)
         return {"matrix": matrix, "results": results, "warnings": warnings}

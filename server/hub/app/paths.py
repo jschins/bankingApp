@@ -51,6 +51,10 @@ class PersonPack:
     def totals_path(self) -> Path:
         return self.data_dir / "category_totals.json"
 
+    @property
+    def has_secret_folder(self) -> bool:
+        return self.secret_dir.is_dir()
+
 
 def shared_categories_path(root: Path | None = None) -> Path:
     """Shared ``categories.json`` at the hub data root (all workspaces)."""
