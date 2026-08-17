@@ -14,12 +14,17 @@ body {
 
 html.refresh-busy,
 html.refresh-busy body {
-  background: #e6e6e6;
+  cursor: wait;
 }
 
-html.refresh-busy .lock-shell,
-html.refresh-busy .lock-shell * {
-  background-color: #e6e6e6 !important;
+html.refresh-busy body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: #e6e6e6;
+  cursor: wait;
+  pointer-events: auto;
 }
 
 .lock-shell {

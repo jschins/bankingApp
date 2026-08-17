@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   ackCentralWinsRefusal,
   addCategoryTerm,
@@ -85,6 +86,47 @@ function clearStoredRefreshStatus(): void {
   } catch {
     /* ignore */
   }
+}
+
+const REFRESH_BUSY_EVENTS = ["keydown", "keyup", "keypress", "contextmenu"] as const;
+const refreshBusyListenerOpts: AddEventListenerOptions = { capture: true };
+let refreshBusyBlock: ((e: Event) => void) | null = null;
+
+function blockRefreshBusyEvent(e: Event): void {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function beginRefreshBusy(): void {
+  document.documentElement.classList.add("refresh-busy");
+  if (refreshBusyBlock) return;
+  refreshBusyBlock = blockRefreshBusyEvent;
+  for (const type of REFRESH_BUSY_EVENTS) {
+    window.addEventListener(type, blockRefreshBusyEvent, refreshBusyListenerOpts);
+  }
+  window.addEventListener("wheel", blockRefreshBusyEvent, { capture: true, passive: false });
+}
+
+function endRefreshBusy(): void {
+  document.documentElement.classList.remove("refresh-busy");
+  if (!refreshBusyBlock) return;
+  refreshBusyBlock = null;
+  for (const type of REFRESH_BUSY_EVENTS) {
+    window.removeEventListener(type, blockRefreshBusyEvent, refreshBusyListenerOpts);
+  }
+  window.removeEventListener("wheel", blockRefreshBusyEvent, refreshBusyListenerOpts);
+}
+
+function afterPaint(fn: () => void): () => void {
+  let cancelled = false;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!cancelled) fn();
+    });
+  });
+  return () => {
+    cancelled = true;
+  };
 }
 
 type CellSelection = { short: string; category: string };
@@ -554,14 +596,12 @@ function MainApp({ brandName }: { brandName: string }) {
   }, [refreshStatus]);
 
   useEffect(() => {
-    const busy = refreshing || Boolean(fetchingShort);
-    document.documentElement.classList.toggle("refresh-busy", busy);
-    return () => document.documentElement.classList.remove("refresh-busy");
-  }, [refreshing, fetchingShort]);
-
-  useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  useEffect(() => {
+    return () => endRefreshBusy();
+  }, []);
 
   function markDirty() {
     dirtyRef.current = true;
@@ -723,61 +763,79 @@ function MainApp({ brandName }: { brandName: string }) {
   }, []);
 
   function doRefresh() {
-    setRefreshing(true);
-    setError(null);
-    setRefreshStatus(null);
+    if (refreshing || fetchingShort) return;
+    beginRefreshBusy();
+    flushSync(() => {
+      setRefreshing(true);
+      setError(null);
+      setRefreshStatus(null);
+      setPersonNewYear({});
+      setConsentReady({});
+    });
     clearStoredRefreshStatus();
-    setPersonNewYear({});
-    setConsentReady({});
-    refreshAll({
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-    })
-      .then((res) => {
-        setMatrix(res.matrix);
-        const payload: StoredRefreshStatus = {
-          results: res.results || [],
-          warnings: res.warnings || [],
-        };
-        saveStoredRefreshStatus(payload);
-        setRefreshStatus(payload);
-        setSelection(null);
-        setDetail(null);
+    afterPaint(() => {
+      refreshAll({
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setRefreshing(false));
+        .then((res) => {
+          setMatrix(res.matrix);
+          const payload: StoredRefreshStatus = {
+            results: res.results || [],
+            warnings: res.warnings || [],
+          };
+          saveStoredRefreshStatus(payload);
+          setRefreshStatus(payload);
+          setSelection(null);
+          setDetail(null);
+        })
+        .catch((e: Error) => setError(e.message))
+        .finally(() => {
+          setRefreshing(false);
+          endRefreshBusy();
+        });
+    });
   }
 
   function doRefreshPerson(short: string) {
-    setFetchingShort(short);
-    setError(null);
-    refreshPerson(short, {
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-      new_year: Boolean(personNewYear[short]),
-    })
-      .then((res) => {
-        setMatrix(res.matrix);
-        const nextResult = (res.results || [])[0];
-        const prev = refreshStatus || { results: [], warnings: [] };
-        const results = nextResult
-          ? [
-              ...prev.results.filter((r) => r.short !== short),
-              nextResult,
-            ]
-          : prev.results.filter((r) => r.short !== short);
-        const warnings = [
-          ...prev.warnings.filter((w) => !w.startsWith(`${short}:`) && !w.startsWith(`${short} (`)),
-          ...(res.warnings || []),
-        ];
-        const payload: StoredRefreshStatus = { results, warnings };
-        saveStoredRefreshStatus(payload);
-        setRefreshStatus(payload);
-        setSelection(null);
-        setDetail(null);
+    if (refreshing || fetchingShort) return;
+    beginRefreshBusy();
+    flushSync(() => {
+      setFetchingShort(short);
+      setError(null);
+    });
+    afterPaint(() => {
+      refreshPerson(short, {
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        new_year: Boolean(personNewYear[short]),
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setFetchingShort(null));
+        .then((res) => {
+          setMatrix(res.matrix);
+          const nextResult = (res.results || [])[0];
+          const prev = refreshStatus || { results: [], warnings: [] };
+          const results = nextResult
+            ? [
+                ...prev.results.filter((r) => r.short !== short),
+                nextResult,
+              ]
+            : prev.results.filter((r) => r.short !== short);
+          const warnings = [
+            ...prev.warnings.filter((w) => !w.startsWith(`${short}:`) && !w.startsWith(`${short} (`)),
+            ...(res.warnings || []),
+          ];
+          const payload: StoredRefreshStatus = { results, warnings };
+          saveStoredRefreshStatus(payload);
+          setRefreshStatus(payload);
+          setSelection(null);
+          setDetail(null);
+        })
+        .catch((e: Error) => setError(e.message))
+        .finally(() => {
+          setFetchingShort(null);
+          endRefreshBusy();
+        });
+    });
   }
 
   const awaitingPostConsentFetch = (refreshStatus?.results || []).some(
