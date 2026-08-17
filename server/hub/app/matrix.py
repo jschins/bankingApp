@@ -67,15 +67,31 @@ def person_totals(pack: PersonPack) -> dict[str, str]:
 
 
 def person_current_balance(pack: PersonPack) -> str | None:
-    """``current_balance`` from category_totals.json, or None if absent."""
+    """Sum of ``account_balances`` in category_totals.json, or None if absent."""
     from app.core.categorize import _load_json_object
     import app.paths as paths
 
     with bind_person(pack):
         data = _load_json_object(paths.CATEGORY_TOTALS_PATH)
-    raw = data.get("current_balance")
-    text = str(raw).strip() if raw is not None else ""
-    return text or None
+    accounts = data.get("account_balances")
+    if not isinstance(accounts, list) or not accounts:
+        return None
+    cents = 0
+    found = False
+    for acc in accounts:
+        if not isinstance(acc, dict):
+            continue
+        text = str(acc.get("balance") or "").strip()
+        if not text:
+            continue
+        try:
+            cents += round(float(text) * 100)
+        except ValueError:
+            continue
+        found = True
+    if not found:
+        return None
+    return f"{cents / 100:.2f}"
 
 
 def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:

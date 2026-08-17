@@ -592,61 +592,23 @@ def _balance_to_cents(value: Any) -> int | None:
 
 
 def current_balance_payload() -> dict[str, Any]:
-    """Aggregate enabled active account balances for exports/status output."""
-    by_currency: dict[str, int] = {}
+    """Account balances for category_totals.json (no duplicate current_balance fields)."""
     account_balances: list[dict[str, str]] = []
     for acc in list_bank_accounts().get("accounts", []):
         if not isinstance(acc, dict):
             continue
         if not bool(acc.get("active")) or not bool(acc.get("enabled")):
             continue
-        account_entry = {
-            "uid": str(acc.get("uid") or ""),
-            "iban": str(acc.get("iban") or ""),
-            "name": str(acc.get("name") or ""),
-            "currency": str(acc.get("balance_currency") or acc.get("currency") or "").strip().upper(),
-            "balance": str(acc.get("balance") or "").strip(),
-        }
-        account_balances.append(account_entry)
-        cents = _balance_to_cents(acc.get("balance"))
-        if cents is None:
-            continue
-        currency = str(acc.get("balance_currency") or acc.get("currency") or "").strip().upper()
-        if not currency:
-            currency = "EUR"
-        by_currency[currency] = by_currency.get(currency, 0) + cents
-
-    balance_by_currency = {
-        currency: f"{cents / 100:.2f}" for currency, cents in sorted(by_currency.items())
-    }
-    if len(balance_by_currency) == 1:
-        currency, amount = next(iter(balance_by_currency.items()))
-        return {
-            "current_balance": amount,
-            "current_balance_currency": currency,
-            "current_balance_by_currency": balance_by_currency,
-            "account_balances": account_balances,
-        }
-    if not balance_by_currency:
-        fallback_currency = "EUR"
-        for acc in list_bank_accounts().get("accounts", []):
-            if not isinstance(acc, dict):
-                continue
-            if bool(acc.get("active")) and bool(acc.get("enabled")):
-                fallback_currency = str(acc.get("currency") or "EUR").upper() or "EUR"
-                break
-        return {
-            "current_balance": "0.00",
-            "current_balance_currency": fallback_currency,
-            "current_balance_by_currency": {},
-            "account_balances": account_balances,
-        }
-    return {
-        "current_balance": "",
-        "current_balance_currency": "",
-        "current_balance_by_currency": balance_by_currency,
-        "account_balances": account_balances,
-    }
+        account_balances.append(
+            {
+                "uid": str(acc.get("uid") or ""),
+                "iban": str(acc.get("iban") or ""),
+                "name": str(acc.get("name") or ""),
+                "currency": str(acc.get("balance_currency") or acc.get("currency") or "").strip().upper(),
+                "balance": str(acc.get("balance") or "").strip(),
+            }
+        )
+    return {"account_balances": account_balances}
 
 
 def set_enabled_account_uids(uids: list[str]) -> dict[str, Any]:
