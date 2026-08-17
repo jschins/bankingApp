@@ -160,3 +160,90 @@ After you sign in on the remote laptop with the same Tailscale account / tailnet
 The device shows up automatically in the Tailscale admin console (and often in the Tailscale app’s machine list).
 On the hub machine you don’t have to click anything special — if both are online on the same tailnet, they can reach each other.
 Only if your tailnet has device approval / key expiry policies enabled, a new machine stays pending until you Approve it once in the admin console (not inside a special “server Tailscale” UI). Check Machines there if the remote laptop can’t ping 100.87.15.71.
+
+
+
+
+| Method          | What it finds                                    |
+| --------------- | ------------------------------------------------ |
+| `nmap`          | DNS hostname, if available                       |
+| `ping -a`       | Windows name resolution, often NetBIOS/LLMNR/DNS |
+| `nbtstat -A IP` | NetBIOS computer name, if NetBIOS is enabled     |
+
+
+===========================================================
+
+for ($n = 1; $n -le 254; $n++) {
+    $ip = "192.168.1.$n"
+
+    $reply = ping.exe -n 1 -w 100 $ip 2>$null
+
+    if ($reply -match "Reply from") {
+        $nameReply = ping.exe -a -n 1 -w 100 $ip 2>$null |
+                     Select-String '^Pinging' |
+                     Select-Object -First 1
+
+        if ($nameReply -match 'Pinging\s+(.+?)\s+\[') {
+            "$ip`t$($matches[1])"
+        }
+        else {
+            "$ip`t$nameReply"
+        }
+    }
+    else {
+        "$ip`tnoreply"
+    }
+}
+
+
+========================================================================
+
+
+
+for ($n = 40; $n -le 254; $n++) {
+    $ip = "192.168.1.$n"
+
+    $reply = ping.exe -n 1 -w 100 $ip 2>$null
+
+    if ($reply -match "Reply from") {
+        $nameReply = ping.exe -a -n 1 -w 100 $ip 2>$null |
+                     Select-String '^Pinging' |
+                     Select-Object -First 1
+
+        if ($nameReply -match 'Pinging\s+(.+?)\s+\[') {
+            "$ip`t$($matches[1])"
+        }
+        else {
+            "$ip"
+        }
+    }
+
+}
+
+
+
+
+=================================================
+
+
+$ips = @(
+"192.168.1.29","192.168.1.44","192.168.1.45","192.168.1.46",
+"192.168.1.47","192.168.1.48","192.168.1.53","192.168.1.58",
+"192.168.1.60","192.168.1.68","192.168.1.106","192.168.1.107",
+"192.168.1.111","192.168.1.122","192.168.1.150","192.168.1.159",
+"192.168.1.182","192.168.1.223","192.168.1.254"
+)
+
+foreach ($ip in $ips) {
+    $x = ping.exe -a -n 1 -w 300 $ip 2>$null
+    $line = $x | Select-String '^Pinging'
+
+    if ($line -match 'Pinging\s+(.+?)\s+\[') {
+        "$ip`t$($matches[1])"
+    }
+    else {
+        "$ip`t?"
+    }
+}
+
+

@@ -9,6 +9,8 @@ from app.paths import PersonPack, bind_person
 from app.people import get_person, list_people
 from app.settings import get_people, refresh_people
 
+BANK_SALDO_CATEGORY = "banksaldo"
+
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -64,6 +66,18 @@ def person_totals(pack: PersonPack) -> dict[str, str]:
         return totals
 
 
+def person_current_balance(pack: PersonPack) -> str | None:
+    """``current_balance`` from category_totals.json, or None if absent."""
+    from app.core.categorize import _load_json_object
+    import app.paths as paths
+
+    with bind_person(pack):
+        data = _load_json_object(paths.CATEGORY_TOTALS_PATH)
+    raw = data.get("current_balance")
+    text = str(raw).strip() if raw is not None else ""
+    return text or None
+
+
 def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
     from app.runtime import active_workspace
 
@@ -80,8 +94,22 @@ def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
             if name not in cells:
                 cells[name] = {p.short: "0.00" for p in packs}
                 cells[name][pack.short] = str(amount)
+    category_list = list(cells.keys()) if cells else list(categories)
+    balance_row: dict[str, str] = {}
+    has_balance = False
+    for pack in packs:
+        balance = person_current_balance(pack)
+        if balance is not None:
+            has_balance = True
+            balance_row[pack.short] = balance
+        else:
+            balance_row[pack.short] = ""
+    if has_balance:
+        cells[BANK_SALDO_CATEGORY] = balance_row
+        if BANK_SALDO_CATEGORY not in category_list:
+            category_list.append(BANK_SALDO_CATEGORY)
     payload: dict[str, Any] = {
-        "categories": list(cells.keys()) if cells else categories,
+        "categories": category_list,
         "people": columns,
         "cells": cells,
     }

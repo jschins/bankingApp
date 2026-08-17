@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   ackCentralWinsRefusal,
   addCategoryTerm,
@@ -29,6 +29,17 @@ import type {
 
 const CHANNEL = "boekhouding";
 const REFRESH_STATUS_KEY = "boekhouding-refresh-status";
+const BANK_SALDO_CATEGORY = "banksaldo";
+
+type HeaderAction = {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  href?: string;
+  onClick?: () => void;
+};
+
+const HeaderActionsContext = createContext<(items: HeaderAction[]) => void>(() => {});
 
 type StoredRefreshStatus = {
   results: RefreshPersonResult[];
@@ -147,6 +158,72 @@ function WorkspaceSwitcher({
   );
 }
 
+function ActionsMenu({ items }: { items: HeaderAction[] }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(ev: Event) {
+      if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="workspace-switcher actions-menu" ref={rootRef}>
+      <button
+        type="button"
+        className="workspace-switcher-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="workspace-switcher-chevron" aria-hidden>
+          ▾
+        </span>
+        <span className="workspace-switcher-label">Menu</span>
+      </button>
+      {open && (
+        <ul className="workspace-switcher-menu" role="menu">
+          {items.map((item) => (
+            <li key={item.id}>
+              {item.href ? (
+                <a
+                  role="menuitem"
+                  className="workspace-switcher-link"
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={item.disabled}
+                  onClick={() => {
+                    if (item.disabled) return;
+                    setOpen(false);
+                    item.onClick?.();
+                  }}
+                >
+                  {item.label}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function SyncNotifyShell({
   children,
   onWorkspaceChanged,
@@ -160,6 +237,7 @@ function SyncNotifyShell({
   const [notes, setNotes] = useState<SyncNotification[]>([]);
   const [switching, setSwitching] = useState(false);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
+  const [headerActions, setHeaderActions] = useState<HeaderAction[]>([]);
   const dataEpochRef = useRef<number | null>(null);
 
   const brandName = brandTitle(status);
@@ -246,9 +324,10 @@ function SyncNotifyShell({
       });
   }
 
-  const showBar = Boolean(status?.enabled) || isCentralAdmin;
+  const showBar = Boolean(status?.enabled) || isCentralAdmin || headerActions.length > 0;
 
   return (
+    <HeaderActionsContext.Provider value={setHeaderActions}>
     <div className="lock-shell">
       {showBar && (
         <div className="centrale-status-bar">
@@ -260,6 +339,7 @@ function SyncNotifyShell({
                 onSelect={handleSelect}
               />
             ) : null}
+            <ActionsMenu items={headerActions} />
             {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
             {status?.error ? <span> · sync error: {status.error}</span> : null}
           </div>
@@ -285,6 +365,7 @@ function SyncNotifyShell({
       )}
       {children(brandName)}
     </div>
+    </HeaderActionsContext.Provider>
   );
 }
 
@@ -550,6 +631,7 @@ function MainApp({ brandName }: { brandName: string }) {
   }, []);
 
   function selectCell(short: string, category: string) {
+    if (category === BANK_SALDO_CATEGORY) return;
     const sel = { short, category };
     setSelection(sel);
     setError(null);
@@ -695,6 +777,41 @@ function MainApp({ brandName }: { brandName: string }) {
       Boolean(consentReady[r.short])
   );
 
+  const setHeaderActions = useContext(HeaderActionsContext);
+  useEffect(() => {
+    const items: HeaderAction[] = [];
+    if (hasSecrets && !awaitingPostConsentFetch) {
+      items.push({
+        id: "refresh",
+        label: refreshing ? "Refreshing…" : "↻ Refresh all",
+        disabled: refreshing || Boolean(fetchingShort),
+        onClick: doRefresh,
+      });
+    }
+    if (canAddPerson && addPersonUrl) {
+      items.push({
+        id: "add-person",
+        label: "Add person",
+        href: addPersonUrl,
+      });
+    }
+    items.push({
+      id: "terms",
+      label: "⚙ Edit Terms (Alt+T)",
+      onClick: () => openView("terms"),
+    });
+    setHeaderActions(items);
+    return () => setHeaderActions([]);
+  }, [
+    hasSecrets,
+    awaitingPostConsentFetch,
+    refreshing,
+    fetchingShort,
+    canAddPerson,
+    addPersonUrl,
+    setHeaderActions,
+  ]);
+
   const inPView = selection !== null;
 
   return (
@@ -730,21 +847,6 @@ function MainApp({ brandName }: { brandName: string }) {
                   onChange={(e) => setDateTo(e.target.value)}
                 />
               </label>
-              {!awaitingPostConsentFetch ? (
-                <div className="sidebar-field">
-                  <span className="sidebar-field-legend" aria-hidden="true">
-                    {"\u00a0"}
-                  </span>
-                  <button
-                    type="button"
-                    className="sidebar-knob"
-                    onClick={doRefresh}
-                    disabled={refreshing || Boolean(fetchingShort)}
-                  >
-                    {refreshing ? "Refreshing…" : "↻ Refresh all"}
-                  </button>
-                </div>
-              ) : null}
               {refreshStatus && (
                 <div className="refresh-status">
                   {(refreshStatus.results || [])
@@ -866,37 +968,6 @@ function MainApp({ brandName }: { brandName: string }) {
               )}
             </>
           )}
-        </div>
-
-        <div className="winbar">
-          {canAddPerson && addPersonUrl ? (
-            <div className="sidebar-field">
-              <span className="sidebar-field-legend" aria-hidden="true">
-                {"\u00a0"}
-              </span>
-              <a
-                className="sidebar-knob"
-                href={addPersonUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Add person
-              </a>
-            </div>
-          ) : null}
-          <div className="sidebar-field">
-            <span className="sidebar-field-legend" aria-hidden="true">
-              {"\u00a0"}
-            </span>
-            <button
-              type="button"
-              className="sidebar-knob"
-              onClick={() => openView("terms")}
-              title="Open the terms window"
-            >
-              {"⚙ Edit Terms (Alt+T)"}
-            </button>
-          </div>
         </div>
 
         {inPView && matrix && (
@@ -1073,13 +1144,14 @@ function MatrixTable({
               const amount = cells[cat]?.[p.short] ?? "";
               const isActive =
                 selection?.short === p.short && selection?.category === cat;
+              const clickable = cat !== BANK_SALDO_CATEGORY && amount !== "";
               return (
                 <td
                   key={p.short}
-                  className={`num clickable${isActive ? " active-cell" : ""}`}
-                  onClick={() => onPick(p.short, cat)}
+                  className={`num${clickable ? " clickable" : ""}${isActive ? " active-cell" : ""}`}
+                  onClick={clickable ? () => onPick(p.short, cat) : undefined}
                 >
-                  €{amount}
+                  {amount === "" ? "" : `€${amount}`}
                 </td>
               );
             })}
@@ -1114,9 +1186,18 @@ function PersonColumnTable({
         {categories.map((cat) => (
           <tr key={cat} className={cat === selectedCategory ? "active" : ""}>
             <td className="cat">{cat}</td>
-            <td className="num clickable" onClick={() => onPick(cat)}>
-              €{cells[cat]?.[personShort] ?? ""}
-            </td>
+            {(() => {
+              const amount = cells[cat]?.[personShort] ?? "";
+              const clickable = cat !== BANK_SALDO_CATEGORY && amount !== "";
+              return (
+                <td
+                  className={`num${clickable ? " clickable" : ""}`}
+                  onClick={clickable ? () => onPick(cat) : undefined}
+                >
+                  {amount === "" ? "" : `€${amount}`}
+                </td>
+              );
+            })()}
           </tr>
         ))}
       </tbody>

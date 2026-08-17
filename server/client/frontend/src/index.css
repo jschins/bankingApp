@@ -104,8 +104,25 @@ body {
 }
 
 .workspace-switcher-menu button:hover,
-.workspace-switcher-menu button.is-selected {
+.workspace-switcher-menu button.is-selected,
+.workspace-switcher-menu a:hover {
   background: #eef6f8;
+}
+
+.workspace-switcher-menu button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.workspace-switcher-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
+  color: inherit;
+  text-decoration: none;
 }
 
 .workspace-switcher-busy {
