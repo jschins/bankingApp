@@ -198,9 +198,45 @@ def path_allowed(grant: UploadGrant, rel_path: str) -> bool:
             prefix = rule.rstrip("/")
             if target == prefix or target.startswith(prefix + "/"):
                 return True
+        elif _is_directory_rule(rule):
+            if target == rule or target.startswith(rule + "/"):
+                return True
         elif target == rule:
             return True
     return False
+
+
+def _is_directory_rule(rule: str) -> bool:
+    """Path rules without a file extension are treated as upload directories."""
+    name = Path(rule.rstrip("/")).name
+    return "." not in name
+
+
+def _directory_rules(grant: UploadGrant) -> list[str]:
+    dirs: list[str] = []
+    for rule in grant.paths:
+        if rule.endswith("/"):
+            dirs.append(rule.rstrip("/"))
+        elif _is_directory_rule(rule):
+            dirs.append(rule)
+    return dirs
+
+
+def list_grant_xlsx_files(grant: UploadGrant) -> list[str]:
+    """Basenames of ``*.xlsx`` already present under the grant's directory paths."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for directory in _directory_rules(grant):
+        folder = resolve_under_data_root(directory)
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.xlsx"), key=lambda p: p.name.lower()):
+            if not path.is_file() or path.name.startswith("~$"):
+                continue
+            if path.name not in seen:
+                seen.add(path.name)
+                names.append(path.name)
+    return names
 
 
 def resolve_under_data_root(rel_path: str) -> Path:
@@ -225,18 +261,21 @@ def save_upload(
     """Validate grant/IP/path and write into ``data_root``."""
     if not grant_allows_ip(grant, ip):
         raise PermissionError(f"IP {client_ip(ip)!r} is not allowed for grant {grant.id!r}")
-    # If only a filename was chosen in the browser, require an exact single-file rule
-    # or a destination path from the form.
+
+    safe_name = Path(filename or "").name if filename else ""
     dest = (rel_path or "").strip()
-    if not dest and filename:
-        # Map bare filename onto the sole exact file rule, if unique.
-        exact = [p for p in grant.paths if not p.endswith("/")]
-        if len(exact) == 1 and Path(exact[0]).name == Path(filename).name:
-            dest = exact[0]
-        else:
-            raise ValueError("destination path is required")
     if not dest:
-        raise ValueError("destination path is required")
+        if not safe_name:
+            raise ValueError("filename is required")
+        dirs = _directory_rules(grant)
+        if not dirs:
+            raise ValueError("grant has no upload directory")
+        if len(dirs) > 1:
+            raise ValueError("grant has multiple upload directories; specify path explicitly")
+        dest = f"{dirs[0]}/{safe_name}"
+    elif not Path(dest).name and safe_name:
+        dest = dest.rstrip("/") + "/" + safe_name
+
     if not path_allowed(grant, dest):
         raise PermissionError(f"Path {dest!r} is not allowed for grant {grant.id!r}")
 

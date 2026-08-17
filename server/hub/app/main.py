@@ -1214,7 +1214,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Upload data</h1>
-    <p class="lead">Authenticated upload into the hub data root. Your IP must match the grant, and the destination path must be on that grant’s allow-list.</p>
+    <p class="lead">Upload Excel files into your grant folder. Your IP must match the grant token in <code>upload_acl.json</code>.</p>
 
     <label>Upload token
       <input id="token" type="password" autocomplete="off" placeholder="from upload_acl.json"/>
@@ -1226,14 +1226,14 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     <div id="grantBox" class="panel">
       <h2 id="grantLabel"></h2>
       <div>Your IP: <code id="yourIp"></code></div>
-      <div>Allowed destinations:</div>
+      <div>Upload folder:</div>
       <ul id="pathList"></ul>
-      <label>Destination path (under data root)
-        <input id="dest" type="text" list="pathSuggestions" placeholder="jl/person/data/downloaded_transactions.json"/>
-        <datalist id="pathSuggestions"></datalist>
-      </label>
+      <div id="xlsxBox">
+        <div>Excel files already on the hub:</div>
+        <ul id="xlsxList"></ul>
+      </div>
       <label>File
-        <input id="file" type="file"/>
+        <input id="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>
       </label>
       <div class="actions">
         <button type="button" id="btnUpload" class="primary">Upload</button>
@@ -1277,20 +1277,25 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       document.getElementById("yourIp").textContent = g.client_ip || "?";
       const ul = document.getElementById("pathList");
       ul.replaceChildren();
-      const dl = document.getElementById("pathSuggestions");
-      dl.replaceChildren();
       for (const p of (g.paths || [])) {
         const li = document.createElement("li");
         li.innerHTML = "<code>" + p + "</code>";
         ul.appendChild(li);
-        if (!p.endsWith("/")) {
-          const opt = document.createElement("option");
-          opt.value = p;
-          dl.appendChild(opt);
+      }
+      const xlsxUl = document.getElementById("xlsxList");
+      xlsxUl.replaceChildren();
+      const files = g.xlsx_files || [];
+      if (files.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "(none yet)";
+        xlsxUl.appendChild(li);
+      } else {
+        for (const name of files) {
+          const li = document.createElement("li");
+          li.textContent = name;
+          xlsxUl.appendChild(li);
         }
       }
-      const exact = (g.paths || []).filter((p) => !p.endsWith("/"));
-      if (exact.length === 1) document.getElementById("dest").value = exact[0];
     }
 
     document.getElementById("btnCheck").onclick = async () => {
@@ -1299,7 +1304,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       try {
         const g = await api("GET", "/api/upload/grant");
         showGrant(g);
-        okEl.textContent = "Grant OK — choose a destination and file.";
+        okEl.textContent = "Grant OK — choose a file to upload.";
       } catch (e) {
         document.getElementById("grantBox").style.display = "none";
         errEl.textContent = String(e.message || e);
@@ -1312,11 +1317,9 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       const fileInput = document.getElementById("file");
       const file = fileInput.files && fileInput.files[0];
       if (!file) { errEl.textContent = "Choose a file."; return; }
-      const dest = (document.getElementById("dest").value || "").trim();
       try {
         const fd = new FormData();
         fd.append("file", file, file.name);
-        if (dest) fd.append("path", dest);
         const res = await api("POST", "/api/upload", fd, true);
         okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
         window.setTimeout(() => { location.assign("/upload"); }, 5000);
@@ -1364,6 +1367,7 @@ def api_upload_grant(
         "ips": list(grant.ips),
         "client_ip": ip,
         "ip_restricted": bool(grant.ips),
+        "xlsx_files": upload_acl.list_grant_xlsx_files(grant),
     }
 
 

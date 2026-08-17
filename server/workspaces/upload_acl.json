@@ -26,15 +26,27 @@
     {
       "id": "rb",
       "label": "Rafael Bidarra",
-      "token": "",
+      "token": "rb_token",
       "ips": [
-        "192.168.1.58",
         "192.168.1.111",
         "192.168.1.188",
         "192.168.1.48"
       ],
       "paths": [
-        "dkg/rafael_bidarra/data/uploaded.json"
+        "dkg/rafael_bidarra/data"
+      ]
+    },
+  {
+      "id": "mp",
+      "label": "Miguel Angel Palacios",
+      "token": "mp_token",
+      "ips": [
+        "192.168.1.111",
+        "192.168.1.188",
+        "192.168.1.48"
+      ],
+      "paths": [
+        "dkg/miguelangel_palacios/data"
       ]
     }
   ]
