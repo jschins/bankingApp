@@ -767,7 +767,7 @@ def recategorize_transactions() -> dict[str, str]:
     a ``category`` overlay that matches the newly calculated value is dropped.
     """
     general = _category_map(_read_json(paths.CATEGORIES_PATH))
-    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     data = _load_json_object(paths.CATEGORIZED_TRANSACTIONS_PATH)
     data = _migrate_categorized_store(data)
     mods_by_id = _modifications_by_id(data)
@@ -917,7 +917,7 @@ def format_transaction_amount(transaction: dict[str, Any]) -> str:
 def terms_for_category(category_name: str) -> list[str]:
     """General + personal keyword terms for a category display name."""
     general = _category_map(_read_json(paths.CATEGORIES_PATH))
-    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     return [*general.get(category_name, []), *personal.get(category_name, [])]
 
 
@@ -1026,7 +1026,7 @@ def remove_category_term(category_name: str, term: str) -> list[str]:
 def category_terms_table(extra_rows: int = 0) -> tuple[list[tuple[str, str]], list[list[str]]]:
     """Column (name, key) pairs and term rows for the keywords overview table."""
     general = _category_map(_read_json(paths.CATEGORIES_PATH))
-    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     category_names = list(general.keys())
     terms_by_category = {
         name: [*general.get(name, []), *personal.get(name, [])] for name in category_names
@@ -1197,7 +1197,7 @@ def process_transactions(raw_transactions: list[dict[str, Any]], new_year: bool)
     replace the file with only this fetch (no merge, no modifications).
     """
     general = _category_map(_read_json(paths.CATEGORIES_PATH))
-    personal = _category_map(_read_json(paths.PERSONAL_CATEGORIES_PATH))
+    personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))
     new_records = _simplify_and_categorize(raw_transactions, general, personal)
 
     if new_year:
