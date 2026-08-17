@@ -45,8 +45,32 @@ def _has_secrets(workspace: str) -> bool:
     return False
 
 
-def _people_payload(people: list[Any]) -> list[dict[str, str]]:
-    return [{"short": p.short, "folder": p.folder_name} for p in people]
+def _people_payload(people: list[Any]) -> list[dict[str, Any]]:
+    """People payload shared by `/capabilities` and `/settings`.
+
+    `organizable` is derived from the presence of `data/personal_categories.json`.
+    When missing, display can still work, but term editing / organization should be disabled.
+    """
+    out: list[dict[str, Any]] = []
+    for p in people:
+        organizable = False
+        personal_categories_path = getattr(p, "personal_categories_path", None)
+        try:
+            organizable = bool(
+                personal_categories_path is not None
+                and hasattr(personal_categories_path, "is_file")
+                and personal_categories_path.is_file()
+            )
+        except Exception:  # noqa: BLE001
+            organizable = False
+        out.append(
+            {
+                "short": p.short,
+                "folder": p.folder_name,
+                "organizable": organizable,
+            }
+        )
+    return out
 
 
 def _with_person(rows: list[dict[str, Any]], short: str) -> list[dict[str, Any]]:
@@ -190,9 +214,14 @@ def settings(workspace: str) -> dict[str, Any]:
         remainder = ""
         for pack in people_list:
             with bind_person(pack):
-                personal[pack.short] = _category_map(
-                    _load_json_object(pack.personal_categories_path)
-                )
+                # `personal_categories.json` is only needed for organizing (term edits).
+                # If missing, keep the personal panel empty and let the UI disable editing.
+                if pack.personal_categories_path.is_file():
+                    personal[pack.short] = _category_map(
+                        _load_json_object(pack.personal_categories_path)
+                    )
+                else:
+                    personal[pack.short] = {}
                 if not typerules:
                     typerules = type_rules_payload()
                 if not codes:
@@ -236,6 +265,12 @@ def update_settings(
             cleaned = save_personal_terms(pack.short, category_name, terms)
             rel = f"{pack.folder_name}/data/{store.PERSONAL_CATEGORIES}"
             path = store.resolve_file_path(ws, rel)
+            # If the file doesn't exist, we treat organizing as unavailable.
+            # The frontend uses `organizable` and should not attempt edits in this case.
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Missing {rel!r}; organizing disabled for {pack.short!r}"
+                )
             content = json.loads(path.read_text(encoding="utf-8"))
             recalc_all = False
             pack_short = pack.short

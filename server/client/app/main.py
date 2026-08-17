@@ -1,7 +1,10 @@
 """Thin BFF: frontend + proxy to hub domain APIs (no local workspace copies)."""
 from __future__ import annotations
 
+import json
+import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -80,6 +83,117 @@ def _source() -> str:
     from app.centrale_sync import _push_source
 
     return _push_source()
+
+
+def _category_code_from_name(category_name: str) -> int | None:
+    match = re.match(r"^\s*(\d{1,2})", str(category_name))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _valid_category_codes_from_categories_json(path: Path) -> list[int]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    cats = payload.get("categories") if isinstance(payload, dict) else None
+    if not isinstance(cats, dict):
+        return []
+    codes: set[int] = set()
+    for name in cats.keys():
+        code = _category_code_from_name(str(name))
+        if code is not None:
+            codes.add(code)
+    return sorted(codes)
+
+
+def _workspace_data_roots(workspace: str) -> list[Path]:
+    from app.runtime import project_root, server_root
+
+    ws = workspace.strip()
+    if not ws:
+        return []
+    roots = [
+        server_root() / "workspaces" / ws,         # normal dev layout
+        project_root().parents[1] / "workspaces" / ws,  # extra safety in dev
+        server_root() / ws,                        # when client exe sits in workspaces/
+    ]
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for root in roots:
+        key = str(root.resolve()) if root.exists() else str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(root)
+    return unique
+
+
+def _local_transactions_payload(
+    *,
+    workspace: str,
+    short: str,
+    category_name: str,
+    folder: str,
+) -> dict[str, Any] | None:
+    category_code = _category_code_from_name(category_name)
+    if category_code is None:
+        return None
+
+    for root in _workspace_data_roots(workspace):
+        categorized_path = root / folder / "data" / "categorized_transactions.json"
+        if not categorized_path.is_file():
+            continue
+        try:
+            payload = json.loads(categorized_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        raw_transactions = payload.get("transactions")
+        transactions: list[dict[str, Any]] = []
+        if isinstance(raw_transactions, list):
+            for item in raw_transactions:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    code = int(float(str(item.get("category", "")).strip()))
+                except ValueError:
+                    continue
+                if code != category_code:
+                    continue
+                tx = dict(item)
+                tx["person"] = short
+                transactions.append(tx)
+
+        modifications = payload.get("modifications")
+        modified_ids: list[str] = []
+        if isinstance(modifications, list):
+            for mod in modifications:
+                if isinstance(mod, dict) and "id" in mod:
+                    modified_ids.append(str(mod["id"]))
+
+        columns = ["date", "amount", "type", "name", "description", "category"]
+        categories_path = root.parent / "categories.json"
+        valid_codes = _valid_category_codes_from_categories_json(categories_path)
+        return {
+            "person": short,
+            "folder": folder,
+            "category": category_name,
+            "columns": columns,
+            "transactions": transactions,
+            "description_modified_ids": modified_ids,
+            "category_modified_ids": modified_ids,
+            "keywords": [],
+            "abbreviations": {},
+            "valid_category_codes": valid_codes,
+            "remainder_category": "18 Overige uitgaven",
+        }
+    return None
 
 
 @app.get("/api/health")
@@ -293,6 +407,30 @@ def api_transactions(short: str, category_name: str) -> dict[str, Any]:
 
     try:
         require_person(short)
+        # Rafael-style local categorized JSON fallback: if present on disk, use it
+        # for detail table rows (category click in overview), bypassing hub parser assumptions.
+        people_payload = hub_get("/people")
+        people = people_payload.get("people") if isinstance(people_payload, dict) else []
+        folder = ""
+        if isinstance(people, list):
+            for person in people:
+                if not isinstance(person, dict):
+                    continue
+                if str(person.get("short") or "").strip().lower() == short.strip().lower():
+                    folder = str(person.get("folder") or "").strip()
+                    break
+        if folder:
+            from app.centrale_sync import load_config
+
+            cfg = load_config()
+            local = _local_transactions_payload(
+                workspace=cfg.workspace,
+                short=short,
+                category_name=category_name,
+                folder=folder,
+            )
+            if local is not None:
+                return local
         return hub_get(
             f"/transactions/{urllib.parse.quote(short)}/{urllib.parse.quote(category_name)}"
         )

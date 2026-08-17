@@ -41,7 +41,7 @@ Config keys (no legacy aliases):
 
 | Key | Meaning |
 |-----|---------|
-| `server_url` | Hub base URL (e.g. `http://192.168.x.x:8200`) |
+| `server_url` | Hub base URL — use `http://127.0.0.1:8200` on the hub PC; LAN/Tailscale IP from other machines |
 | `port` | Client BFF listen port |
 | `access` | `central` \| `local` \| `personal` |
 | `workspace` | Required for local/personal; optional starting workspace for central |
@@ -62,9 +62,96 @@ Config keys (no legacy aliases):
 
 ## Network
 
-1. **Now:** same LAN — `server_url` is the hub’s LAN address (e.g. `http://192.168.x.x:8200`).
-2. **Remote (no code change):** install [Tailscale](https://tailscale.com/) on hub + clients; repoint `server_url` to the hub’s Tailscale IP or MagicDNS name (still `http://…:8200`).
+| Where the client runs | `server_url` |
+|-----------------------|--------------|
+| Same PC as the hub | `http://127.0.0.1:8200` |
+| Another PC on the home LAN | `http://<hub-lan-ip>:8200` (e.g. `http://192.168.1.188:8200`) |
+| Another PC via [Tailscale](https://tailscale.com/) | `http://<hub-tailscale-ip>:8200` or MagicDNS name |
+
+1. **Same machine:** use `127.0.0.1`, not the PC’s LAN address — see [Hub IP gate](#hub-ip-gate--scoped-upload) below.
+2. **Remote (no code change):** install Tailscale on hub + clients; repoint `server_url` to the hub’s Tailscale IP (still `http://…:8200`).
 3. **Bank consent callback stays public HTTPS** via `https://deoudegracht.nl/banking-callback.html` → hub. Tailscale does not replace that redirect.
+
+## Hub IP gate + scoped upload
+
+Config: `server/workspaces/upload_acl.json`
+
+```json
+{
+  "hub_ips": ["127.0.0.1", "100.87.15.71", "192.168.1.188"],
+  "grants": [
+    {
+      "id": "rb",
+      "label": "Rafael Bidarra",
+      "token": "",
+      "ips": ["192.168.1.58"],
+      "paths": ["dkg/rafael_bidarra/data/uploaded.json"]
+    }
+  ]
+}
+```
+
+The `"mappings"` and `"info"` keys (if present) are notes for humans only — the hub ignores them.
+
+### `hub_ips` — full hub access
+
+IPs listed in `hub_ips` may use **everything** on port 8200: root page, client APIs, admin UI, sessions, add-person wizard, etc.
+
+- `127.0.0.1` is **always** allowed, even if omitted from the list.
+- If `hub_ips` is empty or missing, there is **no** hub-wide IP gate (open to all).
+- One exception: the bank consent callback path is always reachable so Enable Banking redirects still work.
+
+### `grants` — upload-only access
+
+Each grant is **not** a user account. It is a rule with:
+
+| Field | Meaning |
+|-------|---------|
+| `ips` | Which **client IPs** may use this grant |
+| `paths` | Which **files or directories** they may upload to (under `workspaces/`) |
+| `token` | Optional upload secret (`""` = IP + path only; no token required) |
+
+Those IPs may only reach:
+
+- `/upload` (upload page)
+- `/api/upload` (upload API)
+
+They do **not** get the bookkeeping client, `/api/status`, admin pages, etc. Anyone else gets **404**.
+
+### How the two lists interact
+
+```text
+Request arrives
+    │
+    ├─ IP in hub_ips?                              → full hub ✓
+    │
+    ├─ Path is /upload or /api/upload
+    │  AND IP matches a grant?                    → upload only ✓
+    │
+    └─ otherwise                                   → 404
+```
+
+If an IP appears in **both** `hub_ips` and a grant, it gets **full hub** access — `hub_ips` is checked first.
+
+### `server_url` vs client IP (same PC)
+
+Two things matter: **where** the client connects (`server_url`) and **who** the hub thinks is calling (client IP).
+
+| `server_url` on the hub PC | Hub sees client IP as | Result with typical `hub_ips` |
+|----------------------------|----------------------|-------------------------------|
+| `http://127.0.0.1:8200` | `127.0.0.1` (loopback) | Allowed — loopback is always in `hub_ips` |
+| `http://192.168.1.188:8200` | `192.168.1.188` (LAN) | Allowed only if that LAN IP is in `hub_ips` |
+
+`127.0.0.1` is the **loopback** address (“this computer talking to itself”). Traffic stays on the machine. Even when you dial your own LAN IP, the hub sees the request as coming from that LAN address, not loopback.
+
+**Practical rule:**
+
+- Client and hub on the **same machine** → `server_url`: `http://127.0.0.1:8200`
+- Client on **another machine** → `server_url`: hub’s LAN or Tailscale IP, and add **that client PC’s IP** to `hub_ips` (grant `ips` alone only allow `/upload`, not the bookkeeping client)
+
+Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>` when the grant has a token).
+
+More detail: [`hub/README.md`](hub/README.md).
 
 ## Data flow
 

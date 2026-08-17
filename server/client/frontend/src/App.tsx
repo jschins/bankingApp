@@ -1530,6 +1530,7 @@ function TermsTables({
               columns={columns}
               columnWidths={columnWidths}
               termsForCategory={(name) => personal[p.short]?.[name] ?? EMPTY_TERMS}
+              disabled={p.organizable === false}
               onCommit={(name, terms) => onUpdate(p.short, name, terms)}
             />
           </section>
@@ -1544,11 +1545,13 @@ function TermsColumnTable({
   columnWidths,
   termsForCategory,
   onCommit,
+  disabled,
 }: {
   columns: string[];
   columnWidths: number[];
   termsForCategory: (category: string) => string[];
   onCommit: (category: string, terms: string[]) => void;
+  disabled?: boolean;
 }) {
   return (
     <table className="s-table s-table-terms">
@@ -1572,6 +1575,7 @@ function TermsColumnTable({
             <td key={name}>
               <EditableCell
                 terms={termsForCategory(name)}
+                disabled={disabled === true}
                 onCommit={(terms) => onCommit(name, terms)}
               />
             </td>
@@ -1589,10 +1593,13 @@ function sortTerms(values: string[]): string[] {
 function EditableCell({
   terms,
   onCommit,
+  disabled,
 }: {
   terms: string[];
   onCommit: (terms: string[]) => void;
+  disabled?: boolean;
 }) {
+  const isDisabled = disabled === true;
   const [draft, setDraft] = useState<string[]>(() => sortTerms(terms));
   const [add, setAdd] = useState("");
   const draftRef = useRef(draft);
@@ -1612,16 +1619,19 @@ function EditableCell({
   }, [terms, termsKey]);
 
   function commit(next: string[]) {
+    if (isDisabled) return;
     const cleaned = sortTerms(next.map((t) => t.trim()).filter(Boolean));
     const current = sortTerms(terms.map((t) => t.trim()).filter(Boolean));
     if (!arraysEqual(cleaned, current)) onCommit(cleaned);
   }
 
   function removeAt(index: number) {
+    if (isDisabled) return;
     commit(draftRef.current.filter((_, idx) => idx !== index));
   }
 
   function commitAdd() {
+    if (isDisabled) return;
     const t = add.trim();
     if (!t) return;
     commit([...draftRef.current, t]);
@@ -1635,6 +1645,7 @@ function EditableCell({
           <input
             className="term-input"
             value={term}
+            disabled={isDisabled}
             onChange={(e) => {
               const value = e.target.value;
               setDraft((d) => {
@@ -1653,6 +1664,7 @@ function EditableCell({
             className="term-delete"
             title="Delete term"
             onClick={() => removeAt(i)}
+            disabled={isDisabled}
           >
             ×
           </button>
@@ -1662,6 +1674,7 @@ function EditableCell({
         className="term-input add"
         value={add}
         placeholder="+ term"
+        disabled={isDisabled}
         onChange={(e) => setAdd(e.target.value)}
         onBlur={commitAdd}
         onKeyDown={(e) => {

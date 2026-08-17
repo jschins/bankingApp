@@ -1,6 +1,11 @@
 export interface PersonInfo {
   short: string;
   folder: string;
+  /**
+   * When `personal_categories.json` is missing for this person, term editing /
+   * organization is disabled in the Terms view.
+   */
+  organizable?: boolean;
 }
 
 export interface MatrixResponse {

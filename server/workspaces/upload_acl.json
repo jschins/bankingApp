@@ -1,6 +1,23 @@
 {
+  "mappings": {
+    "rafa kantoor": "192.168.1.58",
+    "juleon prive": "192.168.1.107",
+    "juleon ydigital": {
+      "LAN dkg": "192.168.1.188",
+      "LAN mamma": "192.168.178.49",
+      "name": "desktop-8bimc9l",
+      "tailscale": "100.116.99.89"
+    },
+    "anton kantoor": "192.168.1.111",
+    "server": {
+      "LAN dkg": "192.168.178.48",
+      "name": "desktop-sb23ts6",
+      "tailscale": "100.87.15.71"
+    }
+  },
   "hub_ips": [
     "100.87.15.71",
+    "192.168.1.48",
     "192.168.1.188",
     "127.0.0.1"
   ],
@@ -12,7 +29,8 @@
       "ips": [
         "192.168.1.58",
         "192.168.1.111",
-        "192.168.1.188"
+        "192.168.1.188",
+        "192.168.1.48"
       ],
       "paths": [
         "dkg/rafael_bidarra/data/uploaded.json"
