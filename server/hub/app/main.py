@@ -1212,8 +1212,8 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     <h1>Upload data</h1>
     <p class="lead">Upload Excel files into the person's data folder. Any IP may open this page; a grant token is required to write.</p>
 
-    <label>Upload token
-      <input id="token" type="password" autocomplete="off" placeholder="from upload_acl.json"/>
+    <label>Token
+      <input id="token" type="password" autocomplete="off" placeholder=""/>
     </label>
     <div class="actions">
       <button type="button" id="btnCheck" class="primary">Check grant</button>
@@ -1238,7 +1238,6 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 
     <p id="err" class="err"></p>
     <p id="ok" class="ok"></p>
-    <p class="meta"><a href="/">← Hub status</a> · ACL file: <code>workspaces/upload_acl.json</code></p>
   </main>
   <script>
     const params = new URLSearchParams(location.search);
