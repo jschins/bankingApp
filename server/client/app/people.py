@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.paths import PersonPack, _resolve_private_key
 from app.runtime import app_root
+from app.yearpath import has_person_layout, parse_year, year_dir
 
 _IGNORE_DIRS = frozenset(
     {
@@ -24,9 +25,10 @@ _IGNORE_DIRS = frozenset(
 _MISSING = Path(".")
 
 
-def list_people(root: Path | None = None) -> list[PersonPack]:
-    """Person packs with ``data/``. Identity is the folder name."""
+def list_people(root: Path | None = None, *, year: str | None = None) -> list[PersonPack]:
+    """Person packs with ``secret/`` and/or a ``YYYY/`` year folder. Identity is the folder name."""
     base = root if root is not None else app_root()
+    y = parse_year(year)
     packs: list[PersonPack] = []
     if not base.is_dir():
         return packs
@@ -34,9 +36,9 @@ def list_people(root: Path | None = None) -> list[PersonPack]:
     for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
         if not child.is_dir() or child.name in _IGNORE_DIRS or child.name.startswith("."):
             continue
-        data = child / "data"
-        if not data.is_dir():
+        if not has_person_layout(child):
             continue
+        data = year_dir(child, y)
         secret = child / "secret"
         profile = secret / "profile.json"
         private_key = _MISSING
@@ -58,15 +60,16 @@ def list_people(root: Path | None = None) -> list[PersonPack]:
                 secret_dir=secret_dir.resolve() if secret.is_dir() else secret_dir,
                 profile_path=profile_path,
                 private_key_path=private_key,
+                year=y,
             )
         )
     packs.sort(key=lambda p: p.folder_name.lower())
     return packs
 
 
-def get_person(short: str, root: Path | None = None) -> PersonPack:
+def get_person(short: str, root: Path | None = None, *, year: str | None = None) -> PersonPack:
     needle = short.strip().lower()
-    for pack in list_people(root):
+    for pack in list_people(root, year=year):
         if pack.folder_name.lower() == needle:
             return pack
     raise KeyError(f"Unknown person: {short!r}")

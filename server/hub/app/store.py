@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.runtime import data_root
+from app.yearpath import has_person_layout, is_year_name, parse_year
 
 _lock = threading.Lock()
 # label -> last_seen monotonic time (force-kill never calls session/end)
@@ -26,9 +27,8 @@ DOWNLOADED = "downloaded_transactions.json"
 SHARED_CATEGORIES = "categories.json"
 # Synthetic workspace id for events on the single root categories.json
 SHARED_META_WORKSPACE = "_shared"
-_PERSON_DATA_FILES = frozenset(
-    {PERSONAL_CATEGORIES, CATEGORIZED, CATEGORY_TOTALS, DOWNLOADED}
-)
+_YEAR_FILES = frozenset({CATEGORIZED, CATEGORY_TOTALS, DOWNLOADED})
+_PERSON_DATA_FILES = _YEAR_FILES | {PERSONAL_CATEGORIES}
 
 # Back-compat alias (older event viewers / docs).
 MERGED_WORKSPACE = SHARED_META_WORKSPACE
@@ -116,7 +116,7 @@ def list_workspaces() -> list[str]:
             continue
         if child.name.startswith("_"):
             continue
-        if any(p.is_dir() and (p / "data").is_dir() for p in child.iterdir() if p.is_dir()):
+        if any(has_person_layout(p) for p in child.iterdir() if p.is_dir()):
             names.append(child.name)
     return names
 
@@ -127,7 +127,7 @@ def list_person_folders(workspace: str) -> list[str]:
         return []
     names: list[str] = []
     for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
-        if child.is_dir() and (child / "data").is_dir():
+        if child.is_dir() and has_person_layout(child):
             names.append(child.name)
     return names
 
@@ -149,12 +149,22 @@ def _normalize_rel_path(rel_path: str) -> str:
     return p
 
 
+def person_year_rel(person: str, filename: str, *, year: str | None = None) -> str:
+    return f"{Path(person).name}/{parse_year(year)}/{filename}"
+
+
+def person_secret_rel(person: str, filename: str) -> str:
+    return f"{Path(person).name}/secret/{filename}"
+
+
 def _is_tracked(rel_path: str) -> bool:
     p = _normalize_rel_path(rel_path)
     if p == SHARED_CATEGORIES:
         return True
     parts = p.split("/")
-    if len(parts) == 3 and parts[1] == "data" and parts[2] in _PERSON_DATA_FILES:
+    if len(parts) == 3 and is_year_name(parts[1]) and parts[2] in _YEAR_FILES:
+        return True
+    if len(parts) == 3 and parts[1] == "secret" and parts[2] == PERSONAL_CATEGORIES:
         return True
     return False
 
@@ -164,11 +174,9 @@ def _path_triggers_recalc(rel_path: str) -> bool:
     if p == SHARED_CATEGORIES:
         return True
     parts = p.split("/")
-    if len(parts) == 3 and parts[1] == "data" and parts[2] in (
-        PERSONAL_CATEGORIES,
-        CATEGORIZED,
-        DOWNLOADED,
-    ):
+    if len(parts) == 3 and is_year_name(parts[1]) and parts[2] in (CATEGORIZED, DOWNLOADED):
+        return True
+    if len(parts) == 3 and parts[1] == "secret" and parts[2] == PERSONAL_CATEGORIES:
         return True
     return False
 
@@ -197,11 +205,12 @@ def recalculate_workspace(
         matrix = recalculate_all(person_folders=list(wanted) if wanted else None)
         root = workspace_dir(ws)
         for child in root.iterdir():
-            if not child.is_dir() or not (child / "data").is_dir():
+            if not child.is_dir() or not has_person_layout(child):
                 continue
             if wanted is not None and child.name not in wanted:
                 continue
-            totals_path = child / "data" / CATEGORY_TOTALS
+            year = parse_year(None)
+            totals_path = child / year / CATEGORY_TOTALS
             if totals_path.is_file():
                 try:
                     content = json.loads(totals_path.read_text(encoding="utf-8"))
@@ -209,13 +218,13 @@ def recalculate_workspace(
                     continue
                 put_file(
                     ws,
-                    f"{child.name}/data/{CATEGORY_TOTALS}",
+                    person_year_rel(child.name, CATEGORY_TOTALS, year=year),
                     content,
                     source="central",
                     skip_recalc=True,
                     skip_event=skip_events,
                 )
-            cat_path = child / "data" / CATEGORIZED
+            cat_path = child / year / CATEGORIZED
             if cat_path.is_file():
                 try:
                     content = json.loads(cat_path.read_text(encoding="utf-8"))
@@ -223,7 +232,7 @@ def recalculate_workspace(
                     continue
                 put_file(
                     ws,
-                    f"{child.name}/data/{CATEGORIZED}",
+                    person_year_rel(child.name, CATEGORIZED, year=year),
                     content,
                     source="central",
                     skip_recalc=True,
@@ -237,8 +246,8 @@ def derived_paths_for_workspace(workspace: str) -> list[str]:
     ws = _clean_workspace(workspace)
     paths: list[str] = []
     for name in list_person_folders(ws):
-        paths.append(f"{ws}/{name}/data/{CATEGORIZED}")
-        paths.append(f"{ws}/{name}/data/{CATEGORY_TOTALS}")
+        paths.append(f"{ws}/{person_year_rel(name, CATEGORIZED)}")
+        paths.append(f"{ws}/{person_year_rel(name, CATEGORY_TOTALS)}")
     return paths
 
 
@@ -246,8 +255,8 @@ def derived_paths_for_person(workspace: str, folder_name: str) -> list[str]:
     ws = _clean_workspace(workspace)
     safe = Path(folder_name).name
     return [
-        f"{ws}/{safe}/data/{CATEGORIZED}",
-        f"{ws}/{safe}/data/{CATEGORY_TOTALS}",
+        f"{ws}/{person_year_rel(safe, CATEGORIZED)}",
+        f"{ws}/{person_year_rel(safe, CATEGORY_TOTALS)}",
     ]
 
 
@@ -261,7 +270,7 @@ def _normalize_input_path(raw: str, primary: str) -> str:
 
 
 def _person_folder_from_path(path: str, workspace: str) -> str | None:
-    """Return person folder from ``ws/person/data/...`` paths; None if shared/unknown."""
+    """Return person folder from ``ws/person/YYYY/...`` or ``.../secret/...`` paths."""
     p = str(path).replace("\\", "/").lstrip("/")
     if p == SHARED_CATEGORIES:
         return None
@@ -269,7 +278,7 @@ def _person_folder_from_path(path: str, workspace: str) -> str | None:
     if p.startswith(prefix):
         p = p[len(prefix) :]
     parts = p.split("/")
-    if len(parts) >= 2 and parts[1] == "data":
+    if len(parts) >= 2 and (parts[1] == "secret" or is_year_name(parts[1])):
         return Path(parts[0]).name
     return None
 
@@ -606,10 +615,11 @@ def read_workspace_files(workspace: str) -> dict[str, Any]:
     categories = _read_json_or_none(merged_categories_path())
     people: dict[str, Any] = {}
     for name in list_person_folders(workspace):
-        data = root / name / "data"
+        data = root / name / parse_year(None)
+        secret = root / name / "secret"
         people[name] = {
             "categorized_transactions": _read_json_or_none(data / CATEGORIZED),
-            "personal_categories": _read_json_or_none(data / PERSONAL_CATEGORIES),
+            "personal_categories": _read_json_or_none(secret / PERSONAL_CATEGORIES),
             "category_totals": _read_json_or_none(data / CATEGORY_TOTALS),
             "downloaded_transactions": _read_json_or_none(data / DOWNLOADED),
         }
@@ -633,14 +643,14 @@ def write_workspace_files(
             if files.get("categorized_transactions") is not None:
                 put_file(
                     workspace,
-                    f"{safe}/data/{CATEGORIZED}",
+                    f"{person_year_rel(safe, CATEGORIZED)}",
                     files["categorized_transactions"],
                     source=source,
                 )
             if files.get("personal_categories") is not None:
                 put_file(
                     workspace,
-                    f"{safe}/data/{PERSONAL_CATEGORIES}",
+                    person_secret_rel(safe, PERSONAL_CATEGORIES),
                     files["personal_categories"],
                     source=source,
                 )

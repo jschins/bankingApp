@@ -1205,7 +1205,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
     p.lead { margin: 0 0 1rem; color: #444; line-height: 1.45; }
     label { display: block; margin-top: 0.75rem; font-size: 0.9rem; color: #334155; font-weight: 600; }
-    input[type="text"], input[type="password"], select {
+    input[type="text"], input[type="password"], input[type="number"], select {
       width: 100%; box-sizing: border-box; font: inherit; padding: 0.4rem 0.5rem;
       border: 1px solid #94a3b8; border-radius: 4px; background: #fff; margin-top: 0.25rem;
     }
@@ -1230,10 +1230,13 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Upload data</h1>
-    <p class="lead">Upload Excel files into the person's data folder. Any IP may open this page; a grant token is required to write.</p>
+    <p class="lead">Upload Excel files into the person's year folder. Any IP may open this page; a grant token is required to write.</p>
 
     <label>Token
       <input id="token" type="password" autocomplete="off" placeholder=""/>
+    </label>
+    <label>Year
+      <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
     </label>
     <div class="actions">
       <button type="button" id="btnCheck" class="primary">Check grant</button>
@@ -1267,6 +1270,8 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     if (params.get("t")) tokenEl.value = params.get("t");
 
     function token() { return (tokenEl.value || "").trim(); }
+    const yearEl = document.getElementById("year");
+    function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
 
     async function api(method, path, body, isForm) {
       const opts = { method, headers: { "Accept": "application/json" } };
@@ -1315,7 +1320,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       errEl.textContent = "";
       okEl.textContent = "";
       try {
-        const g = await api("GET", "/api/upload/grant");
+        const g = await api("GET", "/api/upload/grant?year=" + encodeURIComponent(yearValue()));
         showGrant(g);
         okEl.textContent = "Grant OK — choose a file to upload.";
       } catch (e) {
@@ -1333,6 +1338,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       try {
         const fd = new FormData();
         fd.append("file", file, file.name);
+        fd.append("year", yearValue());
         const res = await api("POST", "/api/upload", fd, true);
         okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
         window.setTimeout(() => { location.assign("/upload"); }, 5000);
@@ -1351,29 +1357,37 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 @app.get("/upload", response_class=HTMLResponse)
 def upload_page() -> str:
     from app import upload_acl
+    from app.yearpath import current_year
 
     upload_acl.ensure_example_acl()
-    return _UPLOAD_HTML
+    return _UPLOAD_HTML.replace("__YEAR__", current_year())
 
 
 @app.get("/api/upload/grant")
 def api_upload_grant(
     request: Request,
     authorization: str | None = Header(default=None),
+    year: str | None = Query(default=None),
 ) -> dict[str, Any]:
     from app import upload_acl
+    from app.yearpath import parse_year
 
     token = _upload_token(authorization, None)
     grant = upload_acl.find_grant_by_token(token)
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
     ip = upload_acl.client_ip(request.client.host if request.client else None)
+    try:
+        y = parse_year(year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "person": grant.person,
         "center": grant.center,
-        "folder": grant.data_dir,
+        "year": y,
+        "folder": grant.year_folder(y),
         "client_ip": ip,
-        "xlsx_files": upload_acl.list_grant_xlsx_files(grant),
+        "xlsx_files": upload_acl.list_grant_xlsx_files(grant, year=y),
     }
 
 
@@ -1383,6 +1397,7 @@ async def api_upload(
     file: UploadFile = File(...),
     path: str | None = Form(None),
     token: str | None = Form(None),
+    year: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     from app import upload_acl
@@ -1407,6 +1422,7 @@ async def api_upload(
             rel_path=dest,
             content=content,
             filename=file.filename,
+            year=year,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

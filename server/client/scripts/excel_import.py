@@ -2,7 +2,7 @@
 """PyInstaller onefile build → ``server/workspaces/excel_import.exe``.
 
 Place the exe in a person folder (or run it with that folder as cwd). It reads
-``data/*.xlsx`` and writes categorized_transactions.json + category_totals.json.
+``YYYY/*.xlsx`` and writes categorized_transactions.json + category_totals.json.
 """
 from __future__ import annotations
 

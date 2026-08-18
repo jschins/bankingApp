@@ -8,6 +8,7 @@ from typing import Any, Iterator
 from app import store
 from app.paths import CALC_LOCK
 from app.runtime import set_active_workspace
+from app.yearpath import current_year, has_person_layout, parse_year
 
 
 def _clean_ws(workspace: str) -> str:
@@ -39,7 +40,7 @@ def _has_secrets(workspace: str) -> bool:
     if not root.is_dir():
         return False
     for child in root.iterdir():
-        if child.is_dir() and (child / "secret").is_dir() and (child / "data").is_dir():
+        if child.is_dir() and (child / "secret").is_dir() and has_person_layout(child):
             if any((child / "secret").glob("*.pem")):
                 return True
     return False
@@ -143,7 +144,7 @@ def record_modification(
         pack = get_person(short)
         with bind_person(pack):
             modified = _record(transaction)
-        rel = f"{pack.folder_name}/data/{store.CATEGORIZED}"
+        rel = store.person_year_rel(pack.folder_name, store.CATEGORIZED, year=pack.year)
         path = store.resolve_file_path(ws, rel)
         content = json.loads(path.read_text(encoding="utf-8"))
         store.put_file(
@@ -234,7 +235,7 @@ def update_settings(
         else:
             pack = get_person(group)
             cleaned = save_personal_terms(pack.short, category_name, terms)
-            rel = f"{pack.folder_name}/data/{store.PERSONAL_CATEGORIES}"
+            rel = store.person_secret_rel(pack.folder_name, store.PERSONAL_CATEGORIES)
             path = store.resolve_file_path(ws, rel)
             if path.is_file():
                 content = json.loads(path.read_text(encoding="utf-8"))
@@ -340,7 +341,7 @@ def add_term(
                 group=pack.short,
                 person=pack.short,
             )
-        rel = f"{pack.folder_name}/data/{store.PERSONAL_CATEGORIES}"
+        rel = store.person_secret_rel(pack.folder_name, store.PERSONAL_CATEGORIES)
         path = store.resolve_file_path(ws, rel)
         content = json.loads(path.read_text(encoding="utf-8"))
         store.put_file(
@@ -365,26 +366,27 @@ def add_term(
 
 
 def _ingest_person_data_files(
-    ws: str, *, folder_names: list[str] | None = None
+    ws: str, *, folder_names: list[str] | None = None, year: str | None = None
 ) -> list[str]:
-    """Load on-disk person data JSON into the store; return relative paths."""
+    """Load on-disk person year JSON into the store; return relative paths."""
     inputs: list[str] = []
     root = store.workspace_dir(ws)
     wanted = {name for name in folder_names} if folder_names is not None else None
+    y = parse_year(year)
     for child in root.iterdir():
-        if not child.is_dir() or not (child / "data").is_dir():
+        if not child.is_dir() or not has_person_layout(child):
             continue
         if wanted is not None and child.name not in wanted:
             continue
         for name in (store.DOWNLOADED, store.CATEGORIZED, store.CATEGORY_TOTALS):
-            path = child / "data" / name
+            path = child / y / name
             if not path.is_file():
                 continue
             try:
                 content = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            rel = f"{child.name}/data/{name}"
+            rel = store.person_year_rel(child.name, name, year=y)
             inputs.append(rel)
             store.put_file(
                 ws,
@@ -520,17 +522,17 @@ def create_person(
             if pack.folder_name.lower() == folder_name.lower():
                 raise ValueError(f"Person already exists: {folder_name}")
 
-        data_dir = target / "data"
+        year_dir = target / current_year()
         secret_dir = target / "secret"
-        data_dir.mkdir(parents=True, exist_ok=False)
+        year_dir.mkdir(parents=True, exist_ok=False)
         secret_dir.mkdir(parents=True, exist_ok=False)
 
-        (data_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
-        (data_dir / store.DOWNLOADED).write_text("[]\n", encoding="utf-8")
-        (data_dir / store.CATEGORIZED).write_text(
+        (secret_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
+        (year_dir / store.DOWNLOADED).write_text("[]\n", encoding="utf-8")
+        (year_dir / store.CATEGORIZED).write_text(
             json.dumps({"transactions": []}, indent=2) + "\n", encoding="utf-8"
         )
-        (data_dir / store.CATEGORY_TOTALS).write_text("{}\n", encoding="utf-8")
+        (year_dir / store.CATEGORY_TOTALS).write_text("{}\n", encoding="utf-8")
 
         profile = {
             "person": folder_name,

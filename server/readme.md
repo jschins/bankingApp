@@ -11,12 +11,12 @@ bankingApp/server/
     workspaces/                 # DATA ONLY — hub data_root (secrets included)
     categories.json           # shared by all workspaces
     dkg/
-      <person>/data/
+      <person>/2026/
         categorized_transactions.json
-        personal_categories.json
         category_totals.json
         downloaded_transactions.json
       <person>/secret/
+        personal_categories.json
     jl/
       ...
   hub/                        # :8200 — sync, calculation, domain UI API, consent callback, add-person wizard
@@ -106,7 +106,7 @@ Each grant is **not** a user account. It is a token that may write Excel files i
 | Field | Meaning |
 |-------|---------|
 | `person` | Folder name under the workspace (`rafael_bidarra`) |
-| `center` | Workspace (`dkg`) — files go to `workspaces/<center>/<person>/data/` |
+| `center` | Workspace (`dkg`) — files go to `workspaces/<center>/<person>/<year>/` |
 | `token` | Upload secret (`Bearer` / `?t=` / form) |
 
 The upload page (`/upload`) is reachable from any IP. Posting a file requires a matching token. The rest of the hub still requires `hub_ips`.

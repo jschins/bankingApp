@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from app.runtime import data_root
+from app.yearpath import parse_year
 
 ACL_FILENAME = "upload_acl.json"
 UPLOAD_LOG_FILENAME = "upload.log"
@@ -23,9 +24,8 @@ class UploadGrant:
     token: str
     center: str
 
-    @property
-    def data_dir(self) -> str:
-        return f"{self.center}/{self.person}/data"
+    def year_folder(self, year: str | None = None) -> str:
+        return f"{self.center}/{self.person}/{parse_year(year)}"
 
 
 def acl_path() -> Path:
@@ -142,15 +142,15 @@ def is_upload_http_path(path: str) -> bool:
     return p == "/upload" or p.startswith("/api/upload")
 
 
-def path_allowed(grant: UploadGrant, rel_path: str) -> bool:
+def path_allowed(grant: UploadGrant, rel_path: str, *, year: str | None = None) -> bool:
     target = _normalize_rel(rel_path)
-    prefix = grant.data_dir
+    prefix = grant.year_folder(year)
     return target == prefix or target.startswith(prefix + "/")
 
 
-def list_grant_xlsx_files(grant: UploadGrant) -> list[str]:
-    """Basenames of ``*.xlsx`` already present under the grant data folder."""
-    folder = resolve_under_data_root(grant.data_dir)
+def list_grant_xlsx_files(grant: UploadGrant, *, year: str | None = None) -> list[str]:
+    """Basenames of ``*.xlsx`` already present under the grant year folder."""
+    folder = resolve_under_data_root(grant.year_folder(year))
     if not folder.is_dir():
         return []
     names: list[str] = []
@@ -160,20 +160,22 @@ def list_grant_xlsx_files(grant: UploadGrant) -> list[str]:
     return names
 
 
-def _process_excel_upload(grant: UploadGrant) -> dict[str, Any]:
+def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
     from app import store
     from app import workspace_api
     from app.core.excel_import import import_person_excel
     from app.paths import shared_categories_path
 
-    data_dir = resolve_under_data_root(grant.data_dir)
+    y = parse_year(year)
+    data_dir = resolve_under_data_root(grant.year_folder(y))
     info = import_person_excel(data_dir=data_dir, categories_path=shared_categories_path())
     with workspace_api._workspace_scope(grant.center) as ws:
-        inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person])
+        inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person], year=y)
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
     return {
         "import": info,
         "affected_files": mut.get("affected_files") or [],
+        "year": y,
     }
 
 
@@ -195,19 +197,21 @@ def save_upload(
     rel_path: str,
     content: bytes,
     filename: str | None = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
-    """Write into ``{center}/{person}/data/{original filename}``."""
+    """Write into ``{center}/{person}/{year}/{original filename}``."""
     client = client_ip(ip)
+    y = parse_year(year)
     safe_name = Path(filename or "").name if filename else ""
     dest = (rel_path or "").strip()
     if not dest:
         if not safe_name:
             raise ValueError("filename is required")
-        dest = f"{grant.data_dir}/{safe_name}"
+        dest = f"{grant.year_folder(y)}/{safe_name}"
     elif not Path(dest).name and safe_name:
         dest = dest.rstrip("/") + "/" + safe_name
 
-    if not path_allowed(grant, dest):
+    if not path_allowed(grant, dest, year=y):
         raise PermissionError(f"Path {dest!r} is not allowed for {grant.person}")
 
     rel = _normalize_rel(dest)
@@ -277,7 +281,8 @@ def save_upload(
         "person": grant.person,
     }
     if rel.lower().endswith(".xlsx"):
-        payload_out["excel"] = _process_excel_upload(grant)
+        payload_out["excel"] = _process_excel_upload(grant, year=y)
+        payload_out["year"] = y
     return payload_out
 
 

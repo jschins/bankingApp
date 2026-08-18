@@ -36,7 +36,7 @@ Config: `server/workspaces/upload_acl.json`
 | Field | Meaning |
 |-------|---------|
 | `hub_ips` | Full access to **all** of `:8200` (root, clients, admin). Others get 404 on `/`. `127.0.0.1` always included. Omit/`[]` = no hub-wide gate. |
-| `person` + `center` | Upload destination: `workspaces/<center>/<person>/data/` |
+| `person` + `center` | Upload destination: `workspaces/<center>/<person>/<year>/` |
 | `token` | Upload secret (`Bearer` / `?t=` / form) |
 
 `/upload` is reachable from any IP. Writing a file requires a grant token.

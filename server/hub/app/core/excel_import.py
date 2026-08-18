@@ -522,17 +522,26 @@ def write_outputs(
 
 
 def import_person_excel(*, data_dir: Path, categories_path: Path) -> dict[str, Any]:
-    """Hub RefreshAll entry: rewrite JSON from ``data/*.xlsx``."""
+    """Hub RefreshAll entry: rewrite JSON from ``YYYY/*.xlsx``."""
     _categorized_path, _totals_path, info = write_outputs(data_dir, categories_path=categories_path)
     return info
 
 
 def _default_paths() -> tuple[Path, Path]:
+    from app.yearpath import current_year, list_year_names
+
     if getattr(sys, "frozen", False):
         root = Path(sys.executable).resolve().parent
     else:
         root = Path.cwd()
-    data = root / "data" if (root / "data").is_dir() else root
+    year = current_year()
+    years = list_year_names(root)
+    if (root / year).is_dir():
+        data = root / year
+    elif years:
+        data = root / years[-1]
+    else:
+        data = root
     categories = data.parents[2] / "categories.json" if len(data.parents) >= 2 else data.parent / "categories.json"
     return data, categories
 

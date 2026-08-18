@@ -9,17 +9,18 @@ from pathlib import Path
 from typing import Iterator
 
 from app.runtime import app_root
+from app.yearpath import current_year
 
 # Serialize all person-path binds / recalculate (uvicorn runs sync routes in a threadpool).
 CALC_LOCK = threading.RLock()
 
-DATA_DIR: Path = Path("data")
+DATA_DIR: Path = Path(current_year())
 PERSON_SHORT: str = ""
 PROFILE_PATH: Path = Path("profile.json")
 PRIVATE_KEY_PATH: Path = Path("key.pem")
 CONSENT_PATH: Path = Path("secret") / "consent.json"
 CATEGORIES_PATH: Path = Path("categories.json")
-PERSONAL_CATEGORIES_PATH: Path = DATA_DIR / "personal_categories.json"
+PERSONAL_CATEGORIES_PATH: Path = Path("secret") / "personal_categories.json"
 CATEGORIZED_TRANSACTIONS_PATH: Path = DATA_DIR / "categorized_transactions.json"
 RAW_TRANSACTIONS_PATH: Path = DATA_DIR / "downloaded_transactions.json"
 CATEGORY_TOTALS_PATH: Path = DATA_DIR / "category_totals.json"
@@ -34,6 +35,7 @@ class PersonPack:
     secret_dir: Path
     profile_path: Path
     private_key_path: Path
+    year: str
 
     @property
     def consent_path(self) -> Path:
@@ -41,7 +43,7 @@ class PersonPack:
 
     @property
     def personal_categories_path(self) -> Path:
-        return self.data_dir / "personal_categories.json"
+        return self.secret_dir / "personal_categories.json"
 
     @property
     def categorized_path(self) -> Path:
@@ -53,7 +55,8 @@ class PersonPack:
 
     @property
     def has_secret_folder(self) -> bool:
-        return self.secret_dir.is_dir()
+        """True when Enable Banking credentials are present (a .pem in secret/)."""
+        return self.secret_dir.is_dir() and any(self.secret_dir.glob("*.pem"))
 
 
 def shared_categories_path(root: Path | None = None) -> Path:
@@ -148,7 +151,7 @@ def configure() -> list[PersonPack]:
     if not people:
         raise FileNotFoundError(
             "No person packs found under "
-            f"{app_root()}. Each pack needs a data/ folder."
+            f"{app_root()}. Each pack needs a secret/ and/or YYYY/ folder."
         )
     apply_person(people[0])
     return people

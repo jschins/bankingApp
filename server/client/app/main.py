@@ -10,6 +10,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from app.yearpath import current_year
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -145,7 +147,7 @@ def _local_transactions_payload(
         return None
 
     for root in _workspace_data_roots(workspace):
-        categorized_path = root / folder / "data" / "categorized_transactions.json"
+        categorized_path = root / folder / current_year() / "categorized_transactions.json"
         if not categorized_path.is_file():
             continue
         try:
