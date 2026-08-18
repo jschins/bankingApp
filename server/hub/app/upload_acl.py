@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -159,6 +160,23 @@ def list_grant_xlsx_files(grant: UploadGrant) -> list[str]:
     return names
 
 
+def _process_excel_upload(grant: UploadGrant) -> dict[str, Any]:
+    from app import store
+    from app import workspace_api
+    from app.core.excel_import import import_person_excel
+    from app.paths import shared_categories_path
+
+    data_dir = resolve_under_data_root(grant.data_dir)
+    info = import_person_excel(data_dir=data_dir, categories_path=shared_categories_path())
+    with workspace_api._workspace_scope(grant.center) as ws:
+        inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person])
+        mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    return {
+        "import": info,
+        "affected_files": mut.get("affected_files") or [],
+    }
+
+
 def resolve_under_data_root(rel_path: str) -> Path:
     rel = _normalize_rel(rel_path)
     root = data_root().resolve()
@@ -235,15 +253,32 @@ def save_upload(
         except ValueError:
             pass
 
+    if rel.lower().endswith(".xlsx"):
+        from app.core.excel_import import check_xlsx_balance
+
+        totals_path = full.parent / "category_totals.json"
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = Path(tmp.name)
+            check_xlsx_balance(tmp_path, totals_path)
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+
     full.write_bytes(content)
     _log_upload(ip=client, grant=grant, rel=rel, nbytes=len(content))
-    return {
+    payload_out: dict[str, Any] = {
         "ok": True,
         "path": rel,
         "bytes": len(content),
         "via": "raw",
         "person": grant.person,
     }
+    if rel.lower().endswith(".xlsx"):
+        payload_out["excel"] = _process_excel_upload(grant)
+    return payload_out
 
 
 def ensure_example_acl() -> Path:

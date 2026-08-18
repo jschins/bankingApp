@@ -209,6 +209,115 @@ def amount_str(cents: int) -> str:
     return f"{cents / 100:.2f}"
 
 
+BALANCE_REFUSAL = "file upload refused due to lacking or inconsistent balance"
+
+
+def _normalize_amount_text(value: str | None) -> str:
+    text = str(value or "").strip().replace("\xa0", "").replace(" ", "")
+    if not text:
+        return ""
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        text = text.replace(",", ".")
+    return text
+
+
+def cell_amount_cents(value: str | None) -> int:
+    """Parse a spreadsheet amount to cents; empty cells count as zero."""
+    text = _normalize_amount_text(value)
+    if not text:
+        return 0
+    try:
+        return round(float(text) * 100)
+    except ValueError:
+        return 0
+
+
+def stored_balance_cents(totals_path: Path) -> int:
+    if not totals_path.is_file():
+        return 0
+    try:
+        payload = json.loads(totals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+    accounts = payload.get("account_balances")
+    if not isinstance(accounts, list) or not accounts:
+        return 0
+    account = accounts[0]
+    if not isinstance(account, dict):
+        return 0
+    return amount_to_cents(account.get("balance"))
+
+
+def _dated_rows_net_cents(
+    rows: list[dict[str, str]],
+    header_index: int,
+    columns: dict[str, str],
+) -> int:
+    income_col = columns.get("income") or ""
+    expense_col = columns.get("expense") or ""
+    total = 0
+    for row in rows[header_index + 1 :]:
+        if parse_excel_date(row.get(columns["date"], "")) is None:
+            continue
+        if income_col:
+            total += cell_amount_cents(row.get(income_col))
+        if expense_col:
+            total -= cell_amount_cents(row.get(expense_col))
+    return total
+
+
+def _find_saldo_cents(
+    rows: list[dict[str, str]],
+    header_index: int,
+    columns: dict[str, str],
+) -> int | None:
+    desc_col = columns.get("description") or ""
+    income_col = columns.get("income") or ""
+    expense_col = columns.get("expense") or ""
+    saldo: int | None = None
+    for row in rows[header_index + 1 :]:
+        if parse_excel_date(row.get(columns["date"], "")) is not None:
+            continue
+        desc = str(row.get(desc_col, "") or "").strip().upper() if desc_col else ""
+        if desc != "SALDO":
+            continue
+        income = cell_amount_cents(row.get(income_col) if income_col else None)
+        expense = cell_amount_cents(row.get(expense_col) if expense_col else None)
+        if income:
+            saldo = income
+        elif expense:
+            saldo = -expense
+        else:
+            saldo = 0
+    return saldo
+
+
+def _balance_refusal(calculated_cents: int) -> str:
+    return f"{BALANCE_REFUSAL} (calculated balance: {amount_str(calculated_cents)})"
+
+
+def check_xlsx_balance(xlsx_path: Path, totals_path: Path) -> None:
+    """Verify SALDO equals stored balance plus dated inkomsten minus uitgaven."""
+    rows = read_xlsx_rows(xlsx_path)
+    located = find_columns(rows)
+    if located is None:
+        raise ValueError(f"{xlsx_path.name}: no Datum header row found")
+    header_index, columns = located
+    previous_cents = stored_balance_cents(totals_path)
+    net_cents = _dated_rows_net_cents(rows, header_index, columns)
+    calculated_cents = previous_cents + net_cents
+    saldo_cents = _find_saldo_cents(rows, header_index, columns)
+    if saldo_cents is None or calculated_cents != saldo_cents:
+        raise ValueError(_balance_refusal(calculated_cents))
+
+
 def transaction_id(source: str, row_index: int, suffix: str) -> str:
     stem = Path(source).stem
     return f"{stem}_{row_index}_{suffix}"
