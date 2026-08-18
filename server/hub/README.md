@@ -25,13 +25,9 @@ Config: `server/workspaces/upload_acl.json`
   "hub_ips": ["127.0.0.1", "100.87.15.71", "100.11.22.33"],
   "grants": [
     {
-      "id": "remote-jl",
-      "label": "JL laptop uploads",
-      "token": "long-random-secret",
-      "ips": ["100.11.22.33"],
-      "paths": [
-        "jl/some_person/data/downloaded_transactions.json"
-      ]
+      "person": "rafael_bidarra",
+      "token": "token_rafael_bidarra",
+      "center": "dkg"
     }
   ]
 }
@@ -40,9 +36,10 @@ Config: `server/workspaces/upload_acl.json`
 | Field | Meaning |
 |-------|---------|
 | `hub_ips` | Full access to **all** of `:8200` (root, clients, admin). Others get 404 on `/`. `127.0.0.1` always included. Omit/`[]` = no hub-wide gate. |
-| `token` | Upload secret (`Bearer` / `?t=` / form). Use `""` for no secret (IP + path only). |
-| `ips` (per grant) | May use **`/upload` only** (not the root page). Need not be in `hub_ips`. |
-| `paths` | Exact paths or directory prefixes under the data root |
+| `person` + `center` | Upload destination: `workspaces/<center>/<person>/data/` |
+| `token` | Upload secret (`Bearer` / `?t=` / form) |
+
+`/upload` is reachable from any IP. Writing a file requires a grant token.
 
 Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>`).
 

@@ -81,11 +81,9 @@ Config: `server/workspaces/upload_acl.json`
   "hub_ips": ["127.0.0.1", "100.87.15.71", "192.168.1.188"],
   "grants": [
     {
-      "id": "rb",
-      "label": "Rafael Bidarra",
-      "token": "",
-      "ips": ["192.168.1.58"],
-      "paths": ["dkg/rafael_bidarra/data/uploaded.json"]
+      "person": "rafael_bidarra",
+      "token": "token_rafael_bidarra",
+      "center": "dkg"
     }
   ]
 }
@@ -99,39 +97,31 @@ IPs listed in `hub_ips` may use **everything** on port 8200: root page, client A
 
 - `127.0.0.1` is **always** allowed, even if omitted from the list.
 - If `hub_ips` is empty or missing, there is **no** hub-wide IP gate (open to all).
-- One exception: the bank consent callback path is always reachable so Enable Banking redirects still work.
+- Exceptions always reachable: bank consent callback, and **`/upload` + `/api/upload`** (any IP; write still needs a grant token).
 
-### `grants` — upload-only access
+### `grants` — upload-only write access
 
-Each grant is **not** a user account. It is a rule with:
+Each grant is **not** a user account. It is a token that may write Excel files into one person folder:
 
 | Field | Meaning |
 |-------|---------|
-| `ips` | Which **client IPs** may use this grant |
-| `paths` | Which **files or directories** they may upload to (under `workspaces/`) |
-| `token` | Optional upload secret (`""` = IP + path only; no token required) |
+| `person` | Folder name under the workspace (`rafael_bidarra`) |
+| `center` | Workspace (`dkg`) — files go to `workspaces/<center>/<person>/data/` |
+| `token` | Upload secret (`Bearer` / `?t=` / form) |
 
-Those IPs may only reach:
-
-- `/upload` (upload page)
-- `/api/upload` (upload API)
-
-They do **not** get the bookkeeping client, `/api/status`, admin pages, etc. Anyone else gets **404**.
+The upload page (`/upload`) is reachable from any IP. Posting a file requires a matching token. The rest of the hub still requires `hub_ips`.
 
 ### How the two lists interact
 
 ```text
 Request arrives
     │
-    ├─ IP in hub_ips?                              → full hub ✓
+    ├─ Path is /upload or /api/upload              → upload UI/API ✓
     │
-    ├─ Path is /upload or /api/upload
-    │  AND IP matches a grant?                    → upload only ✓
+    ├─ IP in hub_ips?                              → full hub ✓
     │
     └─ otherwise                                   → 404
 ```
-
-If an IP appears in **both** `hub_ips` and a grant, it gets **full hub** access — `hub_ips` is checked first.
 
 ### `server_url` vs client IP (same PC)
 
@@ -147,7 +137,7 @@ Two things matter: **where** the client connects (`server_url`) and **who** the 
 **Practical rule:**
 
 - Client and hub on the **same machine** → `server_url`: `http://127.0.0.1:8200`
-- Client on **another machine** → `server_url`: hub’s LAN or Tailscale IP, and add **that client PC’s IP** to `hub_ips` (grant `ips` alone only allow `/upload`, not the bookkeeping client)
+- Client on **another machine** → `server_url`: hub’s LAN or Tailscale IP, and add **that client PC’s IP** to `hub_ips`
 
 Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>` when the grant has a token).
 
@@ -172,9 +162,9 @@ Onboarding for a new bank person lives on the **hub**, not in the client executa
 
 1. Local/central administrator clicks **Add person** in the client (hidden for personal users).
 2. Browser opens `http://<hub>:8200/add-person?workspace=<ws>` (reachable from any admin PC on the LAN).
-3. Wizard collects folder name, person alias (short), and bank-account name; creates `workspaces/<ws>/<folder>/{data,secret}/` with empty data stubs + draft `profile.json`.
+3. Wizard collects folder name (this is the person identity, max 40 characters) and bank-account name; creates `workspaces/<ws>/<folder>/{data,secret}/` with empty data stubs + draft `profile.json`.
 4. Administrator creates an Enable Banking application at [https://enablebanking.com/cp/applications](https://enablebanking.com/cp/applications). The wizard reminds them of the fields to use, for example:
-   - Application name: `boekh-<alias>`
+   - Application name: `boekh-<folder>`
    - Redirect URL: `https://deoudegracht.nl/banking-callback.html`
    - Description: `boekhouding`
    - Data protection email: `j.m.schins@gmail.com`

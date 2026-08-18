@@ -35,8 +35,8 @@ class _HubIpAllowlistMiddleware(BaseHTTPMiddleware):
         # Full hub access (root, APIs, clients, …)
         if ip in hub_ips:
             return await call_next(request)
-        # Upload-only: grant IPs may use /upload + /api/upload, not the rest.
-        if upload_acl.is_upload_http_path(path) and upload_acl.ip_matches_any_grant(ip):
+        # Upload page + API: any IP (token still required for POST).
+        if upload_acl.is_upload_http_path(path):
             return await call_next(request)
         return Response(status_code=404, content="Not Found")
 
@@ -303,7 +303,6 @@ class PersonRefreshRequest(BaseModel):
 
 class CreatePersonRequest(BaseModel):
     folder: str
-    person: str
     account_name: str
     country: str = "NL"
     aspsp: str = "ING"
@@ -660,7 +659,6 @@ def api_create_person(
         return workspace_api.create_person(
             workspace,
             folder=body.folder,
-            person=body.person,
             account_name=body.account_name,
             country=body.country,
             aspsp=body.aspsp,
@@ -973,7 +971,6 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
     <div id="step1" class="step active">
       <table>
         <tr><th>folder name</th><td><input id="folder" type="text" placeholder="juleon_schins"/></td></tr>
-        <tr><th>person alias</th><td><input id="person" type="text" placeholder="js"/></td></tr>
         <tr><th>name on bank account</th><td><input id="accountName" type="text" placeholder="Hr Dr J M Schins"/></td></tr>
         <tr><th>country</th><td><input id="country" type="text" value="NL"/></td></tr>
         <tr><th>bank (aspsp)</th><td><input id="aspsp" type="text" value="ING"/></td></tr>
@@ -993,7 +990,7 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       <div class="remind">
         <h2>1. Create the API application — fill in:</h2>
         <dl>
-          <dt>Application name</dt><dd>e.g. <code id="hintAppName">boekh-js</code></dd>
+          <dt>Application name</dt><dd>e.g. <code id="hintAppName">boekh-juleon_schins</code></dd>
           <dt>Redirect URL</dt><dd><code id="hintRedirect">https://deoudegracht.nl/banking-callback.html</code></dd>
           <dt>Description of app</dt><dd>e.g. <code>boekhouding</code></dd>
           <dt>Data protection email</dt><dd>e.g. <code>j.m.schins@gmail.com</code></dd>
@@ -1096,14 +1093,13 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
     document.getElementById("btnCreate").onclick = async () => {
       errEl.textContent = "";
       const workspace = document.getElementById("workspace").value;
-      const person = document.getElementById("person").value.trim();
+      const folder = document.getElementById("folder").value.trim();
       const countryCode = document.getElementById("country").value.trim().toUpperCase() || "NL";
       const aspsp = document.getElementById("aspsp").value.trim() || "ING";
       const redirect = document.getElementById("redirect").value.trim()
         || "https://deoudegracht.nl/banking-callback.html";
       const body = {
-        folder: document.getElementById("folder").value,
-        person,
+        folder,
         account_name: document.getElementById("accountName").value,
         country: countryCode,
         aspsp,
@@ -1112,10 +1108,10 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       try {
         created = await api("POST", `/api/local/${encodeURIComponent(workspace)}/people/create`, body);
         document.getElementById("createdLabel").textContent =
-          `${created.person} (${created.folder}) in ${created.workspace}`;
+          `${created.folder} in ${created.workspace}`;
         document.getElementById("ebLink").href = created.enable_banking_url || "https://enablebanking.com/cp/applications";
         document.getElementById("hintAppName").textContent =
-          `boekh-${(created.person || person || "js").toLowerCase()}`;
+          `boekh-${(created.folder || folder || "person").toLowerCase()}`;
         document.getElementById("hintRedirect").textContent = redirect;
         document.getElementById("hintCountry").textContent =
           COUNTRY_LABELS[countryCode] || countryCode;
@@ -1133,7 +1129,7 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       const file = fileInput.files && fileInput.files[0];
       if (!file) { errEl.textContent = "Choose a .pem file."; return; }
       const workspace = created.workspace;
-      const short = created.person;
+      const short = created.folder || created.person;
       try {
         const fd = new FormData();
         fd.append("file", file, file.name);
@@ -1214,7 +1210,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Upload data</h1>
-    <p class="lead">Upload Excel files into your grant folder. Your IP must match the grant token in <code>upload_acl.json</code>.</p>
+    <p class="lead">Upload Excel files into the person's data folder. Any IP may open this page; a grant token is required to write.</p>
 
     <label>Upload token
       <input id="token" type="password" autocomplete="off" placeholder="from upload_acl.json"/>
@@ -1273,27 +1269,25 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 
     function showGrant(g) {
       document.getElementById("grantBox").style.display = "block";
-      document.getElementById("grantLabel").textContent = (g.label || g.id) + " (" + g.id + ")";
+      document.getElementById("grantLabel").textContent = (g.center || "") + "/" + (g.person || "");
       document.getElementById("yourIp").textContent = g.client_ip || "?";
       const ul = document.getElementById("pathList");
       ul.replaceChildren();
-      for (const p of (g.paths || [])) {
-        const li = document.createElement("li");
-        li.innerHTML = "<code>" + p + "</code>";
-        ul.appendChild(li);
-      }
+      const li = document.createElement("li");
+      li.innerHTML = "<code>" + (g.folder || "") + "</code>";
+      ul.appendChild(li);
       const xlsxUl = document.getElementById("xlsxList");
       xlsxUl.replaceChildren();
       const files = g.xlsx_files || [];
       if (files.length === 0) {
-        const li = document.createElement("li");
-        li.textContent = "(none yet)";
-        xlsxUl.appendChild(li);
+        const empty = document.createElement("li");
+        empty.textContent = "(none yet)";
+        xlsxUl.appendChild(empty);
       } else {
         for (const name of files) {
-          const li = document.createElement("li");
-          li.textContent = name;
-          xlsxUl.appendChild(li);
+          const item = document.createElement("li");
+          item.textContent = name;
+          xlsxUl.appendChild(item);
         }
       }
     }
@@ -1355,18 +1349,11 @@ def api_upload_grant(
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
     ip = upload_acl.client_ip(request.client.host if request.client else None)
-    if not upload_acl.grant_allows_ip(grant, ip):
-        raise HTTPException(
-            status_code=403,
-            detail=f"IP {ip} is not allowed for this grant",
-        )
     return {
-        "id": grant.id,
-        "label": grant.label,
-        "paths": list(grant.paths),
-        "ips": list(grant.ips),
+        "person": grant.person,
+        "center": grant.center,
+        "folder": grant.data_dir,
         "client_ip": ip,
-        "ip_restricted": bool(grant.ips),
         "xlsx_files": upload_acl.list_grant_xlsx_files(grant),
     }
 

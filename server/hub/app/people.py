@@ -1,10 +1,9 @@
 """Discover person packs under the active workspace folder (hub)."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from app.paths import PersonPack, _read_person_short, _resolve_private_key
+from app.paths import PersonPack, _resolve_private_key
 from app.runtime import app_root
 
 _IGNORE_DIRS = frozenset(
@@ -26,7 +25,7 @@ _MISSING = Path(".")
 
 
 def list_people(root: Path | None = None) -> list[PersonPack]:
-    """Person packs with ``data/``. Use ``secret/`` when present (Refresh)."""
+    """Person packs with ``data/``. Identity is the folder name."""
     base = root if root is not None else app_root()
     packs: list[PersonPack] = []
     if not base.is_dir():
@@ -40,19 +39,9 @@ def list_people(root: Path | None = None) -> list[PersonPack]:
             continue
         secret = child / "secret"
         profile = secret / "profile.json"
-        short: str | None = None
         private_key = _MISSING
-        profile_path = _MISSING
+        profile_path = profile.resolve() if profile.is_file() else _MISSING
         secret_dir = secret if secret.is_dir() else (child / "secret")
-
-        if profile.is_file():
-            try:
-                short = _read_person_short(profile)
-                profile_path = profile.resolve()
-            except (OSError, ValueError, json.JSONDecodeError):
-                short = None
-        if short is None:
-            short = child.name
 
         if secret.is_dir():
             try:
@@ -62,7 +51,7 @@ def list_people(root: Path | None = None) -> list[PersonPack]:
 
         packs.append(
             PersonPack(
-                short=short,
+                short=child.name,
                 folder=child.resolve(),
                 folder_name=child.name,
                 data_dir=data.resolve(),
@@ -71,13 +60,13 @@ def list_people(root: Path | None = None) -> list[PersonPack]:
                 private_key_path=private_key,
             )
         )
-    packs.sort(key=lambda p: p.short.lower())
+    packs.sort(key=lambda p: p.folder_name.lower())
     return packs
 
 
 def get_person(short: str, root: Path | None = None) -> PersonPack:
     needle = short.strip().lower()
     for pack in list_people(root):
-        if pack.short.lower() == needle:
+        if pack.folder_name.lower() == needle:
             return pack
-    raise KeyError(f"Unknown person short name: {short!r}")
+    raise KeyError(f"Unknown person: {short!r}")

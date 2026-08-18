@@ -1,5 +1,6 @@
-git fetch origin
-git reset --hard origin/main
+vanaf andere laptop, alles overschrijven mddels
+> git fetch origin
+> git reset --hard origin/main
 
 installeer node.js met
 > winget install OpenJS.NodeJS.LTS

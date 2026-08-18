@@ -468,6 +468,9 @@ def refresh_person(
 _DEFAULT_REDIRECT = "https://deoudegracht.nl/banking-callback.html"
 
 
+_FOLDER_NAME_MAX = 40
+
+
 def _valid_folder_name(name: str) -> str:
     cleaned = name.strip()
     if not cleaned or ".." in cleaned or "/" in cleaned or "\\" in cleaned:
@@ -476,15 +479,8 @@ def _valid_folder_name(name: str) -> str:
         raise ValueError(
             f"Folder name must be alphanumeric/underscore/hyphen: {name!r}"
         )
-    return cleaned
-
-
-def _valid_person_short(short: str) -> str:
-    cleaned = short.strip().lower()
-    if not cleaned or not all(c.isalnum() or c == "_" for c in cleaned):
-        raise ValueError(f"Invalid person alias: {short!r}")
-    if len(cleaned) > 16:
-        raise ValueError(f"Person alias too long: {short!r}")
+    if len(cleaned) > _FOLDER_NAME_MAX:
+        raise ValueError(f"Folder name too long (max {_FOLDER_NAME_MAX}): {name!r}")
     return cleaned
 
 
@@ -492,7 +488,6 @@ def create_person(
     workspace: str,
     *,
     folder: str,
-    person: str,
     account_name: str,
     country: str = "NL",
     aspsp: str = "ING",
@@ -503,7 +498,6 @@ def create_person(
     from app.settings import refresh_people
 
     folder_name = _valid_folder_name(folder)
-    short = _valid_person_short(person)
     holder = (account_name or "").strip()
     if not holder:
         raise ValueError("account_name is required")
@@ -523,8 +517,8 @@ def create_person(
         if target.exists():
             raise ValueError(f"Folder already exists: {folder_name}")
         for pack in list_people(root):
-            if pack.short.lower() == short:
-                raise ValueError(f"Person alias already used: {short}")
+            if pack.folder_name.lower() == folder_name.lower():
+                raise ValueError(f"Person already exists: {folder_name}")
 
         data_dir = target / "data"
         secret_dir = target / "secret"
@@ -539,7 +533,7 @@ def create_person(
         (data_dir / store.CATEGORY_TOTALS).write_text("{}\n", encoding="utf-8")
 
         profile = {
-            "person": short,
+            "person": folder_name,
             "app_id": "",
             "key_file": "",
             "country": country_s,
@@ -557,7 +551,7 @@ def create_person(
         "ok": True,
         "workspace": ws,
         "folder": folder_name,
-        "person": short,
+        "person": folder_name,
         "account_name": holder,
         "profile": profile,
         "enable_banking_url": "https://enablebanking.com/cp/applications",
@@ -577,7 +571,7 @@ def upload_person_pem(
     from app.people import get_person
     from app.settings import refresh_people
 
-    person = _valid_person_short(short)
+    person = _valid_folder_name(short)
     name = Path(filename).name
     if not name.lower().endswith(".pem"):
         raise ValueError("PEM upload must be a .pem file")

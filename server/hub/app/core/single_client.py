@@ -500,7 +500,12 @@ def _profile_connection(record: dict[str, Any], profile: dict[str, Any]) -> dict
 
 
 def _consent_person_matches(record: dict[str, Any], profile: dict[str, Any]) -> bool:
-    return str(record.get("person") or "") == str(profile.get("person") or "")
+    """Consent lives in the person folder; ``person`` key is optional."""
+    got = str(record.get("person") or "").strip()
+    if not got:
+        return True
+    expected = str(paths.PERSON_SHORT or profile.get("person") or "").strip()
+    return got.lower() == expected.lower()
 
 
 def needs_consent_renewal() -> bool:
@@ -634,7 +639,7 @@ def set_enabled_account_uids(uids: list[str]) -> dict[str, Any]:
 
 def _save_session_connection(profile: dict[str, Any], session: dict[str, Any]) -> None:
     record = _load_consent()
-    record["person"] = profile.get("person", record.get("person", "unknown"))
+    record["person"] = paths.PERSON_SHORT or profile.get("person", record.get("person", "unknown"))
     record = _merge_connection(record, _build_connection(profile, session))
     _save_consent(record)
 

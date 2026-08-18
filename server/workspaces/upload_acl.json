@@ -15,7 +15,7 @@
       "name": "desktop-sb23ts6",
       "tailscale": "100.87.15.71"
     },
-    "info": "hub_ips lists all IPs that are allowed to access the full hub, grants lists all IPs that are allowed to /upload only, to certain paths: for more info, see server/readme.md "
+    "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write)"
   },
   "hub_ips": [
     "100.87.15.71",
@@ -26,32 +26,14 @@
   ],
   "grants": [
     {
-      "id": "rb",
-      "label": "Rafael Bidarra",
-      "token": "rb_token",
-      "ips": [
-        "192.168.1.111",
-        "192.168.20.28",
-        "192.168.1.188",
-        "192.168.1.48"
-      ],
-      "paths": [
-        "dkg/rafael_bidarra/data"
-      ]
+      "person": "rafael_bidarra",
+      "token": "token_rafael_bidarra",
+      "center": "dkg"
     },
-  {
-      "id": "mp",
-      "label": "Miguel Angel Palacios",
-      "token": "mp_token",
-      "ips": [
-        "192.168.1.111",
-        "192.168.1.188",
-        "192.168.20.28",
-        "192.168.1.48"
-      ],
-      "paths": [
-        "dkg/miguelangel_palacios/data"
-      ]
+    {
+      "person": "miguelangel_palacios",
+      "token": "token_miguelangel_palacios",
+      "center": "dkg"
     }
   ]
 }
