@@ -1,5 +1,5 @@
 {
-  "server_url": "http://192.168.1.188:8200",
+  "server_url": "http://192.168.20.28:8200",
   "port": 8300,
   "access": "central",
   "api_key": "",
