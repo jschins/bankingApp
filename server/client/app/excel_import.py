@@ -448,10 +448,21 @@ def convert_excel_files(
     registered = set(name_by_code)
     transactions: list[dict[str, Any]] = []
     net_by_file: dict[str, int] = {}
+    file_errors: list[str] = []
+    imported_names: list[str] = []
     for path in files:
-        rows = rows_to_transactions(read_xlsx_rows(path), source=path.name, registered=registered)
+        try:
+            rows = rows_to_transactions(read_xlsx_rows(path), source=path.name, registered=registered)
+        except (OSError, ValueError, zipfile.BadZipFile, ET.ParseError) as exc:
+            file_errors.append(f"{path.name}: {exc}")
+            continue
+        imported_names.append(path.name)
         net_by_file[path.name] = sum(amount_to_cents(item.get("amount")) for item in rows)
         transactions.extend(rows)
+
+    if not imported_names:
+        detail = "; ".join(file_errors) if file_errors else f"No .xlsx files found in {folder}"
+        raise ValueError(detail)
 
     existing_totals: dict[str, Any] = {}
     totals_path = folder / "category_totals.json"
@@ -463,7 +474,7 @@ def convert_excel_files(
         except (OSError, json.JSONDecodeError):
             existing_totals = {}
 
-    folder_names = [path.name for path in files]
+    folder_names = imported_names
     account = None
     accounts = existing_totals.get("account_balances")
     if isinstance(accounts, list) and accounts and isinstance(accounts[0], dict):
@@ -490,6 +501,7 @@ def convert_excel_files(
         "new_files": new_files,
         "balance_updated": bool(new_files),
         "balance": totals["account_balances"][0].get("balance"),
+        "file_errors": file_errors,
     }
     return categorized, totals, info
 

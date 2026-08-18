@@ -170,7 +170,7 @@ def _process_excel_upload(grant: UploadGrant) -> dict[str, Any]:
     info = import_person_excel(data_dir=data_dir, categories_path=shared_categories_path())
     with workspace_api._workspace_scope(grant.center) as ws:
         inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person])
-        mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    mut = store.mutate_and_recalculate(ws, inputs, source="central")
     return {
         "import": info,
         "affected_files": mut.get("affected_files") or [],

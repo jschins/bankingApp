@@ -156,9 +156,17 @@ def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
 
 
 def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
-    from app.core.excel_import import import_person_excel
+    from app.core.excel_import import import_person_excel, list_xlsx_files
     from app.paths import shared_categories_path
 
+    if not list_xlsx_files(pack.data_dir):
+        return {
+            "short": pack.short,
+            "folder": pack.folder_name,
+            "skipped": True,
+            "source": "excel",
+            "reason": "no xlsx files",
+        }
     info = import_person_excel(data_dir=pack.data_dir, categories_path=shared_categories_path())
     return {
         "short": pack.short,
@@ -170,6 +178,7 @@ def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
         "new_files": info.get("new_files") or [],
         "balance_updated": bool(info.get("balance_updated")),
         "balance": info.get("balance"),
+        "file_errors": info.get("file_errors") or [],
     }
 
 
@@ -255,7 +264,13 @@ def _refresh_one_person(
             return _bank_refresh_one(
                 pack, date_from=date_from, date_to=date_to, new_year=new_year
             )
-        return _excel_refresh_result(pack), []
+        excel = _excel_refresh_result(pack)
+        extra = [
+            f"{pack.short} ({pack.folder_name}): {err}"
+            for err in (excel.get("file_errors") or [])
+            if str(err).strip()
+        ]
+        return excel, extra
     except EnableBankingError as exc:
         return (
             {

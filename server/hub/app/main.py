@@ -5,9 +5,10 @@ import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import store
 
@@ -21,24 +22,36 @@ _HUB_IP_EXEMPT_PREFIXES = (
 )
 
 
-class _HubIpAllowlistMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        path = request.url.path or ""
-        if any(path.startswith(p) for p in _HUB_IP_EXEMPT_PREFIXES):
-            return await call_next(request)
+class _HubIpAllowlistMiddleware:
+    """Pure ASGI middleware so POST bodies and ``request.client`` stay intact.
+
+    ``BaseHTTPMiddleware`` can swallow JSON bodies and make every session look
+    like the hub itself (loopback), so only one client appears as connected.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path") or "")
+        client = scope.get("client")
+        host = client[0] if isinstance(client, (list, tuple)) and client else None
         from app import upload_acl
 
+        ip = upload_acl.client_ip(host)
+        scope["hub_client_ip"] = ip
+        if any(path.startswith(p) for p in _HUB_IP_EXEMPT_PREFIXES):
+            await self.app(scope, receive, send)
+            return
         hub_ips = upload_acl.hub_allowed_ips()
-        if not hub_ips:
-            return await call_next(request)
-        ip = upload_acl.client_ip(request.client.host if request.client else None)
-        # Full hub access (root, APIs, clients, …)
-        if ip in hub_ips:
-            return await call_next(request)
-        # Upload page + API: any IP (token still required for POST).
-        if upload_acl.is_upload_http_path(path):
-            return await call_next(request)
-        return Response(status_code=404, content="Not Found")
+        if not hub_ips or ip in hub_ips or upload_acl.is_upload_http_path(path):
+            await self.app(scope, receive, send)
+            return
+        response = PlainTextResponse("Not Found", status_code=404)
+        await response(scope, receive, send)
 
 
 app.add_middleware(_HubIpAllowlistMiddleware)
@@ -80,19 +93,26 @@ def _short_computer_name(raw: str) -> str:
     return name.split(".", 1)[0]
 
 
+def _request_client_host(request: Request) -> str:
+    from app import upload_acl
+
+    stored = request.scope.get("hub_client_ip")
+    if stored:
+        return upload_acl.client_ip(str(stored))
+    if request.client is not None and request.client.host:
+        return upload_acl.client_ip(request.client.host)
+    client = request.scope.get("client")
+    if isinstance(client, (list, tuple)) and client:
+        return upload_acl.client_ip(str(client[0]))
+    return "unknown"
+
+
 def _client_session_label(
     request: Request, _workspace: str, body: SessionPayload
 ) -> str:
     import socket
 
-    host = "unknown"
-    if request.client is not None and request.client.host:
-        host = request.client.host
-    # Normalize IPv6 loopback / mapped forms for readability.
-    if host in ("::1", "0:0:0:0:0:0:0:1"):
-        host = "127.0.0.1"
-    elif host.startswith("::ffff:"):
-        host = host.split("::ffff:", 1)[-1]
+    host = _request_client_host(request)
     port = body.port
     addr = (
         f"{host}:{int(port)}"
@@ -147,11 +167,11 @@ def api_events(
 def api_local_session_start(
     workspace: str,
     request: Request,
-    body: SessionPayload = SessionPayload(),
+    body: SessionPayload | None = None,
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     try:
-        label = _client_session_label(request, workspace, body)
+        label = _client_session_label(request, workspace, body or SessionPayload())
         return store.local_session_start(label)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -161,11 +181,11 @@ def api_local_session_start(
 def api_local_session_end(
     workspace: str,
     request: Request,
-    body: SessionPayload = SessionPayload(),
+    body: SessionPayload | None = None,
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     try:
-        label = _client_session_label(request, workspace, body)
+        label = _client_session_label(request, workspace, body or SessionPayload())
         return store.local_session_end(label)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -175,12 +195,12 @@ def api_local_session_end(
 def api_local_session_heartbeat(
     workspace: str,
     request: Request,
-    body: SessionPayload = SessionPayload(),
+    body: SessionPayload | None = None,
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """Refresh last-seen so force-killed clients drop after TTL."""
     try:
-        label = _client_session_label(request, workspace, body)
+        label = _client_session_label(request, workspace, body or SessionPayload())
         return store.local_session_start(label)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1380,7 +1400,8 @@ async def api_upload(
         raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
     dest = (path or "").strip()
     try:
-        return upload_acl.save_upload(
+        return await run_in_threadpool(
+            upload_acl.save_upload,
             grant=grant,
             ip=ip,
             rel_path=dest,
@@ -1389,7 +1410,9 @@ async def api_upload(
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
