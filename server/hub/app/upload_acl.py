@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from app.runtime import data_root
-from app.yearpath import parse_year
+from app.yearpath import ensure_year_folder, parse_year
 
 ACL_FILENAME = "upload_acl.json"
 UPLOAD_LOG_FILENAME = "upload.log"
@@ -216,9 +216,13 @@ def save_upload(
 
     rel = _normalize_rel(dest)
     full = resolve_under_data_root(rel)
-    full.parent.mkdir(parents=True, exist_ok=True)
 
     from app import store
+    from app.paths import shared_categories_path
+
+    person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
+    ensure_year_folder(person_folder, y, categories_path=shared_categories_path())
+    full.parent.mkdir(parents=True, exist_ok=True)
 
     if rel.endswith(".json"):
         try:

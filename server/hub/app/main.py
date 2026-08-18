@@ -1235,9 +1235,6 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     <label>Token
       <input id="token" type="password" autocomplete="off" placeholder=""/>
     </label>
-    <label>Year
-      <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
-    </label>
     <div class="actions">
       <button type="button" id="btnCheck" class="primary">Check grant</button>
     </div>
@@ -1245,6 +1242,9 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     <div id="grantBox" class="panel">
       <h2 id="grantLabel"></h2>
       <div>Your IP: <code id="yourIp"></code></div>
+      <label>Year
+        <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
+      </label>
       <div>Upload folder:</div>
       <ul id="pathList"></ul>
       <div id="xlsxBox">
@@ -1316,18 +1316,33 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       }
     }
 
+    async function loadGrant() {
+      const g = await api("GET", "/api/upload/grant?year=" + encodeURIComponent(yearValue()));
+      showGrant(g);
+      return g;
+    }
+
     document.getElementById("btnCheck").onclick = async () => {
       errEl.textContent = "";
       okEl.textContent = "";
       try {
-        const g = await api("GET", "/api/upload/grant?year=" + encodeURIComponent(yearValue()));
-        showGrant(g);
-        okEl.textContent = "Grant OK — choose a file to upload.";
+        await loadGrant();
+        okEl.textContent = "Grant OK — choose a year and a file to upload.";
       } catch (e) {
         document.getElementById("grantBox").style.display = "none";
         errEl.textContent = String(e.message || e);
       }
     };
+
+    yearEl.addEventListener("change", async () => {
+      if (document.getElementById("grantBox").style.display === "none") return;
+      errEl.textContent = "";
+      try {
+        await loadGrant();
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    });
 
     document.getElementById("btnUpload").onclick = async () => {
       errEl.textContent = "";

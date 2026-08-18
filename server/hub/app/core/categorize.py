@@ -1196,7 +1196,9 @@ def process_transactions(raw_transactions: list[dict[str, Any]], new_year: bool)
 
     When *new_year* is false, append any transaction whose ``id`` is not already
     present and keep existing ``modifications``. When *new_year* is true,
-    replace the file with only this fetch (no merge, no modifications).
+    replace **this year's** file with only this fetch (no merge, no
+    modifications). That is a same-year redo / PEM bootstrap; it does not
+    open a new calendar year and must not wipe previous year folders.
     """
     general = _category_map(_read_json(paths.CATEGORIES_PATH))
     personal = _category_map(_load_json_object(paths.PERSONAL_CATEGORIES_PATH))

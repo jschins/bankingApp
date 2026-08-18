@@ -8,7 +8,7 @@ from typing import Any, Iterator
 from app import store
 from app.paths import CALC_LOCK
 from app.runtime import set_active_workspace
-from app.yearpath import current_year, has_person_layout, parse_year
+from app.yearpath import current_year, ensure_year_folder, has_person_layout, parse_year
 
 
 def _clean_ws(workspace: str) -> str:
@@ -399,6 +399,24 @@ def _ingest_person_data_files(
     return inputs
 
 
+def _ensure_people_year(
+    ws: str, *, folder_names: list[str] | None = None, year: str | None = None
+) -> None:
+    """Seed missing year folders for people in ``ws`` (write path only)."""
+    from app.paths import shared_categories_path
+
+    y = parse_year(year)
+    cats = shared_categories_path()
+    root = store.workspace_dir(ws)
+    wanted = {name for name in folder_names} if folder_names is not None else None
+    for child in root.iterdir():
+        if not child.is_dir() or not has_person_layout(child):
+            continue
+        if wanted is not None and child.name not in wanted:
+            continue
+        ensure_year_folder(child, y, categories_path=cats)
+
+
 def refresh(
     workspace: str,
     *,
@@ -409,6 +427,7 @@ def refresh(
     from app.matrix import refresh_all
 
     with _workspace_scope(workspace) as ws:
+        _ensure_people_year(ws)
         result = refresh_all(date_from=date_from, date_to=date_to)
         inputs = _ingest_person_data_files(ws)
 
@@ -441,6 +460,7 @@ def refresh_person(
 
     with _workspace_scope(workspace) as ws:
         pack = get_person(short)
+        _ensure_people_year(ws, folder_names=[pack.folder_name], year=pack.year)
         result = matrix_refresh_person(
             short,
             date_from=date_from,
@@ -522,17 +542,12 @@ def create_person(
             if pack.folder_name.lower() == folder_name.lower():
                 raise ValueError(f"Person already exists: {folder_name}")
 
-        year_dir = target / current_year()
         secret_dir = target / "secret"
-        year_dir.mkdir(parents=True, exist_ok=False)
         secret_dir.mkdir(parents=True, exist_ok=False)
-
         (secret_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
-        (year_dir / store.DOWNLOADED).write_text("[]\n", encoding="utf-8")
-        (year_dir / store.CATEGORIZED).write_text(
-            json.dumps({"transactions": []}, indent=2) + "\n", encoding="utf-8"
-        )
-        (year_dir / store.CATEGORY_TOTALS).write_text("{}\n", encoding="utf-8")
+        from app.paths import shared_categories_path
+
+        ensure_year_folder(target, current_year(), categories_path=shared_categories_path())
 
         profile = {
             "person": folder_name,
