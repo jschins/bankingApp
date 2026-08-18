@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.runtime import data_root
 
 ACL_FILENAME = "upload_acl.json"
+UPLOAD_LOG_FILENAME = "upload.log"
+_log_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,20 @@ class UploadGrant:
 
 def acl_path() -> Path:
     return data_root() / ACL_FILENAME
+
+
+def upload_log_path() -> Path:
+    return data_root() / UPLOAD_LOG_FILENAME
+
+
+def _log_upload(*, ip: str, grant: UploadGrant, rel: str, nbytes: int) -> None:
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"{stamp}\t{client_ip(ip)}\t{grant.center}/{grant.person}\t{rel}\t{nbytes}\n"
+    path = upload_log_path()
+    with _log_lock:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
 
 
 def _normalize_ip(raw: str) -> str:
@@ -161,7 +179,7 @@ def save_upload(
     filename: str | None = None,
 ) -> dict[str, Any]:
     """Write into ``{center}/{person}/data/{original filename}``."""
-    del ip  # uploads are token-gated; any IP may use /upload
+    client = client_ip(ip)
     safe_name = Path(filename or "").name if filename else ""
     dest = (rel_path or "").strip()
     if not dest:
@@ -199,7 +217,7 @@ def save_upload(
                     raise ValueError("workspace JSON path must be workspace/…")
                 ws, rest = parts[0], "/".join(parts[1:])
                 result = store.put_file(ws, rest, payload, source="central")
-            return {
+            payload_out = {
                 "ok": True,
                 "path": rel,
                 "bytes": len(content),
@@ -212,10 +230,13 @@ def save_upload(
                     "path": result.get("path"),
                 },
             }
+            _log_upload(ip=client, grant=grant, rel=rel, nbytes=len(content))
+            return payload_out
         except ValueError:
             pass
 
     full.write_bytes(content)
+    _log_upload(ip=client, grant=grant, rel=rel, nbytes=len(content))
     return {
         "ok": True,
         "path": rel,

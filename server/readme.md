@@ -139,7 +139,7 @@ Two things matter: **where** the client connects (`server_url`) and **who** the 
 - Client and hub on the **same machine** → `server_url`: `http://127.0.0.1:8200`
 - Client on **another machine** → `server_url`: hub’s LAN or Tailscale IP, and add **that client PC’s IP** to `hub_ips`
 
-Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>` when the grant has a token).
+Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>` when the grant has a token). Successful uploads are logged in `workspaces/upload.log`.
 
 More detail: [`hub/README.md`](hub/README.md).
 

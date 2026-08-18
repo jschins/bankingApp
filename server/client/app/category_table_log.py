@@ -9,6 +9,8 @@ from typing import Any
 
 _lock = threading.Lock()
 _LOG_NAME = "boekhouding.log"
+# Set True to write boekhouding.log under the workspace folder.
+DEBUG = False
 
 
 def log_path() -> Path:
@@ -25,6 +27,8 @@ def clear_log() -> Path:
 
 
 def log(step: str, **fields: Any) -> None:
+    if not DEBUG:
+        return
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     parts = [f"[{stamp}] {step}"]
     for key, value in fields.items():
@@ -40,6 +44,8 @@ def log(step: str, **fields: Any) -> None:
 
 
 def log_exception(step: str, exc: BaseException, **fields: Any) -> None:
+    if not DEBUG:
+        return
     log(step, error=f"{type(exc).__name__}: {exc}", **fields)
     path = log_path()
     with _lock:

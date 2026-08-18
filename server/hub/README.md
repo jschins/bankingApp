@@ -41,6 +41,8 @@ Config: `server/workspaces/upload_acl.json`
 
 `/upload` is reachable from any IP. Writing a file requires a grant token.
 
+Each successful upload is appended to `workspaces/upload.log` (time, IP, person, path, bytes).
+
 Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>`).
 
 ## Add person wizard
