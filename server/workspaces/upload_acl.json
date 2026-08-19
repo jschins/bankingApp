@@ -41,6 +41,12 @@
       "token": "token_miguel_palacios",
       "center": "dkg",
       "format": "Excel"
+    },
+    {
+      "person": "xavier_bosch",
+      "token": "token_xavier_bosch",
+      "center": "dkg",
+      "format": "Test"
     }
   ]
 }

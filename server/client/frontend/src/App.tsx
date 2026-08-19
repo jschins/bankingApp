@@ -596,7 +596,7 @@ export default function App() {
     >
       {(brandName, year) =>
         isTerms ? (
-          <TermsApp key={wsEpoch} brandName={brandName} />
+          <TermsApp key={wsEpoch} />
         ) : (
           <MainApp key={wsEpoch} brandName={brandName} year={year} />
         )
@@ -1184,7 +1184,7 @@ function MainApp({ brandName, year }: { brandName: string; year: string }) {
   );
 }
 
-function TermsApp({ brandName }: { brandName: string }) {
+function TermsApp() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);

@@ -154,6 +154,7 @@ def ensure_year_folder(
     year: str | None = None,
     *,
     categories_path: Path,
+    include_downloaded: bool = True,
 ) -> Path:
     """Create ``person/Y`` with empty books and the previous year's closing balance.
 
@@ -174,7 +175,8 @@ def ensure_year_folder(
     categorized = {"transactions": [], "modifications": []}
 
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / DOWNLOADED_FILENAME).write_text("[]\n", encoding="utf-8")
+    if include_downloaded:
+        (folder / DOWNLOADED_FILENAME).write_text("[]\n", encoding="utf-8")
     (folder / CATEGORIZED_FILENAME).write_text(
         json.dumps(categorized, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

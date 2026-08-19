@@ -511,18 +511,28 @@ def create_person(
     *,
     folder: str,
     account_name: str,
+    mode: str = "pem",
     country: str = "NL",
     aspsp: str = "ING",
     redirect_url: str | None = None,
+    initial_balance: str | None = None,
+    account_number: str | None = None,
 ) -> dict[str, Any]:
     """Scaffold a person pack under ``workspaces/<ws>/<folder>/``."""
     from app.people import list_people
     from app.settings import refresh_people
+    from app.yearpath import CATEGORY_TOTALS_FILENAME
 
     folder_name = _valid_folder_name(folder)
+    mode_s = (mode or "pem").strip().lower()
+    if mode_s not in {"pem", "excel"}:
+        raise ValueError("mode must be 'pem' or 'excel'")
     holder = (account_name or "").strip()
-    if not holder:
-        raise ValueError("account_name is required")
+    if mode_s == "pem" and not holder:
+        raise ValueError("account holder name is required")
+    if mode_s == "excel" and not holder:
+        raise ValueError("account holder name is required")
+    account_no = (account_number or "").strip()
     country_s = (country or "NL").strip().upper()
     if len(country_s) != 2:
         raise ValueError(f"country must be ISO alpha-2: {country!r}")
@@ -530,7 +540,7 @@ def create_person(
     if not aspsp_s:
         raise ValueError("aspsp is required")
     redirect = (redirect_url or _DEFAULT_REDIRECT).strip()
-    if not redirect.startswith("https://"):
+    if mode_s == "pem" and not redirect.startswith("https://"):
         raise ValueError("redirect_url must be https://…")
 
     with _workspace_scope(workspace) as ws:
@@ -542,13 +552,62 @@ def create_person(
             if pack.folder_name.lower() == folder_name.lower():
                 raise ValueError(f"Person already exists: {folder_name}")
 
+        from app.paths import shared_categories_path
+
+        ensure_year_folder(
+            target,
+            current_year(),
+            categories_path=shared_categories_path(),
+            include_downloaded=mode_s != "excel",
+        )
+        if mode_s == "excel":
+            # Excel mode: no secret folder; keep zeroed categories and seed opening balance.
+            import json
+
+            amount_text = str(initial_balance or "0").strip().replace(",", ".")
+            try:
+                amount = float(amount_text)
+            except ValueError as exc:
+                raise ValueError(f"invalid initial_balance: {initial_balance!r}") from exc
+            totals_path = target / current_year() / CATEGORY_TOTALS_FILENAME
+            totals = json.loads(totals_path.read_text(encoding="utf-8"))
+            if not isinstance(totals, dict):
+                totals = {}
+            balances = totals.get("account_balances")
+            if not isinstance(balances, list) or not balances:
+                balances = [
+                    {
+                        "iban": "onbekend",
+                        "name": holder or "onbekend",
+                        "currency": "EUR",
+                        "balance": "0.00",
+                        "files": [],
+                    }
+                ]
+            first = balances[0] if isinstance(balances[0], dict) else {}
+            if not isinstance(first, dict):
+                first = {}
+            first["iban"] = account_no or "onbekend"
+            first["name"] = holder
+            first["balance"] = f"{amount:.2f}"
+            balances[0] = first
+            totals["account_balances"] = balances
+            totals_path.write_text(json.dumps(totals, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            refresh_people()
+            return {
+                "ok": True,
+                "workspace": ws,
+                "folder": folder_name,
+                "person": folder_name,
+                "mode": "excel",
+                "account_holder": holder,
+                "account_number": account_no or "onbekend",
+                "initial_balance": f"{amount:.2f}",
+            }
+
         secret_dir = target / "secret"
         secret_dir.mkdir(parents=True, exist_ok=False)
         (secret_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
-        from app.paths import shared_categories_path
-
-        ensure_year_folder(target, current_year(), categories_path=shared_categories_path())
-
         profile = {
             "person": folder_name,
             "app_id": "",
@@ -569,6 +628,7 @@ def create_person(
         "workspace": ws,
         "folder": folder_name,
         "person": folder_name,
+        "mode": "pem",
         "account_name": holder,
         "profile": profile,
         "enable_banking_url": "https://enablebanking.com/cp/applications",

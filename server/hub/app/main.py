@@ -374,10 +374,13 @@ class PersonRefreshRequest(BaseModel):
 
 class CreatePersonRequest(BaseModel):
     folder: str
-    account_name: str
+    account_name: str = ""
+    mode: str = "pem"
     country: str = "NL"
     aspsp: str = "ING"
     redirect_url: str | None = None
+    initial_balance: str | None = None
+    account_number: str | None = None
 
 
 class BootstrapFetchRequest(BaseModel):
@@ -776,9 +779,12 @@ def api_create_person(
             workspace,
             folder=body.folder,
             account_name=body.account_name,
+            mode=body.mode,
             country=body.country,
             aspsp=body.aspsp,
             redirect_url=body.redirect_url,
+            initial_balance=body.initial_balance,
+            account_number=body.account_number,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1075,23 +1081,30 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Add person</h1>
-    <p class="lead">Create a person pack on this hub, register Enable Banking, upload the PEM, then fetch YTD transactions. No shell access on the server required.</p>
 
     <label>Workspace
       <select id="workspace"></select>
     </label>
-    <label style="display:block;margin-top:0.5rem">API key (only if hub requires Bearer)
-      <input id="apiKey" type="password" placeholder="optional" autocomplete="off"/>
+    <label style="display:block;margin-top:0.5rem">Mode
+      <select id="mode">
+        <option value="pem" selected>pem</option>
+        <option value="excel">excel</option>
+      </select>
     </label>
 
     <div id="step1" class="step active">
       <table>
-        <tr><th>folder name</th><td><input id="folder" type="text" placeholder="juleon_schins"/></td></tr>
-        <tr><th>name on bank account</th><td><input id="accountName" type="text" placeholder="Hr Dr J M Schins"/></td></tr>
-        <tr><th>country</th><td><input id="country" type="text" value="NL"/></td></tr>
-        <tr><th>bank (aspsp)</th><td><input id="aspsp" type="text" value="ING"/></td></tr>
-        <tr><th>redirect URL</th><td><input id="redirect" type="text" value="https://deoudegracht.nl/banking-callback.html"/></td></tr>
+        <tr><th>folder name</th><td><input id="folder" type="text"/></td></tr>
+        <tr id="rowHolder"><th>account holder name</th><td><input id="accountHolder" type="text"/></td></tr>
+        <tr id="rowAccountNumber" style="display:none"><th>account number</th><td><input id="accountNumber" type="text"/></td></tr>
+        <tr id="rowInitial" style="display:none"><th>initial balance</th><td><input id="initialBalance" type="text" value="0.00"/></td></tr>
       </table>
+      <div id="pemReference" class="remind">
+        <p style="margin:0 0 0.35rem;font-weight:700">For your reference:</p>
+        <pre style="margin:0;font:inherit;white-space:pre-wrap;line-height:1.5">redirect-URL:               https://deoudegracht.nl/banking-callback.html
+Privacy policy URL:      https://deoudegracht.nl/privacy.html
+Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
+      </div>
       <div class="actions">
         <button type="button" id="btnCreate">Create folder</button>
       </div>
@@ -1156,15 +1169,9 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
     const errEl = document.getElementById("err");
     let created = null;
 
-    function apiKey() {
-      return (document.getElementById("apiKey").value || "").trim();
-    }
-
     function headers(json) {
       const h = { "Accept": "application/json" };
       if (json) h["Content-Type"] = "application/json";
-      const key = apiKey();
-      if (key) h["Authorization"] = "Bearer " + key;
       return h;
     }
 
@@ -1182,6 +1189,17 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
     function showStep(id) {
       for (const el of document.querySelectorAll(".step")) el.classList.remove("active");
       document.getElementById(id).classList.add("active");
+    }
+
+    function mode() {
+      return (document.getElementById("mode").value || "pem").trim().toLowerCase();
+    }
+
+    function applyModeUi() {
+      const excel = mode() === "excel";
+      document.getElementById("rowAccountNumber").style.display = excel ? "" : "none";
+      document.getElementById("rowInitial").style.display = excel ? "" : "none";
+      document.getElementById("pemReference").style.display = excel ? "none" : "";
     }
 
     async function loadWorkspaces() {
@@ -1204,34 +1222,35 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       }
     }
 
-    const COUNTRY_LABELS = { NL: "Netherlands", BE: "Belgium", DE: "Germany", FR: "France" };
-
     document.getElementById("btnCreate").onclick = async () => {
       errEl.textContent = "";
       const workspace = document.getElementById("workspace").value;
+      const modeValue = mode();
       const folder = document.getElementById("folder").value.trim();
-      const countryCode = document.getElementById("country").value.trim().toUpperCase() || "NL";
-      const aspsp = document.getElementById("aspsp").value.trim() || "ING";
-      const redirect = document.getElementById("redirect").value.trim()
-        || "https://deoudegracht.nl/banking-callback.html";
+      const holder = document.getElementById("accountHolder").value.trim();
       const body = {
         folder,
-        account_name: document.getElementById("accountName").value,
-        country: countryCode,
-        aspsp,
-        redirect_url: redirect,
+        mode: modeValue,
+        account_name: holder,
+        initial_balance: modeValue === "excel" ? document.getElementById("initialBalance").value : null,
+        account_number: modeValue === "excel" ? document.getElementById("accountNumber").value.trim() : null,
       };
       try {
         created = await api("POST", `/api/local/${encodeURIComponent(workspace)}/people/create`, body);
+        if (modeValue === "excel") {
+          document.getElementById("doneMsg").textContent =
+            `Excel person created: ${created.folder} (${created.workspace}), opening balance ${created.initial_balance}.`;
+          document.getElementById("fetchOut").textContent = JSON.stringify(created, null, 2);
+          showStep("step3");
+          return;
+        }
         document.getElementById("createdLabel").textContent =
           `${created.folder} in ${created.workspace}`;
         document.getElementById("ebLink").href = created.enable_banking_url || "https://enablebanking.com/cp/applications";
         document.getElementById("hintAppName").textContent =
           `boekh-${(created.folder || folder || "person").toLowerCase()}`;
-        document.getElementById("hintRedirect").textContent = redirect;
-        document.getElementById("hintCountry").textContent =
-          COUNTRY_LABELS[countryCode] || countryCode;
-        document.getElementById("hintAspsp").textContent = aspsp;
+        document.getElementById("hintCountry").textContent = "Netherlands";
+        document.getElementById("hintAspsp").textContent = "ING";
         showStep("step2");
       } catch (e) {
         errEl.textContent = String(e.message || e);
@@ -1250,8 +1269,6 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
         const fd = new FormData();
         fd.append("file", file, file.name);
         const h = { "Accept": "application/json" };
-        const key = apiKey();
-        if (key) h["Authorization"] = "Bearer " + key;
         const up = await fetch(
           `/api/local/${encodeURIComponent(workspace)}/people/${encodeURIComponent(short)}/pem`,
           { method: "POST", headers: h, body: fd }
@@ -1275,6 +1292,8 @@ _ADD_PERSON_HTML = """<!DOCTYPE html>
       }
     };
 
+    document.getElementById("mode").addEventListener("change", applyModeUi);
+    applyModeUi();
     loadWorkspaces().catch((e) => { errEl.textContent = String(e.message || e); });
   </script>
 </body>
