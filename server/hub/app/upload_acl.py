@@ -203,6 +203,7 @@ def save_upload(
     filename: str | None = None,
     year: str | None = None,
     test: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Write into ``{center}/{person}/{year}/{original filename}``."""
     client = client_ip(ip)
@@ -267,6 +268,9 @@ def save_upload(
             pass
 
     if rel.lower().endswith(".xlsx") and not test:
+        import xml.etree.ElementTree as ET
+        import zipfile
+
         from app.core.excel_import import check_xlsx_balance
 
         totals_path = full.parent / "category_totals.json"
@@ -275,10 +279,45 @@ def save_upload(
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 tmp.write(content)
                 tmp_path = Path(tmp.name)
-            check_xlsx_balance(tmp_path, totals_path)
+            try:
+                if dry_run:
+                    try:
+                        check_xlsx_balance(tmp_path, totals_path)
+                    except ValueError as exc:
+                        return {
+                            "ok": False,
+                            "path": rel,
+                            "bytes": len(content),
+                            "via": "dry_run",
+                            "person": grant.person,
+                            "balance_check": "fail",
+                            "detail": str(exc),
+                        }
+                    return {
+                        "ok": True,
+                        "path": rel,
+                        "bytes": len(content),
+                        "via": "dry_run",
+                        "person": grant.person,
+                        "balance_check": "pass",
+                    }
+                check_xlsx_balance(tmp_path, totals_path)
+            except (zipfile.BadZipFile, KeyError, ET.ParseError):
+                raise ValueError(
+                    "Could not read the Excel file — is it a valid .xlsx?"
+                )
         finally:
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
+
+    if dry_run:
+        return {
+            "ok": True,
+            "path": rel,
+            "bytes": len(content),
+            "via": "dry_run",
+            "person": grant.person,
+        }
 
     full.write_bytes(content)
     _log_upload(ip=client, grant=grant, rel=rel, nbytes=len(content))

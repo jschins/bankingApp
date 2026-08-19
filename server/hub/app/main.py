@@ -1294,10 +1294,10 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       <div>Upload folder:</div>
       <ul id="pathList"></ul>
       <div id="xlsxBox">
-        <div>Excel files already on the hub:</div>
+        <div>Excel files already on the hub <span id="fileCount" style="color:#666"></span>:</div>
         <ul id="xlsxList"></ul>
       </div>
-      <label>File
+      <label>File <span style="font-weight:400;color:#666">(max 32 MB)</span>
         <input id="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>
       </label>
       <div class="actions">
@@ -1307,12 +1307,23 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 
     <p id="err" class="err"></p>
     <p id="ok" class="ok"></p>
+    <div id="doneBox" style="display:none" class="actions">
+      <button type="button" id="btnDone" class="primary">Done</button>
+    </div>
   </main>
   <script>
     const params = new URLSearchParams(location.search);
     const errEl = document.getElementById("err");
     const okEl = document.getElementById("ok");
-    const _token = (params.get("t") || "").trim();
+    const _STORAGE_KEY = "upload_token";
+
+    const urlToken = (params.get("t") || "").trim();
+    let _token = urlToken;
+    if (_token) {
+      try { localStorage.setItem(_STORAGE_KEY, _token); } catch (_) {}
+    } else {
+      try { _token = (localStorage.getItem(_STORAGE_KEY) || "").trim(); } catch (_) {}
+    }
 
     function token() { return _token; }
     const yearEl = document.getElementById("year");
@@ -1350,6 +1361,8 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       const xlsxUl = document.getElementById("xlsxList");
       xlsxUl.replaceChildren();
       const files = g.xlsx_files || [];
+      const countEl = document.getElementById("fileCount");
+      countEl.textContent = files.length ? "(" + files.length + ")" : "";
       if (files.length === 0) {
         const empty = document.createElement("li");
         empty.textContent = "(none yet)";
@@ -1382,9 +1395,18 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       }
     });
 
+    function showDone() {
+      document.getElementById("doneBox").style.display = "flex";
+    }
+
+    document.getElementById("btnDone").onclick = () => {
+      location.assign("/upload");
+    };
+
     document.getElementById("btnUpload").onclick = async () => {
       errEl.textContent = "";
       okEl.textContent = "";
+      document.getElementById("doneBox").style.display = "none";
       const fileInput = document.getElementById("file");
       const file = fileInput.files && fileInput.files[0];
       if (!file) { errEl.textContent = "Choose a file."; return; }
@@ -1393,14 +1415,23 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         fd.append("file", file, file.name);
         fd.append("year", yearValue());
         const fmt = formatValue().toLowerCase();
-        if (fmt === "test") fd.append("format", "test");
+        if (fmt === "test" || fmt === "dry run") fd.append("format", fmt);
         const res = await api("POST", "/upload/api/upload", fd, true);
-        if (fmt === "test") {
+        if (fmt === "dry run") {
+          if (res.balance_check === "pass") {
+            okEl.textContent = "Dry run: balance check passed for " + res.path + ".";
+          } else if (res.balance_check === "fail") {
+            errEl.textContent = "Dry run: balance check failed — " + (res.detail || "unknown error");
+          } else {
+            okEl.textContent = "Dry run: " + res.path + " (" + res.bytes + " bytes) — no balance check (not xlsx).";
+          }
+        } else if (fmt === "test") {
           okEl.textContent = "Saved " + res.path + " (" + res.bytes + " bytes) — no processing (test mode).";
+          showDone();
         } else {
           okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
+          showDone();
         }
-        window.setTimeout(() => { location.assign("/upload" + (token() ? "?t=" + encodeURIComponent(token()) : "")); }, 5000);
       } catch (e) {
         errEl.textContent = String(e.message || e);
       }
@@ -1478,7 +1509,9 @@ async def api_upload(
     if len(content) > 32 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
     dest = (path or "").strip()
-    test_mode = (format or "").strip().lower() == "test"
+    fmt = (format or "").strip().lower()
+    test_mode = fmt == "test"
+    dry_run = fmt == "dry run"
     try:
         return await run_in_threadpool(
             upload_acl.save_upload,
@@ -1489,6 +1522,7 @@ async def api_upload(
             filename=file.filename,
             year=year,
             test=test_mode,
+            dry_run=dry_run,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

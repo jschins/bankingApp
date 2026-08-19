@@ -1,6 +1,7 @@
 {
   "mappings": {
-    "rafa kantoor": "192.168.1.58",
+    "rafaO": "192.168.1.60",
+    "rafaB kantoor": "192.168.1.58",
     "juleon prive": "192.168.1.107",
     "juleon ydigital": {
       "LAN dkg": "192.168.1.188",
@@ -9,31 +10,37 @@
       "name": "desktop-8bimc9l",
       "tailscale": "100.116.99.89"
     },
+    "anton prive": "192.168.1.53",
     "anton kantoor": "192.168.1.111",
     "server": {
       "LAN dkg": "192.168.178.48",
       "name": "desktop-sb23ts6",
       "tailscale": "100.87.15.71"
     },
-    "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write)"
+    "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write)",
+    "upload_url": "https://desktop-sb23t6s.tail59b1e5.ts.net/upload"
   },
   "hub_ips": [
     "100.87.15.71",
     "100.116.99.89",
     "192.168.20.30",
     "192.168.1.48",
+    "192.168.1.111",
+    "192.168.1.53",
     "192.168.1.188"
   ],
   "grants": [
     {
       "person": "rafael_bidarra",
       "token": "token_rafael_bidarra",
-      "center": "dkg"
+      "center": "dkg",
+      "mode": "Excel"
     },
     {
       "person": "miguel_palacios",
       "token": "token_miguel_palacios",
-      "center": "dkg"
+      "center": "dkg",
+      "mode": "Excel"
     }
   ]
 }

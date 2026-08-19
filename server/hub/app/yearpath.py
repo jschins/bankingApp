@@ -127,6 +127,22 @@ def _load_totals(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _sync_category_names(totals_path: Path, categories_path: Path) -> None:
+    """Add any category names present in categories.json but missing from totals."""
+    totals = _load_totals(totals_path)
+    existing = totals.get("categories")
+    if not isinstance(existing, dict):
+        return
+    all_names = _zero_categories(categories_path, totals)
+    missing = {k: v for k, v in all_names.items() if k not in existing}
+    if not missing:
+        return
+    existing.update(missing)
+    totals_path.write_text(
+        json.dumps(totals, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+
 def ensure_year_folder(
     person_folder: Path,
     year: str | None = None,
@@ -140,6 +156,7 @@ def ensure_year_folder(
     y = parse_year(year)
     folder = person_folder / y
     if folder.is_dir():
+        _sync_category_names(folder / CATEGORY_TOTALS_FILENAME, categories_path)
         return folder
 
     prev = previous_year_name(person_folder, y)
