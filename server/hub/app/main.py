@@ -1289,7 +1289,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
       </label>
       <label>Format
-        <input id="format" type="text" placeholder="Excel"/>
+        <input id="format" type="text"/>
       </label>
       <div>Upload folder:</div>
       <ul id="pathList"></ul>
@@ -1329,7 +1329,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     const yearEl = document.getElementById("year");
     const formatEl = document.getElementById("format");
     function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
-    function formatValue() { return (formatEl.value || formatEl.placeholder || "").trim(); }
+    function formatValue() { return (formatEl.value || "Excel").trim(); }
 
     async function api(method, path, body, isForm) {
       const opts = { method, headers: { "Accept": "application/json" } };
@@ -1349,9 +1349,15 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       return data;
     }
 
+    let _grantLoaded = false;
     function showGrant(g) {
       document.getElementById("grantBox").style.display = "block";
       document.getElementById("grantLabel").textContent = (g.center || "") + "/" + (g.person || "");
+      if (!_grantLoaded) {
+        _grantLoaded = true;
+        if (g.year && !yearEl.value) yearEl.value = g.year;
+        if (g.format) formatEl.value = g.format;
+      }
       document.getElementById("yourIp").textContent = g.client_ip || "?";
       const ul = document.getElementById("pathList");
       ul.replaceChildren();
@@ -1454,7 +1460,9 @@ def upload_page() -> str:
     from app.yearpath import current_year
 
     upload_acl.ensure_example_acl()
-    return _UPLOAD_HTML.replace("__YEAR__", current_year())
+    from app.yearpath import default_upload_year
+
+    return _UPLOAD_HTML.replace("__YEAR__", default_upload_year())
 
 
 @app.get("/api/upload/grant")
@@ -1471,14 +1479,17 @@ def api_upload_grant(
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
     ip = _upload_client_ip(request)
+    from app.yearpath import default_upload_year
+
     try:
-        y = parse_year(year)
+        y = parse_year(year) if year else default_upload_year()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "person": grant.person,
         "center": grant.center,
         "year": y,
+        "format": grant.format,
         "folder": grant.year_folder(y),
         "client_ip": ip,
         "xlsx_files": upload_acl.list_grant_xlsx_files(grant, year=y),

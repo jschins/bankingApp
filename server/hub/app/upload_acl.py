@@ -23,6 +23,7 @@ class UploadGrant:
     person: str
     token: str
     center: str
+    format: str = "Excel"
 
     def year_folder(self, year: str | None = None) -> str:
         return f"{self.center}/{self.person}/{parse_year(year)}"
@@ -116,6 +117,7 @@ def load_grants(*, force: bool = False) -> list[UploadGrant]:
                 person=person,
                 token=str(item.get("token") or ""),
                 center=center,
+                format=str(item.get("format") or "Excel"),
             )
         )
     return out

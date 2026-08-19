@@ -21,6 +21,12 @@ def current_year() -> str:
     return str(datetime.now().year)
 
 
+def default_upload_year() -> str:
+    """Current year, except in January when uploads typically belong to the previous year."""
+    now = datetime.now()
+    return str(now.year - 1 if now.month == 1 else now.year)
+
+
 def is_year_name(name: str) -> bool:
     return name.isdigit() and len(name) == 4 and YEAR_MIN <= int(name) <= YEAR_MAX
 

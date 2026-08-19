@@ -34,13 +34,13 @@
       "person": "rafael_bidarra",
       "token": "token_rafael_bidarra",
       "center": "dkg",
-      "mode": "Excel"
+      "format": "Excel"
     },
     {
       "person": "miguel_palacios",
       "token": "token_miguel_palacios",
       "center": "dkg",
-      "mode": "Excel"
+      "format": "Excel"
     }
   ]
 }
