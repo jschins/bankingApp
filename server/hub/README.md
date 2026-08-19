@@ -45,6 +45,16 @@ Each successful upload is appended to `workspaces/upload.log` (time, IP, person,
 
 Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>`).
 
+### Public upload link (https)
+
+If you want a public HTTPS upload link, proxy only the `/upload` URL space (do **not** proxy the whole hub). That includes:
+
+- `GET /upload`
+- `GET /upload/api/upload/grant`
+- `POST /upload/api/upload`
+
+The hub reads client IP from common proxy headers for the upload endpoints (`X-Forwarded-For`, and `CF-Connecting-IP` / `X-Real-IP` when present), so `upload.log` and the upload page can show the real person IP.
+
 ## Add person wizard
 
 - UI: [http://127.0.0.1:8200/add-person](http://127.0.0.1:8200/add-person) (pass `?workspace=dkg`)

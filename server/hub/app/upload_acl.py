@@ -139,7 +139,11 @@ def client_ip(host: str | None) -> str:
 def is_upload_http_path(path: str) -> bool:
     """Upload UI + upload API only (not the rest of the hub)."""
     p = path or ""
-    return p == "/upload" or p.startswith("/api/upload")
+    return (
+        p == "/upload"
+        or p.startswith("/api/upload")
+        or p.startswith("/upload/api/upload")
+    )
 
 
 def path_allowed(grant: UploadGrant, rel_path: str, *, year: str | None = None) -> bool:

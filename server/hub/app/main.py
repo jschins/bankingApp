@@ -57,6 +57,57 @@ class _HubIpAllowlistMiddleware:
 app.add_middleware(_HubIpAllowlistMiddleware)
 
 
+def _upload_client_ip(request: Request) -> str:
+    """Best-effort client IP for upload endpoints behind a reverse proxy.
+
+    Upload endpoints are protected by grant tokens, so using reverse-proxy
+    headers is the only practical way to show the "real" IP in
+    ``workspaces/upload.log``.
+    """
+
+    from app import upload_acl
+
+    def _strip_port(token: str) -> str:
+        t = (token or "").strip()
+        if not t:
+            return ""
+        # IPv6 in brackets: [::1]:1234
+        if t.startswith("[") and "]" in t:
+            return t[1 : t.index("]")]
+        # host:port (IPv4 or single-colon forms)
+        if t.count(":") == 1:
+            return t.split(":", 1)[0]
+        return t
+
+    def _valid_ip(token: str) -> bool:
+        t = (token or "").strip()
+        if not t:
+            return False
+        return t.lower() not in {"unknown", "none", "-"}
+
+    headers = request.headers
+
+    # Common proxy headers (Cloudflare / generic reverse proxies).
+    for key in ("CF-Connecting-IP", "X-Real-IP"):
+        raw = headers.get(key)
+        if raw:
+            cand = _strip_port(raw.split(",")[0])
+            if _valid_ip(cand):
+                return upload_acl.client_ip(cand)
+
+    xff = headers.get("X-Forwarded-For")
+    if xff:
+        for part in xff.split(","):
+            cand = _strip_port(part)
+            if _valid_ip(cand):
+                return upload_acl.client_ip(cand)
+
+    # Fallback: what uvicorn sees (often the proxy IP).
+    if request.client is not None and request.client.host:
+        return upload_acl.client_ip(request.client.host)
+    return upload_acl.client_ip("unknown")
+
+
 def require_api_key(authorization: str | None = Header(default=None)) -> None:
     if not API_KEY:
         return
@@ -1317,7 +1368,10 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     }
 
     async function loadGrant() {
-      const g = await api("GET", "/api/upload/grant?year=" + encodeURIComponent(yearValue()));
+      const g = await api(
+        "GET",
+        "/upload/api/upload/grant?year=" + encodeURIComponent(yearValue())
+      );
       showGrant(g);
       return g;
     }
@@ -1354,7 +1408,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         const fd = new FormData();
         fd.append("file", file, file.name);
         fd.append("year", yearValue());
-        const res = await api("POST", "/api/upload", fd, true);
+        const res = await api("POST", "/upload/api/upload", fd, true);
         okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
         window.setTimeout(() => { location.assign("/upload"); }, 5000);
       } catch (e) {
@@ -1391,7 +1445,7 @@ def api_upload_grant(
     grant = upload_acl.find_grant_by_token(token)
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
-    ip = upload_acl.client_ip(request.client.host if request.client else None)
+    ip = _upload_client_ip(request)
     try:
         y = parse_year(year)
     except ValueError as exc:
@@ -1421,7 +1475,7 @@ async def api_upload(
     grant = upload_acl.find_grant_by_token(auth_token)
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
-    ip = upload_acl.client_ip(request.client.host if request.client else None)
+    ip = _upload_client_ip(request)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -1445,6 +1499,42 @@ async def api_upload(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/upload/api/upload/grant")
+def api_upload_grant_proxy(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    year: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Upload endpoints variant under ``/upload``.
+
+    This lets a reverse proxy expose only ``/upload`` over HTTPS without
+    also forwarding ``/api/upload``.
+    """
+
+    return api_upload_grant(request, authorization=authorization, year=year)
+
+
+@app.post("/upload/api/upload")
+async def api_upload_proxy(
+    request: Request,
+    file: UploadFile = File(...),
+    path: str | None = Form(None),
+    token: str | None = Form(None),
+    year: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Upload endpoints variant under ``/upload`` (see ``api_upload_grant_proxy``)."""
+
+    return await api_upload(
+        request,
+        file=file,
+        path=path,
+        token=token,
+        year=year,
+        authorization=authorization,
+    )
 
 
 def _upload_token(authorization: str | None, form_token: str | None) -> str:
