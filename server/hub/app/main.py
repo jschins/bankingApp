@@ -1281,20 +1281,15 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 <body>
   <main>
     <h1>Upload data</h1>
-    <p class="lead">Upload Excel files into the person's year folder. Any IP may open this page; a grant token is required to write.</p>
 
-    <label>Token
-      <input id="token" type="password" autocomplete="off" placeholder=""/>
-    </label>
-    <div class="actions">
-      <button type="button" id="btnCheck" class="primary">Check grant</button>
-    </div>
-
-    <div id="grantBox" class="panel">
+    <div id="grantBox" class="panel" style="display:none">
       <h2 id="grantLabel"></h2>
       <div>Your IP: <code id="yourIp"></code></div>
       <label>Year
         <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
+      </label>
+      <label>Format
+        <input id="format" type="text" placeholder="Excel"/>
       </label>
       <div>Upload folder:</div>
       <ul id="pathList"></ul>
@@ -1317,12 +1312,13 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     const params = new URLSearchParams(location.search);
     const errEl = document.getElementById("err");
     const okEl = document.getElementById("ok");
-    const tokenEl = document.getElementById("token");
-    if (params.get("t")) tokenEl.value = params.get("t");
+    const _token = (params.get("t") || "").trim();
 
-    function token() { return (tokenEl.value || "").trim(); }
+    function token() { return _token; }
     const yearEl = document.getElementById("year");
+    const formatEl = document.getElementById("format");
     function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
+    function formatValue() { return (formatEl.value || formatEl.placeholder || "").trim(); }
 
     async function api(method, path, body, isForm) {
       const opts = { method, headers: { "Accept": "application/json" } };
@@ -1376,18 +1372,6 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       return g;
     }
 
-    document.getElementById("btnCheck").onclick = async () => {
-      errEl.textContent = "";
-      okEl.textContent = "";
-      try {
-        await loadGrant();
-        okEl.textContent = "Grant OK — choose a year and a file to upload.";
-      } catch (e) {
-        document.getElementById("grantBox").style.display = "none";
-        errEl.textContent = String(e.message || e);
-      }
-    };
-
     yearEl.addEventListener("change", async () => {
       if (document.getElementById("grantBox").style.display === "none") return;
       errEl.textContent = "";
@@ -1408,15 +1392,25 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         const fd = new FormData();
         fd.append("file", file, file.name);
         fd.append("year", yearValue());
+        const fmt = formatValue().toLowerCase();
+        if (fmt === "test") fd.append("format", "test");
         const res = await api("POST", "/upload/api/upload", fd, true);
-        okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
-        window.setTimeout(() => { location.assign("/upload"); }, 5000);
+        if (fmt === "test") {
+          okEl.textContent = "Saved " + res.path + " (" + res.bytes + " bytes) — no processing (test mode).";
+        } else {
+          okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
+        }
+        window.setTimeout(() => { location.assign("/upload" + (token() ? "?t=" + encodeURIComponent(token()) : "")); }, 5000);
       } catch (e) {
         errEl.textContent = String(e.message || e);
       }
     };
 
-    if (tokenEl.value) document.getElementById("btnCheck").click();
+    if (token()) {
+      loadGrant().catch((e) => { errEl.textContent = String(e.message || e); });
+    } else {
+      errEl.textContent = "No token provided. Add ?t=<token> to the URL.";
+    }
   </script>
 </body>
 </html>
@@ -1467,6 +1461,7 @@ async def api_upload(
     path: str | None = Form(None),
     token: str | None = Form(None),
     year: str | None = Form(None),
+    format: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     from app import upload_acl
@@ -1483,6 +1478,7 @@ async def api_upload(
     if len(content) > 32 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
     dest = (path or "").strip()
+    test_mode = (format or "").strip().lower() == "test"
     try:
         return await run_in_threadpool(
             upload_acl.save_upload,
@@ -1492,6 +1488,7 @@ async def api_upload(
             content=content,
             filename=file.filename,
             year=year,
+            test=test_mode,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1523,6 +1520,7 @@ async def api_upload_proxy(
     path: str | None = Form(None),
     token: str | None = Form(None),
     year: str | None = Form(None),
+    format: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Upload endpoints variant under ``/upload`` (see ``api_upload_grant_proxy``)."""
@@ -1533,6 +1531,7 @@ async def api_upload_proxy(
         path=path,
         token=token,
         year=year,
+        format=format,
         authorization=authorization,
     )
 

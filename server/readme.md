@@ -29,6 +29,57 @@ bankingApp/server/
 | `hub/` | FastAPI: file store, recalculate, matrix/settings/transactions/refresh, add-person wizard |
 | `client/` | Same binary everywhere; config selects identity / access / person; proxies to hub |
 
+## Year folders (lazy seed)
+
+Each person has one folder per calendar year: `workspaces/<ws>/<person>/<YYYY>/`.  
+`secret/personal_categories.json` is shared across years. Isolation is the year name — opening 2027 must **not** wipe 2026.
+
+The hub does **not** create next year’s folder on 1 January or on matrix/status reads. A missing year is seeded **lazily on first write**, then left alone.
+
+```text
+Upload or Refresh targets year Y
+    │
+    ├─ Y/ already exists?     → leave it unchanged
+    │
+    └─ else
+         find latest year folder < Y
+         write empty books + carried opening balance
+         continue upload / refresh
+```
+
+### What a new year contains
+
+Under `<person>/2027/` (example):
+
+| File | Seeded contents |
+|------|-----------------|
+| `categorized_transactions.json` | `{"transactions": [], "modifications": []}` |
+| `downloaded_transactions.json` | `[]` |
+| `category_totals.json` | every name from shared `categories.json` set to `"0.00"`; `account_balances` copied from the **latest previous year** (iban, name, currency, **balance**), with `"files": []` |
+
+Previous year = max of existing year folders that are **strictly less than Y** (not blindly `Y-1`, in case a year was skipped). Opening balance is that year’s first `account_balances[].balance`, or `"0.00"` if there is no previous year (new person uses the same `onbekend` stub as add-person).
+
+Do **not** copy xlsx, transactions, or last year’s `files` list.
+
+### When it runs
+
+`ensure_year_folder()` in `hub/app/yearpath.py` (and the client copy). If `person/Y` exists, it returns immediately.
+
+| Write | Why seed first |
+|-------|----------------|
+| Excel upload to year Y | **Before** the SALDO check, so `previous_balance + D − E == SALDO` uses last year’s closing figure instead of missing totals (`0.00`) |
+| Refresh / Refresh All | When the active year folder is missing: empty books, then append; the bank API then overwrites `account_balances` with live figures |
+| Add person | Same seeder instead of a bare `{}` totals file (current calendar year) |
+
+No extra UI: the upload **Year** field (placeholder = current year) and Refresh already name the target. First use of 2027 creates it.
+
+### After seeding
+
+- **Excel:** first 2027 file is checked against carried 2026 saldo; import then adds net and records the xlsx in `files`.
+- **Bank:** first 2027 refresh appends into empty transaction files; live balances replace the carried JSON after the fetch.
+
+The per-person **new year overwrite** checkbox is a same-year redo (wipe **this** year’s JSON and refetch — PEM bootstrap). It is not how a calendar year is opened and must not touch previous year folders.
+
 ## Client roles (`client_config.json`)
 
 | Role | Rights | Config | “Add person” | Title |
@@ -141,6 +192,17 @@ Two things matter: **where** the client connects (`server_url`) and **who** the 
 
 Upload page: [http://127.0.0.1:8200/upload](http://127.0.0.1:8200/upload) (optional `?t=<token>` when the grant has a token). Successful uploads are logged in `workspaces/upload.log`.
 
+### Public upload link (https)
+
+For convenience you can expose the upload UI via a public HTTPS name:
+`https://deoudegracht.nl/upload?t=<token>`.
+
+Important: do **not** reverse-proxy the whole hub to HTTPS. Only proxy the `/upload` URL space (including `/upload/api/upload*`) to the hub’s plain HTTP port `8200`.
+
+When you place a reverse proxy in front, configure it to forward client IP headers (so `upload.log` and the upload page show the real person IP rather than the proxy IP), e.g.:
+- `X-Forwarded-For` (preferred)
+- `CF-Connecting-IP` and/or `X-Real-IP` (if applicable)
+
 More detail: [`hub/README.md`](hub/README.md).
 
 ## Data flow
@@ -162,7 +224,7 @@ Onboarding for a new bank person lives on the **hub**, not in the client executa
 
 1. Local/central administrator clicks **Add person** in the client (hidden for personal users).
 2. Browser opens `http://<hub>:8200/add-person?workspace=<ws>` (reachable from any admin PC on the LAN).
-3. Wizard collects folder name (this is the person identity, max 40 characters) and bank-account name; creates `workspaces/<ws>/<folder>/{data,secret}/` with empty data stubs + draft `profile.json`.
+3. Wizard collects folder name (this is the person identity, max 40 characters) and bank-account name; creates `secret/` (draft `profile.json`, empty `personal_categories.json`) and seeds the **current year** folder as above.
 4. Administrator creates an Enable Banking application at [https://enablebanking.com/cp/applications](https://enablebanking.com/cp/applications). The wizard reminds them of the fields to use, for example:
    - Application name: `boekh-<folder>`
    - Redirect URL: `https://deoudegracht.nl/banking-callback.html`

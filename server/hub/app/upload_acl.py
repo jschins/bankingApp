@@ -202,6 +202,7 @@ def save_upload(
     content: bytes,
     filename: str | None = None,
     year: str | None = None,
+    test: bool = False,
 ) -> dict[str, Any]:
     """Write into ``{center}/{person}/{year}/{original filename}``."""
     client = client_ip(ip)
@@ -265,7 +266,7 @@ def save_upload(
         except ValueError:
             pass
 
-    if rel.lower().endswith(".xlsx"):
+    if rel.lower().endswith(".xlsx") and not test:
         from app.core.excel_import import check_xlsx_balance
 
         totals_path = full.parent / "category_totals.json"
@@ -285,10 +286,10 @@ def save_upload(
         "ok": True,
         "path": rel,
         "bytes": len(content),
-        "via": "raw",
+        "via": "test" if test else "raw",
         "person": grant.person,
     }
-    if rel.lower().endswith(".xlsx"):
+    if rel.lower().endswith(".xlsx") and not test:
         payload_out["excel"] = _process_excel_upload(grant, year=y)
         payload_out["year"] = y
     return payload_out
