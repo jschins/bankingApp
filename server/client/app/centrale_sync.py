@@ -56,7 +56,7 @@ def config_path() -> Path:
         return Path(env)
     if is_frozen():
         return exe_dir() / "client_config.json"
-    return project_root() / "client_config.json"
+    return project_root() / "dist" / "client_config.json"
 
 
 def load_config(*, force_reload: bool = False) -> HubConfig:

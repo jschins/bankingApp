@@ -94,10 +94,20 @@ def person_current_balance(pack: PersonPack) -> str | None:
     return f"{cents / 100:.2f}"
 
 
-def build_matrix(people: list[PersonPack] | None = None) -> dict[str, Any]:
+def build_matrix(
+    people: list[PersonPack] | None = None,
+    *,
+    year: str | None = None,
+) -> dict[str, Any]:
     from app.runtime import active_workspace
 
-    packs = people if people is not None else get_people()
+    if people is not None:
+        packs = people
+    elif year is not None:
+        # Year-specific matrix: include only persons with that year folder.
+        packs = list_people(year=year)
+    else:
+        packs = get_people()
     categories = category_names(packs)
     columns = [{"short": p.short, "folder": p.folder_name} for p in packs]
     cells: dict[str, dict[str, str]] = {name: {} for name in categories}

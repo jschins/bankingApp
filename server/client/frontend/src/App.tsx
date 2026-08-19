@@ -9,6 +9,7 @@ import {
   getMatrix,
   getSettings,
   getTransactions,
+  getYears,
   recalculate,
   recordModification,
   refreshAll,
@@ -204,6 +205,65 @@ function WorkspaceSwitcher({
   );
 }
 
+function YearSwitcher({
+  year,
+  years,
+  onSelect,
+}: {
+  year: string;
+  years: string[];
+  onSelect: (y: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(ev: Event) {
+      if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="workspace-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className="workspace-switcher-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="workspace-switcher-chevron" aria-hidden>
+          ▾
+        </span>
+        <span className="workspace-switcher-label">{year}</span>
+      </button>
+      {open && (
+        <ul className="workspace-switcher-menu" role="listbox">
+          {years.map((y) => (
+            <li key={y}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={y === year}
+                className={y === year ? "is-selected" : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  if (y !== year) onSelect(y);
+                }}
+              >
+                {y}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ActionsMenu({ items }: { items: HeaderAction[] }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -231,7 +291,7 @@ function ActionsMenu({ items }: { items: HeaderAction[] }) {
         <span className="workspace-switcher-chevron" aria-hidden>
           ▾
         </span>
-        <span className="workspace-switcher-label">Menu</span>
+        <span className="workspace-switcher-label">menu</span>
       </button>
       {open && (
         <ul className="workspace-switcher-menu" role="menu">
@@ -275,18 +335,38 @@ function SyncNotifyShell({
   onWorkspaceChanged,
   termsView = false,
 }: {
-  children: (brandName: string) => ReactNode;
+  children: (brandName: string, activeYear: string) => ReactNode;
   onWorkspaceChanged?: () => void;
   termsView?: boolean;
 }) {
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
   const [notes, setNotes] = useState<SyncNotification[]>([]);
   const [switching, setSwitching] = useState(false);
+  const [activeYear, setActiveYear] = useState<string>("");
+  const [yearOptions, setYearOptions] = useState<string[]>([]);
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
   const [headerActions, setHeaderActions] = useState<HeaderAction[]>([]);
   const dataEpochRef = useRef<number | null>(null);
 
   const brandName = brandTitle(status);
+
+  useEffect(() => {
+    getYears()
+      .then((res) => {
+        setYearOptions(res.years);
+        // Client dropdown shows existing years only; if default year does not
+        // exist yet, fall back to the latest existing year.
+        if (res.years.includes(res.default_year)) {
+          setActiveYear(res.default_year);
+        } else if (res.years.length > 0) {
+          setActiveYear(res.years[res.years.length - 1]);
+        } else {
+          setActiveYear(res.default_year);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.workspace]);
 
   useEffect(() => {
     document.title = termsView ? `${brandName} — Terms` : brandName;
@@ -385,6 +465,16 @@ function SyncNotifyShell({
                 onSelect={handleSelect}
               />
             ) : null}
+            {!termsView && activeYear ? (
+              <YearSwitcher
+                year={activeYear}
+                years={yearOptions}
+                onSelect={(y) => {
+                  setActiveYear(y);
+                  onWorkspaceChanged?.();
+                }}
+              />
+            ) : null}
             <ActionsMenu items={headerActions} />
             {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
             {status?.error ? <span> · sync error: {status.error}</span> : null}
@@ -409,7 +499,7 @@ function SyncNotifyShell({
           </div>
         </div>
       )}
-      {children(brandName)}
+      {children(brandName, activeYear)}
     </div>
     </HeaderActionsContext.Provider>
   );
@@ -504,18 +594,18 @@ export default function App() {
       termsView={isTerms}
       onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}
     >
-      {(brandName) =>
+      {(brandName, year) =>
         isTerms ? (
           <TermsApp key={wsEpoch} brandName={brandName} />
         ) : (
-          <MainApp key={wsEpoch} brandName={brandName} />
+          <MainApp key={wsEpoch} brandName={brandName} year={year} />
         )
       }
     </SyncNotifyShell>
   );
 }
 
-function MainApp({ brandName }: { brandName: string }) {
+function MainApp({ brandName, year }: { brandName: string; year: string }) {
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [selection, setSelection] = useState<CellSelection | null>(null);
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
@@ -620,7 +710,7 @@ function MainApp({ brandName }: { brandName: string }) {
 
   function loadDisplay(sel: CellSelection | null): Promise<void> {
     setError(null);
-    return getMatrix()
+    return getMatrix(year)
       .then((payload) => {
         setMatrix(payload);
         if (!sel) {
@@ -659,8 +749,11 @@ function MainApp({ brandName }: { brandName: string }) {
 
   useEffect(() => {
     window.name = "boekhouding-main";
+    setSelection(null);
+    setDetail(null);
+    setError(null);
     void loadMatrixOnly();
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     const channel = new BroadcastChannel(CHANNEL);
@@ -1157,7 +1250,7 @@ function TermsApp({ brandName }: { brandName: string }) {
               {"\u00a0"}
             </span>
             <button type="button" className="sidebar-knob" onClick={() => openView("main")}>
-              ← {brandName} (Alt+M) ↗
+              Matrix (Alt+M)
             </button>
           </div>
         </div>

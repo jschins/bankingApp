@@ -29,6 +29,7 @@ def list_people(root: Path | None = None, *, year: str | None = None) -> list[Pe
     """Person packs with ``secret/`` and/or a ``YYYY/`` year folder. Identity is the folder name."""
     base = root if root is not None else app_root()
     y = parse_year(year)
+    require_year_folder = year is not None
     packs: list[PersonPack] = []
     if not base.is_dir():
         return packs
@@ -36,8 +37,15 @@ def list_people(root: Path | None = None, *, year: str | None = None) -> list[Pe
     for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
         if not child.is_dir() or child.name in _IGNORE_DIRS or child.name.startswith("."):
             continue
-        if not has_person_layout(child):
-            continue
+        if require_year_folder:
+            # When a year is explicitly selected, only include persons that
+            # actually have that year folder.
+            if not year_dir(child, y).is_dir():
+                continue
+        else:
+            if not has_person_layout(child):
+                continue
+
         data = year_dir(child, y)
         secret = child / "secret"
         profile = secret / "profile.json"

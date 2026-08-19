@@ -34,8 +34,17 @@ async function sendJson<T>(
   return (await resp.json()) as T;
 }
 
-export function getMatrix(): Promise<MatrixResponse> {
-  return getJson("/api/matrix");
+export interface YearsResponse {
+  years: string[];
+  default_year: string;
+}
+
+export function getYears(): Promise<YearsResponse> {
+  return getJson("/api/years");
+}
+
+export function getMatrix(year?: string): Promise<MatrixResponse> {
+  return year ? getJson(`/api/matrix?year=${encodeURIComponent(year)}`) : getJson("/api/matrix");
 }
 
 export function recalculate(): Promise<MatrixResponse> {

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.yearpath import current_year
@@ -321,12 +321,54 @@ def api_people() -> dict[str, Any]:
         raise _hub_error(exc) from exc
 
 
-@app.get("/api/matrix")
-def api_matrix() -> dict[str, Any]:
-    from app.centrale_sync import hub_get, scope_matrix
+@app.get("/api/years")
+def api_years() -> dict[str, Any]:
+    from app.centrale_sync import hub_get, scope_people
+    import urllib.parse
 
     try:
-        payload = hub_get("/matrix")
+        # Keep hub-provided default year hint.
+        root = hub_get("/years")
+        default_year = str(root.get("default_year") or "")
+
+        # Aggregate years from persons this client can actually access.
+        people_payload = hub_get("/people")
+        people = scope_people(
+            people_payload.get("people")
+            if isinstance(people_payload, dict) and isinstance(people_payload.get("people"), list)
+            else []
+        )
+        years: set[str] = set()
+        for person in people:
+            if not isinstance(person, dict):
+                continue
+            short = str(person.get("short") or "").strip()
+            if not short:
+                continue
+            try:
+                per = hub_get(f"/people/{urllib.parse.quote(short)}/years")
+                vals = per.get("years") if isinstance(per, dict) else None
+                if isinstance(vals, list):
+                    years.update(str(v) for v in vals if str(v).strip())
+            except Exception:
+                # Ignore one broken person folder; keep remaining year options.
+                continue
+        return {"years": sorted(years), "default_year": default_year}
+    except Exception as exc:
+        raise _hub_error(exc) from exc
+
+
+@app.get("/api/matrix")
+def api_matrix(year: str | None = Query(default=None)) -> dict[str, Any]:
+    from app.centrale_sync import hub_get, scope_matrix
+    import urllib.parse
+
+    try:
+        suffix = "/matrix"
+        if year:
+            # Forward selected year to hub.
+            suffix = f"/matrix?year={urllib.parse.quote(year)}"
+        payload = hub_get(suffix)
         return scope_matrix(payload) if isinstance(payload, dict) else payload
     except Exception as exc:
         raise _hub_error(exc) from exc

@@ -78,11 +78,11 @@ def people(workspace: str) -> dict[str, Any]:
     return {"workspace": caps["workspace"], "people": caps["people"]}
 
 
-def matrix(workspace: str) -> dict[str, Any]:
+def matrix(workspace: str, *, year: str | None = None) -> dict[str, Any]:
     with _workspace_scope(workspace) as ws:
         from app.matrix import build_matrix
 
-        payload = build_matrix()
+        payload = build_matrix(year=year)
         payload["workspace"] = ws
         return payload
 

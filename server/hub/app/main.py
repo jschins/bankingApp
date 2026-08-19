@@ -409,12 +409,57 @@ def api_people(workspace: str, _: None = Depends(require_api_key)) -> dict[str, 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/local/{workspace}/years")
+def api_years(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app.runtime import data_root
+    from app.yearpath import default_upload_year, list_year_names
+
+    ws_root = (data_root() / workspace).resolve()
+    if not ws_root.is_dir():
+        raise HTTPException(status_code=404, detail=f"Workspace {workspace!r} not found")
+    existing_years: set[str] = set()
+    for child in ws_root.iterdir():
+        if child.is_dir() and not child.name.startswith("."):
+            existing_years.update(list_year_names(child))
+    default_y = default_upload_year()
+    # Client frontend: existing years only (no synthetic "next year").
+    # Keep default_year as a separate hint; if missing from options, UI can still
+    # display it as selected text if needed.
+    year_options = sorted(existing_years)
+    return {
+        "years": year_options,
+        "default_year": default_y,
+    }
+
+
+@app.get("/api/local/{workspace}/people/{short}/years")
+def api_person_years(
+    workspace: str,
+    short: str,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app.runtime import data_root
+    from app.yearpath import list_year_names
+
+    ws_root = (data_root() / workspace).resolve()
+    if not ws_root.is_dir():
+        raise HTTPException(status_code=404, detail=f"Workspace {workspace!r} not found")
+    person_folder = (ws_root / short).resolve()
+    if not person_folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Person {short!r} not found")
+    return {"person": short, "years": list_year_names(person_folder)}
+
+
 @app.get("/api/local/{workspace}/matrix")
-def api_matrix(workspace: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+def api_matrix(
+    workspace: str,
+    year: str | None = Query(default=None),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
     from app import workspace_api
 
     try:
-        return workspace_api.matrix(workspace)
+        return workspace_api.matrix(workspace, year=year)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -1286,14 +1331,12 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       <h2 id="grantLabel"></h2>
       <div>Your IP: <code id="yourIp"></code></div>
       <label>Year
-        <input id="year" type="number" min="1990" max="2100" step="1" placeholder="__YEAR__" inputmode="numeric"/>
+        <select id="year"><option value="__YEAR__">__YEAR__</option></select>
       </label>
       <label>Format
         <input id="format" type="text"/>
       </label>
-      <div>Upload folder:</div>
-      <ul id="pathList"></ul>
-      <div id="xlsxBox">
+      <div id="xlsxBox" style="margin-top:0.75rem">
         <div>Excel files already on the hub <span id="fileCount" style="color:#666"></span>:</div>
         <ul id="xlsxList"></ul>
       </div>
@@ -1352,18 +1395,23 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     let _grantLoaded = false;
     function showGrant(g) {
       document.getElementById("grantBox").style.display = "block";
-      document.getElementById("grantLabel").textContent = (g.center || "") + "/" + (g.person || "");
+      document.getElementById("grantLabel").textContent = (g.folder || "");
       if (!_grantLoaded) {
         _grantLoaded = true;
-        if (g.year && !yearEl.value) yearEl.value = g.year;
+        if (g.year_options && g.year_options.length) {
+          const selected = g.year || g.default_year || "";
+          yearEl.innerHTML = "";
+          for (const y of g.year_options) {
+            const opt = document.createElement("option");
+            opt.value = y;
+            opt.textContent = y;
+            if (y === selected) opt.selected = true;
+            yearEl.appendChild(opt);
+          }
+        }
         if (g.format) formatEl.value = g.format;
       }
       document.getElementById("yourIp").textContent = g.client_ip || "?";
-      const ul = document.getElementById("pathList");
-      ul.replaceChildren();
-      const li = document.createElement("li");
-      li.innerHTML = "<code>" + (g.folder || "") + "</code>";
-      ul.appendChild(li);
       const xlsxUl = document.getElementById("xlsxList");
       xlsxUl.replaceChildren();
       const files = g.xlsx_files || [];
@@ -1485,6 +1533,14 @@ def api_upload_grant(
         y = parse_year(year) if year else default_upload_year()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    from app.yearpath import list_year_names
+
+    person_folder = upload_acl.resolve_under_data_root(f"{grant.center}/{grant.person}")
+    existing = list_year_names(person_folder)
+    default_y = default_upload_year()
+    next_y = str(int(default_y) + 1)
+    year_options = sorted(set(existing + [default_y, next_y]))
+
     return {
         "person": grant.person,
         "center": grant.center,
@@ -1493,6 +1549,8 @@ def api_upload_grant(
         "folder": grant.year_folder(y),
         "client_ip": ip,
         "xlsx_files": upload_acl.list_grant_xlsx_files(grant, year=y),
+        "default_year": default_y,
+        "year_options": year_options,
     }
 
 
