@@ -1,6 +1,12 @@
 {
-  "mappings": {
-    "rafaO": "192.168.1.60",
+  "countries": {
+    "netherlands": ["dkg", "lp"],
+    "united kingdom": [],
+    "sweden": [],
+    "ireland": []
+  },
+    "mappings": {
+      "rafaO": "192.168.1.60",
     "rafaB kantoor": "192.168.1.58",
     "juleon prive": "192.168.1.107",
     "juleon ydigital": {

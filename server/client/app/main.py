@@ -243,8 +243,11 @@ def api_set_workspace(body: WorkspaceRequest) -> dict[str, Any]:
     from app.centrale_sync import list_hub_workspaces, load_config, switch_workspace
 
     cfg = load_config()
-    if cfg.role != "central_admin":
-        raise HTTPException(status_code=400, detail="workspace switch requires access=central")
+    if cfg.role != "regional_admin":
+        raise HTTPException(
+            status_code=400,
+            detail="workspace switch requires access=regional or a country",
+        )
     names = list_hub_workspaces()
     if body.workspace not in names and names:
         raise HTTPException(status_code=404, detail=f"Unknown workspace: {body.workspace!r}")
@@ -265,7 +268,7 @@ def api_centrale_status() -> dict[str, Any]:
     poll_central_events()
     status = sync_status()
     cfg = load_config()
-    if cfg.role == "central_admin":
+    if cfg.role == "regional_admin":
         status["workspaces"] = list_hub_workspaces()
     try:
         from app.centrale_sync import refresh_capabilities

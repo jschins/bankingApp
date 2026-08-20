@@ -1,7 +1,7 @@
 {
-  "server_url": "http://100.116.99.89:8200",
+  "server_url": "http://100.87.15.71:8200",
   "port": 8300,
-  "access": "central",
+  "access": "regional",
   "api_key": "",
   "enabled": true
 }

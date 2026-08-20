@@ -15,8 +15,10 @@ from typing import Any
 
 from app.runtime import (
     exe_dir,
-    is_central_admin,
+    is_country_access,
     is_frozen,
+    is_regional_admin,
+    normalize_access,
     project_root,
     selected_workspace,
     set_runtime,
@@ -41,12 +43,12 @@ class HubConfig:
     workspace: str  # currently selected target (from access / switcher)
     author: str  # fixed identity from client_config "workspace" (hub session label)
     person: str  # empty unless access=personal
-    access: str  # central | local | personal
+    access: str  # regional | local | personal | <country>
     api_key: str
     enabled: bool
     port: int
-    role: str  # "local" | "central_admin"
-    workspaces: tuple[str, ...] = ()  # locked targets for local/personal; empty for central
+    role: str  # "local" | "regional_admin"
+    workspaces: tuple[str, ...] = ()  # locked/country targets; empty = all (regional)
 
 
 def config_path() -> Path:
@@ -92,9 +94,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         or "http://127.0.0.1:8200"
     ).rstrip("/")
 
-    access = str(file_cfg.get("access") or "local").strip().lower()
-    if access not in ("central", "local", "personal"):
-        access = "local"
+    access = normalize_access(str(file_cfg.get("access") or "local"))
 
     workspace_key = str(file_cfg.get("workspace") or "").strip()
     person_key = (
@@ -102,14 +102,19 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         or str(file_cfg.get("person") or "").strip()
     )
 
-    if access == "central":
+    api_key_early = (
+        os.environ.get("CENTRALE_API_KEY", "").strip()
+        or str(file_cfg.get("api_key") or "").strip()
+    )
+
+    if access == "regional":
         person = ""
-        role = "central_admin"
-        author = workspace_key or "central"
+        role = "regional_admin"
+        author = workspace_key or "regional"
         workspaces: tuple[str, ...] = ()
         workspace = selected_workspace() or workspace_key
         if not workspace:
-            workspace = _first_hub_workspace(url) or "dkg"
+            workspace = _first_hub_workspace(url, api_key=api_key_early) or "dkg"
     elif access == "personal":
         person = person_key
         if not person:
@@ -118,18 +123,34 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         author = workspace_key or "dkg"
         workspaces = (author,)
         workspace = author
-    else:
+    elif access == "local":
         # local — one workspace, all people; ignore person key
         person = ""
         role = "local"
         author = workspace_key or "dkg"
         workspaces = (author,)
         workspace = author
+    else:
+        # Country access: workspaces from hub upload_acl.json ``countries``.
+        country_ws = _hub_country_workspaces(url, access, api_key=api_key_early)
+        if country_ws is None:
+            raise ValueError(
+                f'client_config access={access!r} is not regional/local/personal '
+                f"and is not a country listed in hub upload_acl.json"
+            )
+        person = ""
+        role = "regional_admin"
+        author = workspace_key or access
+        workspaces = tuple(country_ws)
+        preferred = selected_workspace() or workspace_key
+        if preferred and preferred in workspaces:
+            workspace = preferred
+        elif workspaces:
+            workspace = workspaces[0]
+        else:
+            workspace = preferred or workspace_key or access
 
-    api_key = (
-        os.environ.get("CENTRALE_API_KEY", "").strip()
-        or str(file_cfg.get("api_key") or "").strip()
-    )
+    api_key = api_key_early
     enabled_raw = os.environ.get("CENTRALE_SYNC", "").strip().lower()
     if enabled_raw in ("0", "false", "off", "no"):
         enabled = False
@@ -138,7 +159,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     else:
         enabled = bool(file_cfg.get("enabled", True))
 
-    default_port = 8300 if role == "central_admin" else (8302 if author == "jl" else 8301)
+    default_port = 8300 if role == "regional_admin" else (8302 if author == "jl" else 8301)
     try:
         port = int(
             os.environ.get("PORT", "").strip()
@@ -169,21 +190,56 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     return _config_cache
 
 
-def _first_hub_workspace(url: str) -> str | None:
-    """Best-effort first workspace name from hub status (central bootstrap)."""
+def _hub_get_json(url: str, path: str, *, api_key: str = "", timeout: float = 5.0) -> dict[str, Any]:
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(
+        f"{url.rstrip('/')}{path}",
+        headers=headers,
+        method="GET",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def _first_hub_workspace(url: str, *, api_key: str = "") -> str | None:
+    """Best-effort first workspace name from hub status (regional bootstrap)."""
     try:
-        req = urllib.request.Request(
-            f"{url.rstrip('/')}/api/status",
-            headers={"Accept": "application/json"},
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = _hub_get_json(url, "/api/status", api_key=api_key)
         names = data.get("workspaces") or []
         if isinstance(names, list) and names:
             return str(names[0]).strip() or None
     except Exception:  # noqa: BLE001
         return None
+    return None
+
+
+_KNOWN_COUNTRIES = frozenset({"netherlands", "united kingdom", "sweden", "ireland"})
+
+
+def _hub_country_workspaces(url: str, country: str, *, api_key: str = "") -> list[str] | None:
+    """Workspace list for ``country`` from hub ``upload_acl.json``, or None if unknown."""
+    name = str(country or "").strip().lower()
+    if not name:
+        return None
+    try:
+        data = _hub_get_json(url, "/api/status", api_key=api_key)
+        countries = data.get("countries")
+        if isinstance(countries, dict) and name in {str(k).strip().lower() for k in countries}:
+            # Match case-insensitively to hub keys.
+            for key, value in countries.items():
+                if str(key).strip().lower() != name:
+                    continue
+                if isinstance(value, list):
+                    return [str(item).strip() for item in value if str(item).strip()]
+                return []
+    except Exception:  # noqa: BLE001
+        pass
+    # Hub unreachable: still accept the four known country keys.
+    if name in _KNOWN_COUNTRIES:
+        return []
     return None
 
 
@@ -298,11 +354,12 @@ def scope_consent_ready(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _events_viewer() -> str:
-    return "central" if is_central_admin() else "local"
+    # Hub protocol still uses viewer=central for unrestricted event fan-out.
+    return "central" if load_config().access == "regional" else "local"
 
 
 def _push_source() -> str:
-    return "central" if is_central_admin() else "local"
+    return "central" if is_regional_admin() else "local"
 
 
 def hub_request(
@@ -407,7 +464,7 @@ def sync_status() -> dict[str, Any]:
         "workspaces": list(cfg.workspaces) if cfg.workspaces else [cfg.workspace],
         "data_epoch": _data_epoch,
         "has_secrets": _cached_has_secrets,
-        "layout": "central" if cfg.role == "central_admin" else "local",
+        "layout": "regional" if cfg.role == "regional_admin" else "local",
         "consent_ready": scope_consent_ready(consent_ready),
     }
 
@@ -467,17 +524,19 @@ def _queue_notification(display_path: str) -> None:
 
 def list_hub_workspaces() -> list[str]:
     cfg = load_config()
-    if cfg.access != "central":
-        return [cfg.workspace]
-    if not cfg.enabled:
+    if cfg.access == "regional":
+        if not cfg.enabled:
+            return [cfg.workspace] if cfg.workspace else []
+        try:
+            status = hub_request("GET", "/api/status", timeout=10.0)
+            names = status.get("workspaces") or []
+            if isinstance(names, list) and names:
+                return [str(n).strip() for n in names if str(n).strip()]
+        except Exception:
+            pass
         return [cfg.workspace] if cfg.workspace else []
-    try:
-        status = hub_request("GET", "/api/status", timeout=10.0)
-        names = status.get("workspaces") or []
-        if isinstance(names, list) and names:
-            return [str(n).strip() for n in names if str(n).strip()]
-    except Exception:
-        pass
+    if is_country_access(cfg.access):
+        return list(cfg.workspaces) if cfg.workspaces else ([cfg.workspace] if cfg.workspace else [])
     return [cfg.workspace] if cfg.workspace else []
 
 
@@ -492,7 +551,7 @@ def poll_central_events() -> dict[str, Any]:
             "viewer": _events_viewer(),
             "since_id": _last_event_id,
         }
-        if not is_central_admin():
+        if cfg.access != "regional":
             params["workspace"] = cfg.workspace
         q = urllib.parse.urlencode(params)
         data = hub_request("GET", f"/api/events?{q}", timeout=10.0)
@@ -522,12 +581,13 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
     global _last_error, _last_event_id, _data_epoch
     cfg = load_config()
     ws = workspace.strip()
-    if cfg.access != "central":
-        return {"ok": False, "error": "Workspace switch requires access=central"}
+    if cfg.role != "regional_admin":
+        return {"ok": False, "error": "Workspace switch requires access=regional or a country"}
     names = list_hub_workspaces()
     if names and ws not in names:
-        return {"ok": False, "error": f"Workspace {ws!r} not on hub"}
-    set_runtime(workspace=ws, allowed_workspaces=[], access="central")
+        return {"ok": False, "error": f"Workspace {ws!r} not allowed"}
+    allowed = list(cfg.workspaces) if is_country_access(cfg.access) else []
+    set_runtime(workspace=ws, allowed_workspaces=allowed, access=cfg.access)
     load_config(force_reload=True)
     with _state_lock:
         _pending_notifications.clear()

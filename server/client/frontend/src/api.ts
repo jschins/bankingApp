@@ -127,8 +127,8 @@ export interface CentraleSyncStatus {
   workspace: string;
   /** Fixed identity from client_config ``workspace`` (does not follow switcher). */
   author?: string;
-  /** central | local | personal — from client_config ``access``. */
-  access?: "central" | "local" | "personal";
+  /** regional | local | personal | country — from client_config ``access``. */
+  access?: string;
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
   centrale_url: string;
@@ -137,7 +137,7 @@ export interface CentraleSyncStatus {
   last_event_id?: number;
   notifications?: SyncNotification[];
   port?: number;
-  role?: "local" | "central_admin";
+  role?: "local" | "regional_admin" | "central_admin";
   workspaces?: string[];
   data_epoch?: number;
   has_secrets?: boolean;

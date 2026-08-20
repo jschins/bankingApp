@@ -77,6 +77,35 @@ def load_acl_document() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def country_workspace_map() -> dict[str, list[str]]:
+    """``countries`` from ``upload_acl.json``: country name → workspace folder names."""
+    raw = load_acl_document().get("countries")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, value in raw.items():
+        name = str(key or "").strip().lower()
+        if not name:
+            continue
+        if isinstance(value, list):
+            workspaces = [str(item).strip() for item in value if str(item).strip()]
+        else:
+            workspaces = []
+        out[name] = workspaces
+    return out
+
+
+def workspaces_for_country(country: str) -> list[str] | None:
+    """Return workspace list for a known country, or ``None`` if ``country`` is not listed."""
+    name = str(country or "").strip().lower()
+    if not name:
+        return None
+    mapping = country_workspace_map()
+    if name not in mapping:
+        return None
+    return list(mapping[name])
+
+
 def hub_allowed_ips() -> frozenset[str]:
     """IPs allowed to reach the hub at all.
 

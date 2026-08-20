@@ -6,7 +6,8 @@ from pathlib import Path
 
 _selected_workspace: str | None = None
 _allowed_workspaces: list[str] = []
-_access_mode: str = "local"  # central | local | personal
+# regional | local | personal | <country from upload_acl countries>
+_access_mode: str = "local"
 
 
 def is_frozen() -> bool:
@@ -36,6 +37,20 @@ def server_root() -> Path:
     return project_root().parent
 
 
+def normalize_access(raw: str | None) -> str:
+    """Map legacy ``central`` → ``regional``; leave country names as-is."""
+    mode = str(raw or "local").strip().lower()
+    if mode == "central":
+        return "regional"
+    return mode or "local"
+
+
+def is_country_access(mode: str | None = None) -> bool:
+    """True when access is a country key (not regional/local/personal)."""
+    value = normalize_access(mode if mode is not None else _access_mode)
+    return value not in ("regional", "local", "personal")
+
+
 def set_runtime(
     *,
     workspace: str | None = None,
@@ -45,8 +60,7 @@ def set_runtime(
 ) -> None:
     global _selected_workspace, _allowed_workspaces, _access_mode
     if access is not None:
-        mode = str(access).strip().lower()
-        _access_mode = mode if mode in ("central", "local", "personal") else "local"
+        _access_mode = normalize_access(access)
     if allowed_workspaces is not None:
         _allowed_workspaces = [str(w).strip() for w in allowed_workspaces if str(w).strip()]
     if workspace:
@@ -59,13 +73,18 @@ def access_mode() -> str:
     return _access_mode
 
 
+def is_regional_admin() -> bool:
+    """True when this BFF may switch workspaces (all hubs or country-scoped)."""
+    return _access_mode == "regional" or is_country_access()
+
+
 def is_central_admin() -> bool:
-    """True when this BFF may switch among all hub workspaces."""
-    return _access_mode == "central"
+    """Back-compat alias for :func:`is_regional_admin`."""
+    return is_regional_admin()
 
 
 def role() -> str:
-    return "central_admin" if is_central_admin() else "local"
+    return "regional_admin" if is_regional_admin() else "local"
 
 
 def selected_workspace() -> str | None:
@@ -75,7 +94,10 @@ def selected_workspace() -> str | None:
 def set_selected_workspace(workspace: str) -> None:
     global _selected_workspace
     ws = workspace.strip()
-    if _access_mode != "central" and _allowed_workspaces and ws not in _allowed_workspaces:
+    if _access_mode == "regional":
+        _selected_workspace = ws
+        return
+    if _allowed_workspaces and ws not in _allowed_workspaces:
         raise ValueError(f"Workspace {ws!r} not in config: {_allowed_workspaces}")
     _selected_workspace = ws
 

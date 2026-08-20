@@ -42,6 +42,8 @@ def _prune_sessions_unlocked(now: float | None = None) -> None:
 
 
 def get_status() -> dict[str, Any]:
+    from app.upload_acl import country_workspace_map
+
     with _lock:
         _prune_sessions_unlocked()
         return {
@@ -49,6 +51,7 @@ def get_status() -> dict[str, Any]:
             "event_count": len(_events),
             "latest_event_id": (_events[-1]["id"] if _events else 0),
             "workspaces": list_workspaces(),
+            "countries": country_workspace_map(),
             "session_ttl_sec": _SESSION_TTL_SEC,
         }
 

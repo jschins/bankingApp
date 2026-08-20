@@ -134,13 +134,18 @@ type CellSelection = { short: string; category: string };
 
 function brandTitle(status: CentraleSyncStatus | null): string {
   const access = (status?.access || "").trim().toLowerCase();
-  if (access === "central") return "Centrale Boekhouding";
+  if (access === "regional" || access === "central") return "Regionale Boekhouding";
   const ws = (status?.author || status?.workspace || "").trim();
   if (access === "personal") {
     const person = (status?.person || "").trim();
     if (ws && person) return `Boekhouding ${ws}/${person}`;
     if (ws) return `Boekhouding ${ws}`;
     return "Boekhouding";
+  }
+  if (access && access !== "local") {
+    // Country access (e.g. netherlands): title-case the country name.
+    const country = access.replace(/\b\w/g, (ch) => ch.toUpperCase());
+    return `Boekhouding ${country}`;
   }
   // local (default)
   return ws ? `Boekhouding ${ws}` : "Boekhouding";
@@ -414,9 +419,10 @@ function SyncNotifyShell({
     };
   }, [onWorkspaceChanged]);
 
-  const isCentralAdmin = status?.role === "central_admin";
-  // Multi-workspace (central admin): switcher only when ``access`` has multiple values.
-  const workspaces = isCentralAdmin
+  const isRegionalAdmin =
+    status?.role === "regional_admin" || status?.role === "central_admin";
+  // Multi-workspace (regional / country): switcher when role allows.
+  const workspaces = isRegionalAdmin
     ? status?.workspaces?.length
       ? status.workspaces
       : status?.workspace
@@ -425,7 +431,7 @@ function SyncNotifyShell({
     : [];
 
   function handleSelect(ws: string) {
-    if (!isCentralAdmin) return;
+    if (!isRegionalAdmin) return;
     setSwitching(true);
     setWorkspace(ws)
       .then(() => {
@@ -450,7 +456,7 @@ function SyncNotifyShell({
       });
   }
 
-  const showBar = Boolean(status?.enabled) || isCentralAdmin || headerActions.length > 0;
+  const showBar = Boolean(status?.enabled) || isRegionalAdmin || headerActions.length > 0;
 
   return (
     <HeaderActionsContext.Provider value={setHeaderActions}>
@@ -458,7 +464,7 @@ function SyncNotifyShell({
       {showBar && (
         <div className="centrale-status-bar">
           <div className="centrale-status-left">
-            {isCentralAdmin ? (
+            {isRegionalAdmin ? (
               <WorkspaceSwitcher
                 workspace={status?.workspace || "…"}
                 workspaces={workspaces}
@@ -488,7 +494,7 @@ function SyncNotifyShell({
           </div>
         </div>
       )}
-      {refusal && !isCentralAdmin && (
+      {refusal && !isRegionalAdmin && (
         <div className="central-wins-overlay" role="alertdialog" aria-modal="true">
           <div className="central-wins-dialog">
             <p>{refusal.message}</p>
