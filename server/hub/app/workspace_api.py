@@ -402,7 +402,11 @@ def _ingest_person_data_files(
 def _ensure_people_year(
     ws: str, *, folder_names: list[str] | None = None, year: str | None = None
 ) -> None:
-    """Seed missing year folders for people in ``ws`` (write path only)."""
+    """Seed missing year folders for secret-folder people in ``ws`` (write path).
+
+    Excel-only people get a new year folder only when an upload's first sheet
+    entry lands in a year that does not exist yet — never during refresh/import.
+    """
     from app.paths import shared_categories_path
 
     y = parse_year(year)
@@ -413,6 +417,8 @@ def _ensure_people_year(
         if not child.is_dir() or not has_person_layout(child):
             continue
         if wanted is not None and child.name not in wanted:
+            continue
+        if not (child / "secret").is_dir():
             continue
         ensure_year_folder(child, y, categories_path=cats)
 

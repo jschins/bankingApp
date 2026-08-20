@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import zipfile
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -1392,6 +1393,24 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     const formatEl = document.getElementById("format");
     function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
     function formatValue() { return (formatEl.value || "Excel").trim(); }
+    function isExcelOrTestFormat() {
+      const fmt = formatValue().toLowerCase();
+      return fmt === "excel" || fmt === "test";
+    }
+    function ensureYearSelected(y) {
+      if (!y) return;
+      let found = false;
+      for (const opt of yearEl.options) {
+        if (opt.value === y) { found = true; break; }
+      }
+      if (!found) {
+        const opt = document.createElement("option");
+        opt.value = y;
+        opt.textContent = y;
+        yearEl.appendChild(opt);
+      }
+      yearEl.value = y;
+    }
 
     async function api(method, path, body, isForm) {
       const opts = { method, headers: { "Accept": "application/json" } };
@@ -1463,6 +1482,25 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       errEl.textContent = "";
       try {
         await loadGrant();
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    });
+
+    document.getElementById("file").addEventListener("change", async () => {
+      errEl.textContent = "";
+      if (!isExcelOrTestFormat()) return;
+      const fileInput = document.getElementById("file");
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      try {
+        const fd = new FormData();
+        fd.append("file", file, file.name);
+        const res = await api("POST", "/upload/api/upload/peek-year", fd, true);
+        if (res.year) {
+          ensureYearSelected(String(res.year));
+          await loadGrant();
+        }
       } catch (e) {
         errEl.textContent = String(e.message || e);
       }
@@ -1620,6 +1658,38 @@ async def api_upload(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/upload/peek-year")
+async def api_upload_peek_year(
+    request: Request,
+    file: UploadFile = File(...),
+    token: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Return the calendar year of the first dated Excel row (Excel/Test upload UI)."""
+    from app import upload_acl
+    from app.core.excel_import import first_entry_year_from_xlsx_bytes
+
+    auth_token = _upload_token(authorization, token)
+    grant = upload_acl.find_grant_by_token(auth_token)
+    if grant is None:
+        raise HTTPException(status_code=401, detail="Invalid upload token")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > 32 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
+    name = (file.filename or "").lower()
+    if not name.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Expected an .xlsx file")
+    try:
+        year = await run_in_threadpool(first_entry_year_from_xlsx_bytes, content)
+    except (ValueError, zipfile.BadZipFile, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read Excel: {exc}") from exc
+    if not year:
+        raise HTTPException(status_code=400, detail="No dated transaction entry found in sheet")
+    return {"year": year, "person": grant.person, "format": grant.format}
+
+
 @app.get("/upload/api/upload/grant")
 def api_upload_grant_proxy(
     request: Request,
@@ -1654,6 +1724,21 @@ async def api_upload_proxy(
         token=token,
         year=year,
         format=format,
+        authorization=authorization,
+    )
+
+
+@app.post("/upload/api/upload/peek-year")
+async def api_upload_peek_year_proxy(
+    request: Request,
+    file: UploadFile = File(...),
+    token: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    return await api_upload_peek_year(
+        request,
+        file=file,
+        token=token,
         authorization=authorization,
     )
 

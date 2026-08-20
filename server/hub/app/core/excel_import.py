@@ -7,6 +7,7 @@ import re
 import sys
 import zipfile
 from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -50,37 +51,70 @@ def _cell_text(cell: ET.Element, strings: list[str]) -> str:
     return ""
 
 
+def _read_xlsx_rows_from_zip(zf: zipfile.ZipFile) -> list[dict[str, str]]:
+    strings: list[str] = []
+    if "xl/sharedStrings.xml" in zf.namelist():
+        root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+        for si in root.findall("m:si", NS):
+            text = si.find("m:t", NS)
+            if text is not None and text.text is not None:
+                strings.append(text.text)
+            else:
+                strings.append("".join(node.text or "" for node in si.findall(".//m:t", NS)))
+
+    sheet_name = next(
+        (name for name in zf.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")),
+        "xl/worksheets/sheet1.xml",
+    )
+    sheet = ET.fromstring(zf.read(sheet_name))
+    rows: list[dict[str, str]] = []
+    for row in sheet.findall(".//m:row", NS):
+        cells: dict[str, str] = {}
+        for cell in row.findall("m:c", NS):
+            ref = cell.get("r", "")
+            col = re.sub(r"[^A-Z]", "", ref.upper())
+            raw = _cell_text(cell, strings)
+            if col and raw != "":
+                cells[col] = raw
+        if cells:
+            cells["_row"] = str(row.get("r") or len(rows) + 1)
+            rows.append(cells)
+    return rows
+
+
 def read_xlsx_rows(path: Path) -> list[dict[str, str]]:
     """Return sheet rows as ``{column_letter: value, "_row": n}``."""
     with zipfile.ZipFile(path) as zf:
-        strings: list[str] = []
-        if "xl/sharedStrings.xml" in zf.namelist():
-            root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
-            for si in root.findall("m:si", NS):
-                text = si.find("m:t", NS)
-                if text is not None and text.text is not None:
-                    strings.append(text.text)
-                else:
-                    strings.append("".join(node.text or "" for node in si.findall(".//m:t", NS)))
+        return _read_xlsx_rows_from_zip(zf)
 
-        sheet_name = next(
-            (name for name in zf.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")),
-            "xl/worksheets/sheet1.xml",
-        )
-        sheet = ET.fromstring(zf.read(sheet_name))
-        rows: list[dict[str, str]] = []
-        for row in sheet.findall(".//m:row", NS):
-            cells: dict[str, str] = {}
-            for cell in row.findall("m:c", NS):
-                ref = cell.get("r", "")
-                col = re.sub(r"[^A-Z]", "", ref.upper())
-                raw = _cell_text(cell, strings)
-                if col and raw != "":
-                    cells[col] = raw
-            if cells:
-                cells["_row"] = str(row.get("r") or len(rows) + 1)
-                rows.append(cells)
-        return rows
+
+def read_xlsx_rows_bytes(data: bytes) -> list[dict[str, str]]:
+    """Same as ``read_xlsx_rows`` but from in-memory xlsx bytes."""
+    with zipfile.ZipFile(BytesIO(data)) as zf:
+        return _read_xlsx_rows_from_zip(zf)
+
+
+def first_entry_year(rows: list[dict[str, str]]) -> str | None:
+    """Calendar year (YYYY) of the first dated transaction row, or None."""
+    located = find_columns(rows)
+    if located is None:
+        return None
+    header_index, columns = located
+    for row in rows[header_index + 1 :]:
+        date = parse_excel_date(row.get(columns["date"], ""))
+        if date is None:
+            continue
+        # parse_excel_date returns DD-MM-YYYY
+        parts = date.split("-")
+        if len(parts) == 3 and len(parts[2]) == 4 and parts[2].isdigit():
+            return parts[2]
+        return None
+    return None
+
+
+def first_entry_year_from_xlsx_bytes(data: bytes) -> str | None:
+    """Year from the first dated entry in an xlsx payload."""
+    return first_entry_year(read_xlsx_rows_bytes(data))
 
 
 def parse_excel_date(value: str) -> str | None:
@@ -329,6 +363,11 @@ def rows_to_transactions(
     source: str,
     registered: set[int],
 ) -> list[dict[str, Any]]:
+    """Convert every dated amount row; do not filter by calendar year.
+
+    Year-folder placement is decided at upload from the first entry only. Later
+    rows that fall in the next calendar year still belong to that same folder.
+    """
     located = find_columns(rows)
     if located is None:
         raise ValueError(f"{source}: no Datum header row found")
@@ -522,7 +561,12 @@ def write_outputs(
 
 
 def import_person_excel(*, data_dir: Path, categories_path: Path) -> dict[str, Any]:
-    """Hub RefreshAll entry: rewrite JSON from ``YYYY/*.xlsx``."""
+    """Hub RefreshAll / upload entry: rewrite JSON from ``YYYY/*.xlsx``.
+
+    Processes the year folder as a whole. Does not create other year folders when
+    sheet dates cross into the next calendar year (secret/bank refresh stays
+    month-scoped and has no such overlap).
+    """
     _categorized_path, _totals_path, info = write_outputs(data_dir, categories_path=categories_path)
     return info
 
