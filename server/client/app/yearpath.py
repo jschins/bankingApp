@@ -135,12 +135,22 @@ def ensure_year_folder(
 ) -> Path:
     """Create ``person/Y`` with empty books and the previous year's closing balance.
 
+    Creates the person folder and year folder when missing. Never creates the
+    parent workspace folder — that must already exist on disk.
+
     Idempotent: if the year directory already exists, it is left unchanged.
     """
     y = parse_year(year)
     folder = person_folder / y
     if folder.is_dir():
         return folder
+
+    workspace = person_folder.parent
+    if not workspace.is_dir():
+        raise FileNotFoundError(
+            f"Workspace folder does not exist: {workspace}. "
+            "The hub does not create workspace folders; only person packs inside them."
+        )
 
     prev = previous_year_name(person_folder, y)
     prev_totals = _load_totals(person_folder / prev / CATEGORY_TOTALS_FILENAME) if prev else {}
@@ -150,7 +160,8 @@ def ensure_year_folder(
     }
     categorized = {"transactions": [], "modifications": []}
 
-    folder.mkdir(parents=True, exist_ok=True)
+    person_folder.mkdir(exist_ok=True)
+    folder.mkdir(exist_ok=True)
     (folder / DOWNLOADED_FILENAME).write_text("[]\n", encoding="utf-8")
     (folder / CATEGORIZED_FILENAME).write_text(
         json.dumps(categorized, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

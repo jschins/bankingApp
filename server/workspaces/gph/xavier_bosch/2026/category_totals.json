@@ -1,0 +1,26 @@
+{
+  "categories": {
+    "08 Naar kas": "0.00",
+    "09 Pension": "0.00",
+    "10 Gezondheid": "0.00",
+    "11 Convivencias": "0.00",
+    "12 Vervoer": "0.00",
+    "13 Kleding Fiets": "0.00",
+    "14 Gewone uitgaven": "0.00",
+    "15 Buitengewone uitgaven": "0.00",
+    "16 Auto": "0.00",
+    "18 Overige uitgaven": "0.00",
+    "19 Giften": "0.00",
+    "20 Werk": "0.00",
+    "21 Familie": "0.00"
+  },
+  "account_balances": [
+    {
+      "iban": "1234563489",
+      "name": "Xavier Bosch",
+      "currency": "EUR",
+      "balance": "500.05",
+      "files": []
+    }
+  ]
+}

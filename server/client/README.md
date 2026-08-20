@@ -6,9 +6,9 @@ Thin BFF + frontend. All data comes from the hub (no local workspace copies). Se
 
 | Key | Meaning |
 |-----|---------|
-| `access` | `central` (all workspaces) \| `local` (one workspace) \| `personal` (one person) |
-| `workspace` | Required for local/personal; optional for central |
-| `person` | Required when `access` is `personal` |
+| `access` | `regional` (all workspaces) \| country name from hub `upload_acl.json` (e.g. `netherlands`) \| `local` (one workspace) \| `personal` (one person) |
+| `workspace` | **Required only for `local` and `personal`.** Ignored for `regional` and country access (use the UI switcher). |
+| `person` | Required when `access` is `personal` (folder name, e.g. `juleon_schins`) |
 | `server_url` | Hub URL |
 | `port` | Client listen port |
 

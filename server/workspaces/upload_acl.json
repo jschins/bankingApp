@@ -1,18 +1,18 @@
 {
   "countries": {
-    "netherlands": ["dkg", "lp"],
-    "united kingdom": [],
+    "netherlands": ["dkg", "jl"],
+    "united kingdom": ["gph"],
     "sweden": [],
     "ireland": []
   },
-    "mappings": {
-      "rafaO": "192.168.1.60",
+  "mappings": {
+    "rafaO": "192.168.1.60",
     "rafaB kantoor": "192.168.1.58",
     "juleon prive": "192.168.1.107",
     "juleon ydigital": {
       "LAN dkg": "192.168.1.188",
       "LAN mamma": "192.168.178.49",
-      "LAN admin": "192.168.20.30",
+      "LAN admin": "192.168.20.33",
       "name": "desktop-8bimc9l",
       "tailscale": "100.116.99.89"
     },
@@ -24,7 +24,7 @@
       "tailscale": "100.87.15.71"
     },
     "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write)",
-    "upload_url": "https://desktop-sb23t6s.tail59b1e5.ts.net/upload"
+    "upload_url": "https://desktop-8bimc9l.tail59b1e5.ts.net/upload"
   },
   "hub_ips": [
     "100.87.15.71",

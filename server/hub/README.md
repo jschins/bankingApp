@@ -2,6 +2,8 @@
 
 Always-on hub for `server/workspaces/`. Full architecture, roles, and add-person flow: [`../readme.md`](../readme.md).
 
+**Workspace folders** (`dkg`, `jl`, `gph`, …) are created on disk by an admin — the hub never initializes them. The hub only creates **person packs** (and year folders) *inside* an existing workspace.
+
 ## Listen / client `server_url`
 
 Default `HOST=0.0.0.0` `PORT=8200`. Administrators open the hub from their own PCs (no work on the server required). Allow inbound TCP **8200** on the host firewall.

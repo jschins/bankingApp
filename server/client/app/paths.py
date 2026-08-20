@@ -130,15 +130,10 @@ def bind_person(pack: PersonPack) -> Iterator[PersonPack]:
 
 
 def configure() -> list[PersonPack]:
-    """Discover person packs under app_root."""
+    """Discover person packs under app_root (empty workspace is allowed)."""
     from app.people import list_people
-    from app.runtime import app_root
 
     people = list_people()
-    if not people:
-        raise FileNotFoundError(
-            "No person packs found under "
-            f"{app_root()}. Each pack needs a secret/ and/or YYYY/ folder."
-        )
-    apply_person(people[0])
+    if people:
+        apply_person(people[0])
     return people

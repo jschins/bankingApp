@@ -15,7 +15,7 @@ def _clean_ws(workspace: str) -> str:
     ws = workspace.strip().replace("\\", "/").strip("/")
     if not ws or ".." in ws.split("/") or ws.startswith("/"):
         raise ValueError(f"Invalid workspace: {workspace!r}")
-    store.workspace_dir(ws)
+    store.require_workspace_dir(ws)
     return ws
 
 
@@ -524,7 +524,10 @@ def create_person(
     initial_balance: str | None = None,
     account_number: str | None = None,
 ) -> dict[str, Any]:
-    """Scaffold a person pack under ``workspaces/<ws>/<folder>/``."""
+    """Scaffold a person pack under an *existing* ``workspaces/<ws>/<folder>/``.
+
+    The workspace folder must already exist on disk; this never creates it.
+    """
     from app.people import list_people
     from app.settings import refresh_people
     from app.yearpath import CATEGORY_TOTALS_FILENAME
@@ -550,7 +553,7 @@ def create_person(
         raise ValueError("redirect_url must be https://…")
 
     with _workspace_scope(workspace) as ws:
-        root = store.workspace_dir(ws)
+        root = store.require_workspace_dir(ws)
         target = root / folder_name
         if target.exists():
             raise ValueError(f"Folder already exists: {folder_name}")

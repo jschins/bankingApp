@@ -1158,7 +1158,6 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
 
     <div id="step3" class="step">
       <p class="ok" id="doneMsg">Done.</p>
-      <p>Return to Boekhouding and use <strong>Refresh</strong> / consent renewal if the bank still requires authorization.</p>
       <pre id="fetchOut" style="white-space:pre-wrap;font-size:0.8rem;background:#f8fafc;padding:0.75rem;overflow:auto"></pre>
     </div>
 

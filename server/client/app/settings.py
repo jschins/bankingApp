@@ -22,10 +22,4 @@ def get_people() -> list[PersonPack]:
 def refresh_people() -> list[PersonPack]:
     global _people
     _people = list_people()
-    if not _people:
-        from app.runtime import app_root
-
-        raise FileNotFoundError(
-            f"No person packs found under {app_root()}."
-        )
     return list(_people)

@@ -101,6 +101,7 @@ def _clean_workspace(workspace: str) -> str:
 
 
 def workspace_dir(workspace: str) -> Path:
+    """Path to an existing-or-not workspace folder (never created here)."""
     base = data_root()
     ws = _clean_workspace(workspace)
     if base.name.lower() == ws.lower():
@@ -108,8 +109,27 @@ def workspace_dir(workspace: str) -> Path:
     return base / ws
 
 
+def require_workspace_dir(workspace: str) -> Path:
+    """Return the workspace folder, or raise if it is missing.
+
+    Workspace directories are created outside the hub (by an admin on disk).
+    The hub only scaffolds person packs *inside* an existing workspace.
+    """
+    path = workspace_dir(workspace)
+    if not path.is_dir():
+        raise FileNotFoundError(
+            f"Workspace {workspace!r} does not exist under {data_root()}. "
+            "Create the workspace folder on disk first; the hub does not initialize workspaces."
+        )
+    return path
+
+
 def list_workspaces() -> list[str]:
-    """Peer workspace folder names under the data root (e.g. dkg, jl)."""
+    """Peer workspace folder names under the data root (e.g. dkg, jl, gph).
+
+    Lists directories that already exist on disk (including empty ones).
+    Does not create workspace folders.
+    """
     root = data_root()
     if not root.is_dir():
         return []
@@ -119,8 +139,7 @@ def list_workspaces() -> list[str]:
             continue
         if child.name.startswith("_"):
             continue
-        if any(has_person_layout(p) for p in child.iterdir() if p.is_dir()):
-            names.append(child.name)
+        names.append(child.name)
     return names
 
 

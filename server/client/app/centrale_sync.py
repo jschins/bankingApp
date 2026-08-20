@@ -41,14 +41,14 @@ _cached_has_secrets: bool = False
 class HubConfig:
     url: str
     workspace: str  # currently selected target (from access / switcher)
-    author: str  # fixed identity from client_config "workspace" (hub session label)
+    author: str  # session label: workspace for local/personal; regional/country name otherwise
     person: str  # empty unless access=personal
     access: str  # regional | local | personal | <country>
     api_key: str
     enabled: bool
     port: int
     role: str  # "local" | "regional_admin"
-    workspaces: tuple[str, ...] = ()  # locked/country targets; empty = all (regional)
+    workspaces: tuple[str, ...] = ()  # locked targets for local/personal; country list; empty = all (regional)
 
 
 def config_path() -> Path:
@@ -108,47 +108,59 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     )
 
     if access == "regional":
+        # ``workspace`` in client_config is ignored; selection is via the UI switcher.
         person = ""
         role = "regional_admin"
-        author = workspace_key or "regional"
+        author = "regional"
         workspaces: tuple[str, ...] = ()
-        workspace = selected_workspace() or workspace_key
+        workspace = selected_workspace() or ""
         if not workspace:
             workspace = _first_hub_workspace(url, api_key=api_key_early) or "dkg"
     elif access == "personal":
+        if not workspace_key:
+            raise ValueError('client_config access=personal requires a non-empty "workspace"')
         person = person_key
         if not person:
             raise ValueError('client_config access=personal requires a non-empty "person"')
         role = "local"
-        author = workspace_key or "dkg"
+        author = workspace_key
         workspaces = (author,)
         workspace = author
     elif access == "local":
         # local — one workspace, all people; ignore person key
+        if not workspace_key:
+            raise ValueError('client_config access=local requires a non-empty "workspace"')
         person = ""
         role = "local"
-        author = workspace_key or "dkg"
+        author = workspace_key
         workspaces = (author,)
         workspace = author
     else:
         # Country access: workspaces from hub upload_acl.json ``countries``.
+        # ``workspace`` in client_config is ignored; selection is via the UI switcher.
         country_ws = _hub_country_workspaces(url, access, api_key=api_key_early)
         if country_ws is None:
+            hint = (
+                f" (is the hub at {url} running a build that exposes countries?)"
+                if access in _KNOWN_COUNTRIES
+                else ""
+            )
             raise ValueError(
                 f'client_config access={access!r} is not regional/local/personal '
-                f"and is not a country listed in hub upload_acl.json"
+                f"and is not a country listed in hub upload_acl.json{hint}"
             )
         person = ""
         role = "regional_admin"
-        author = workspace_key or access
+        author = access
         workspaces = tuple(country_ws)
-        preferred = selected_workspace() or workspace_key
+        preferred = selected_workspace()
         if preferred and preferred in workspaces:
             workspace = preferred
         elif workspaces:
             workspace = workspaces[0]
         else:
-            workspace = preferred or workspace_key or access
+            # Listed country with an empty workspace list — stay on a harmless label.
+            workspace = access
 
     api_key = api_key_early
     enabled_raw = os.environ.get("CENTRALE_SYNC", "").strip().lower()
@@ -217,29 +229,47 @@ def _first_hub_workspace(url: str, *, api_key: str = "") -> str | None:
 
 
 _KNOWN_COUNTRIES = frozenset({"netherlands", "united kingdom", "sweden", "ireland"})
+# Used when the hub is unreachable or still on a build without ``countries`` in /api/status.
+_DEFAULT_COUNTRY_WORKSPACES: dict[str, list[str]] = {
+    "netherlands": ["dkg", "jl"],
+    "united kingdom": ["gph"],
+    "sweden": [],
+    "ireland": [],
+}
 
 
 def _hub_country_workspaces(url: str, country: str, *, api_key: str = "") -> list[str] | None:
-    """Workspace list for ``country`` from hub ``upload_acl.json``, or None if unknown."""
+    """Workspace list for ``country`` from hub ``upload_acl.json``.
+
+    Prefers hub ``/api/status`` → ``countries``. Falls back to the built-in map when
+    the hub omits that field or cannot be reached. The ACL list is authoritative
+    (not intersected with currently non-empty hub folders).
+    """
     name = str(country or "").strip().lower()
     if not name:
         return None
     try:
         data = _hub_get_json(url, "/api/status", api_key=api_key)
+    except Exception:  # noqa: BLE001
+        data = None
+
+    if isinstance(data, dict):
         countries = data.get("countries")
-        if isinstance(countries, dict) and name in {str(k).strip().lower() for k in countries}:
-            # Match case-insensitively to hub keys.
+        if isinstance(countries, dict):
             for key, value in countries.items():
                 if str(key).strip().lower() != name:
                     continue
                 if isinstance(value, list):
                     return [str(item).strip() for item in value if str(item).strip()]
                 return []
-    except Exception:  # noqa: BLE001
-        pass
-    # Hub unreachable: still accept the four known country keys.
-    if name in _KNOWN_COUNTRIES:
-        return []
+            return None
+        # Old hub: status works but no countries field.
+        if name in _DEFAULT_COUNTRY_WORKSPACES:
+            return list(_DEFAULT_COUNTRY_WORKSPACES[name])
+        return None
+
+    if name in _DEFAULT_COUNTRY_WORKSPACES:
+        return list(_DEFAULT_COUNTRY_WORKSPACES[name])
     return None
 
 
@@ -461,7 +491,11 @@ def sync_status() -> dict[str, Any]:
         "notifications": notes,
         "port": cfg.port,
         "role": cfg.role,
-        "workspaces": list(cfg.workspaces) if cfg.workspaces else [cfg.workspace],
+        "workspaces": (
+            list(cfg.workspaces)
+            if cfg.workspaces
+            else (list_hub_workspaces() if cfg.role == "regional_admin" else [cfg.workspace])
+        ),
         "data_epoch": _data_epoch,
         "has_secrets": _cached_has_secrets,
         "layout": "regional" if cfg.role == "regional_admin" else "local",
