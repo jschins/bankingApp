@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from app.core.excel_import import build_category_totals, category_name_map
+from app.paths import PersonPack
 from app.runtime import data_root
+
+CONSOLIDATED_VIEW = "consolidated"
 
 CSV_FORMATS = frozenset({"bos-csv", "lloyds-csv", "rbs-csv", "natwest-csv"})
 DEBIT_CREDIT_FORMATS = frozenset({"bos-csv", "lloyds-csv"})
@@ -175,6 +179,41 @@ def list_year_bank_folders(year_path: Path) -> list[str]:
         for child in year_path.iterdir()
         if child.is_dir() and not child.name.startswith(".")
     )
+
+
+def person_bank_folder_options(
+    person_folder: Path,
+    year: str,
+    *,
+    person: str,
+    center: str,
+) -> dict[str, Any]:
+    """Folder names for the personal bank switcher (+ metadata)."""
+    banks = person_csv_banks(person, center)
+    if not banks:
+        return {"folders": [], "multi_bank": False, "show_switcher": False}
+    multi = person_uses_bank_subfolders(person, center)
+    year_path = person_folder / year
+    existing = list_year_bank_folders(year_path) if multi else []
+    seen: set[str] = set()
+    folders: list[str] = []
+    for name in existing + banks:
+        if name and name not in seen:
+            seen.add(name)
+            folders.append(name)
+    return {"folders": folders, "multi_bank": multi, "show_switcher": True}
+
+
+def pack_for_bank_view(
+    pack: PersonPack, bank: str | None, *, center: str
+) -> PersonPack:
+    """Return a pack bound to ``YYYY/<bank>/`` or consolidated ``YYYY/``."""
+    view = (bank or "").strip()
+    if not view or view.lower() == CONSOLIDATED_VIEW:
+        return pack
+    if not person_uses_bank_subfolders(pack.folder_name, center):
+        return pack
+    return replace(pack, data_dir=(pack.data_dir / view).resolve())
 
 
 def person_uses_bank_subfolders(person: str, center: str) -> bool:

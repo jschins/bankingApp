@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   ackCentralWinsRefusal,
@@ -7,6 +7,7 @@ import {
   getCentralWinsRefusals,
   getCentraleNotifications,
   getCentraleStatus,
+  getBanks,
   getMatrix,
   getSettings,
   getTransactions,
@@ -213,6 +214,66 @@ function WorkspaceSwitcher({
   );
 }
 
+function BankSwitcher({
+  view,
+  folders,
+  onSelect,
+}: {
+  view: string;
+  folders: string[];
+  onSelect: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const options = ["consolidated", ...folders.filter((f) => f !== "consolidated")];
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(ev: Event) {
+      if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="workspace-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className="workspace-switcher-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="workspace-switcher-chevron" aria-hidden>
+          ▾
+        </span>
+        <span className="workspace-switcher-label">{view}</span>
+      </button>
+      {open && (
+        <ul className="workspace-switcher-menu" role="listbox">
+          {options.map((name) => (
+            <li key={name}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={name === view}
+                className={name === view ? "is-selected" : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  if (name !== view) onSelect(name);
+                }}
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function YearSwitcher({
   year,
   years,
@@ -342,13 +403,11 @@ function SyncNotifyShell({
   children,
   onWorkspaceChanged,
   termsView = false,
-  authUser = null,
   onLogout,
 }: {
-  children: (brandName: string, activeYear: string) => ReactNode;
+  children: (brandName: string, activeYear: string, bankView: string) => ReactNode;
   onWorkspaceChanged?: () => void;
   termsView?: boolean;
-  authUser?: string | null;
   onLogout?: () => void;
 }) {
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
@@ -356,6 +415,10 @@ function SyncNotifyShell({
   const [switching, setSwitching] = useState(false);
   const [activeYear, setActiveYear] = useState<string>("");
   const [yearOptions, setYearOptions] = useState<string[]>([]);
+  const [bankView, setBankView] = useState<string>("consolidated");
+  const [bankOptions, setBankOptions] = useState<string[]>([]);
+  const [showBankSwitcher, setShowBankSwitcher] = useState(false);
+  const [uploadUrl, setUploadUrl] = useState<string>("");
   const [refusal, setRefusal] = useState<CentralWinsAlert | null>(null);
   const [headerActions, setHeaderActions] = useState<HeaderAction[]>([]);
   const dataEpochRef = useRef<number | null>(null);
@@ -379,6 +442,35 @@ function SyncNotifyShell({
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.workspace]);
+
+  useEffect(() => {
+    const access = (status?.access || "").trim().toLowerCase();
+    if (access !== "personal" || !activeYear) {
+      setShowBankSwitcher(false);
+      setBankOptions([]);
+      setBankView("consolidated");
+      setUploadUrl("");
+      return;
+    }
+    getBanks(activeYear)
+      .then((res) => {
+        const hub = (status?.centrale_url || "").replace(/\/$/, "");
+        const token = (res.upload_token || "").trim();
+        setUploadUrl(hub && token ? `${hub}/upload?t=${encodeURIComponent(token)}` : "");
+        setShowBankSwitcher(Boolean(res.show_switcher));
+        setBankOptions(res.folders || []);
+        setBankView((prev) => {
+          if (prev === "consolidated") return prev;
+          if ((res.folders || []).includes(prev)) return prev;
+          return "consolidated";
+        });
+      })
+      .catch(() => {
+        setShowBankSwitcher(false);
+        setBankOptions([]);
+        setUploadUrl("");
+      });
+  }, [status?.access, activeYear, status?.workspace, status?.centrale_url]);
 
   useEffect(() => {
     document.title = termsView ? `${brandName} — Terms` : brandName;
@@ -464,7 +556,19 @@ function SyncNotifyShell({
   }
 
   const showBar =
-    Boolean(status?.enabled) || isRegionalAdmin || headerActions.length > 0 || Boolean(onLogout);
+    Boolean(status?.enabled) ||
+    isRegionalAdmin ||
+    headerActions.length > 0 ||
+    Boolean(uploadUrl) ||
+    Boolean(onLogout);
+
+  const menuItems = useMemo(() => {
+    const items = [...headerActions];
+    if (uploadUrl) {
+      items.push({ id: "upload", label: "upload", href: uploadUrl });
+    }
+    return items;
+  }, [headerActions, uploadUrl]);
 
   return (
     <HeaderActionsContext.Provider value={setHeaderActions}>
@@ -489,10 +593,17 @@ function SyncNotifyShell({
                 }}
               />
             ) : null}
-            <ActionsMenu items={headerActions} />
-            {authUser ? (
-              <span className="auth-user-label">{authUser}</span>
+            {showBankSwitcher && !termsView ? (
+              <BankSwitcher
+                view={bankView}
+                folders={bankOptions}
+                onSelect={(v) => {
+                  setBankView(v);
+                  onWorkspaceChanged?.();
+                }}
+              />
             ) : null}
+            <ActionsMenu items={menuItems} />
             {onLogout ? (
               <button type="button" className="logout-btn" onClick={onLogout}>
                 Log out
@@ -521,7 +632,7 @@ function SyncNotifyShell({
           </div>
         </div>
       )}
-      {children(brandName, activeYear)}
+      {children(brandName, activeYear, bankView)}
     </div>
     </HeaderActionsContext.Provider>
   );
@@ -614,7 +725,6 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [authUser, setAuthUser] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -623,7 +733,6 @@ export default function App() {
         if (cancelled) return;
         setAuthRequired(me.auth_required);
         setAuthenticated(me.authenticated);
-        setAuthUser(me.username);
         setAuthChecked(true);
       })
       .catch(() => {
@@ -644,9 +753,8 @@ export default function App() {
   if (authRequired && !authenticated) {
     return (
       <LoginScreen
-        onSuccess={(username) => {
+        onSuccess={() => {
           setAuthenticated(true);
-          setAuthUser(username);
           setWsEpoch((n) => n + 1);
         }}
       />
@@ -656,29 +764,26 @@ export default function App() {
   return (
     <SyncNotifyShell
       termsView={isTerms}
-      authUser={authRequired ? authUser : null}
       onLogout={
         authRequired
           ? () => {
               logout()
                 .then(() => {
                   setAuthenticated(false);
-                  setAuthUser(null);
                 })
                 .catch(() => {
                   setAuthenticated(false);
-                  setAuthUser(null);
                 });
             }
           : undefined
       }
       onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}
     >
-      {(brandName, year) =>
+      {(brandName, year, bankView) =>
         isTerms ? (
           <TermsApp key={wsEpoch} />
         ) : (
-          <MainApp key={wsEpoch} brandName={brandName} year={year} />
+          <MainApp key={wsEpoch} brandName={brandName} year={year} bankView={bankView} />
         )
       }
     </SyncNotifyShell>
@@ -740,7 +845,15 @@ function LoginScreen({ onSuccess }: { onSuccess: (username: string) => void }) {
   );
 }
 
-function MainApp({ brandName, year }: { brandName: string; year: string }) {
+function MainApp({
+  brandName,
+  year,
+  bankView,
+}: {
+  brandName: string;
+  year: string;
+  bankView: string;
+}) {
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [selection, setSelection] = useState<CellSelection | null>(null);
   const [detail, setDetail] = useState<TransactionsResponse | null>(null);
@@ -836,16 +949,18 @@ function MainApp({ brandName, year }: { brandName: string; year: string }) {
     dirtyRef.current = false;
   }
 
+  const bankQuery = bankView !== "consolidated" ? bankView : undefined;
+
   function loadDetail(short: string, category: string): Promise<void> {
     setDetail(null);
-    return getTransactions(short, category)
+    return getTransactions(short, category, year, bankQuery)
       .then(setDetail)
       .catch((e: Error) => setError(e.message));
   }
 
   function loadDisplay(sel: CellSelection | null): Promise<void> {
     setError(null);
-    return getMatrix(year)
+    return getMatrix(year, bankQuery)
       .then((payload) => {
         setMatrix(payload);
         if (!sel) {
@@ -861,6 +976,7 @@ function MainApp({ brandName, year }: { brandName: string; year: string }) {
     setError(null);
     if (sel) setDetail(null);
     return recalculate()
+      .then(() => getMatrix(year, bankQuery))
       .then((payload) => {
         clearDirty();
         setMatrix(payload);
@@ -868,7 +984,7 @@ function MainApp({ brandName, year }: { brandName: string; year: string }) {
           setDetail(null);
           return;
         }
-        return getTransactions(sel.short, sel.category).then(setDetail);
+        return getTransactions(sel.short, sel.category, year, bankQuery).then(setDetail);
       })
       .catch((e: Error) => setError(e.message));
   }
@@ -888,7 +1004,7 @@ function MainApp({ brandName, year }: { brandName: string; year: string }) {
     setDetail(null);
     setError(null);
     void loadMatrixOnly();
-  }, [year]);
+  }, [year, bankView]);
 
   useEffect(() => {
     const channel = new BroadcastChannel(CHANNEL);

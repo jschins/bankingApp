@@ -473,15 +473,33 @@ def api_person_years(
 def api_matrix(
     workspace: str,
     year: str | None = Query(default=None),
+    bank: str | None = Query(default=None),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     from app import workspace_api
 
     try:
-        return workspace_api.matrix(workspace, year=year)
+        return workspace_api.matrix(workspace, year=year, bank=bank)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/local/{workspace}/people/{short}/banks")
+def api_person_banks(
+    workspace: str,
+    short: str,
+    year: str | None = Query(default=None),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import workspace_api
+
+    try:
+        return workspace_api.person_banks(workspace, short, year=year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
@@ -490,12 +508,16 @@ def api_transactions(
     workspace: str,
     short: str,
     category_name: str,
+    year: str | None = Query(default=None),
+    bank: str | None = Query(default=None),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     from app import workspace_api
 
     try:
-        return workspace_api.transactions(workspace, short, category_name)
+        return workspace_api.transactions(
+            workspace, short, category_name, year=year, bank=bank
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

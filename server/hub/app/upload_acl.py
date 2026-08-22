@@ -253,6 +253,18 @@ def find_grant_by_token(token: str | None) -> UploadGrant | None:
     return None
 
 
+def grant_token_for_person(person: str, center: str) -> str | None:
+    """Upload grant token for ``center/person``, if configured."""
+    person_name = person.strip()
+    center_name = center.strip()
+    if not person_name or not center_name:
+        return None
+    for grant in load_grants():
+        if grant.person == person_name and grant.center == center_name and grant.token:
+            return grant.token
+    return None
+
+
 def client_ip(host: str | None) -> str:
     return _normalize_ip(host or "unknown")
 

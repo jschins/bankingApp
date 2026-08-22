@@ -40,12 +40,30 @@ export interface YearsResponse {
   default_year: string;
 }
 
+export interface BanksResponse {
+  folders: string[];
+  multi_bank: boolean;
+  show_switcher: boolean;
+  upload_token?: string;
+  person?: string;
+  year?: string;
+}
+
 export function getYears(): Promise<YearsResponse> {
   return getJson("/api/years");
 }
 
-export function getMatrix(year?: string): Promise<MatrixResponse> {
-  return year ? getJson(`/api/matrix?year=${encodeURIComponent(year)}`) : getJson("/api/matrix");
+export function getBanks(year?: string): Promise<BanksResponse> {
+  const q = year ? `?year=${encodeURIComponent(year)}` : "";
+  return getJson(`/api/banks${q}`);
+}
+
+export function getMatrix(year?: string, bank?: string): Promise<MatrixResponse> {
+  const params = new URLSearchParams();
+  if (year) params.set("year", year);
+  if (bank) params.set("bank", bank);
+  const q = params.toString();
+  return getJson(q ? `/api/matrix?${q}` : "/api/matrix");
 }
 
 export function recalculate(): Promise<MatrixResponse> {
@@ -72,11 +90,16 @@ export function refreshPerson(
 
 export function getTransactions(
   short: string,
-  category: string
+  category: string,
+  year?: string,
+  bank?: string
 ): Promise<TransactionsResponse> {
-  return getJson(
-    `/api/transactions/${encodeURIComponent(short)}/${encodeURIComponent(category)}`
-  );
+  const params = new URLSearchParams();
+  if (year) params.set("year", year);
+  if (bank) params.set("bank", bank);
+  const q = params.toString();
+  const base = `/api/transactions/${encodeURIComponent(short)}/${encodeURIComponent(category)}`;
+  return getJson(q ? `${base}?${q}` : base);
 }
 
 export function getSettings(): Promise<SettingsResponse> {

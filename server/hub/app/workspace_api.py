@@ -78,18 +78,49 @@ def people(workspace: str) -> dict[str, Any]:
     return {"workspace": caps["workspace"], "people": caps["people"]}
 
 
-def matrix(workspace: str, *, year: str | None = None) -> dict[str, Any]:
+def matrix(workspace: str, *, year: str | None = None, bank: str | None = None) -> dict[str, Any]:
     with _workspace_scope(workspace) as ws:
         from app.matrix import build_matrix
 
-        payload = build_matrix(year=year)
+        payload = build_matrix(year=year, bank=bank)
         payload["workspace"] = ws
+        if bank:
+            payload["bank_view"] = bank
         return payload
 
 
-def transactions(workspace: str, short: str, category_name: str) -> dict[str, Any]:
+def person_banks(workspace: str, short: str, *, year: str | None = None) -> dict[str, Any]:
+    with _workspace_scope(workspace) as ws:
+        from app.core.bank_csv import person_bank_folder_options
+        from app.people import get_person
+
+        pack = get_person(short, year=year)
+        opts = person_bank_folder_options(
+            pack.folder, pack.year, person=pack.folder_name, center=ws
+        )
+        from app.upload_acl import grant_token_for_person
+
+        token = grant_token_for_person(pack.folder_name, ws)
+        return {
+            "workspace": ws,
+            "person": pack.short,
+            "year": pack.year,
+            "upload_token": token or "",
+            **opts,
+        }
+
+
+def transactions(
+    workspace: str,
+    short: str,
+    category_name: str,
+    *,
+    year: str | None = None,
+    bank: str | None = None,
+) -> dict[str, Any]:
     with _workspace_scope(workspace) as ws:
         import app.paths as paths
+        from app.core.bank_csv import pack_for_bank_view
         from app.core.categorize import (
             _load_json_object,
             _read_json,
@@ -103,7 +134,8 @@ def transactions(workspace: str, short: str, category_name: str) -> dict[str, An
         from app.paths import bind_person
         from app.people import get_person
 
-        pack = get_person(short)
+        pack = get_person(short, year=year)
+        pack = pack_for_bank_view(pack, bank, center=ws)
         with bind_person(pack):
             rows = load_transactions(category_name)
             cat_data = _read_json(paths.CATEGORIES_PATH)

@@ -9,7 +9,7 @@
     "14 Gewone uitgaven": "0.00",
     "15 Buitengewone uitgaven": "0.00",
     "16 Auto": "0.00",
-    "18 Overige uitgaven": "1317.02",
+    "18 Overige uitgaven": "8382.55",
     "19 Giften": "0.00",
     "20 Werk": "0.00",
     "21 Familie": "0.00"
@@ -22,6 +22,33 @@
       "balance": "1949.97",
       "files": [
         "BoS TEST.csv"
+      ]
+    },
+    {
+      "iban": "309635/1810344",
+      "name": "309635/1810344",
+      "currency": "GBP",
+      "balance": "7501.20",
+      "files": [
+        "LLOYDS test.csv"
+      ]
+    },
+    {
+      "iban": "50301025931199",
+      "name": "LINDALE ED FOUND",
+      "currency": "GBP",
+      "balance": "21006.07",
+      "files": [
+        "natwest test.csv"
+      ]
+    },
+    {
+      "iban": "16000112593799",
+      "name": "GREYGARTH HALL",
+      "currency": "GBP",
+      "balance": "5376.36",
+      "files": [
+        "RBS TEST.csv"
       ]
     }
   ]

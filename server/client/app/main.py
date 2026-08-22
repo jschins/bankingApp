@@ -503,16 +503,42 @@ def api_years() -> dict[str, Any]:
         raise _hub_error(exc) from exc
 
 
+@app.get("/api/banks")
+def api_banks(year: str | None = Query(default=None)) -> dict[str, Any]:
+    from app.centrale_sync import configured_person, hub_get, load_config, normalize_access
+    import urllib.parse
+
+    if normalize_access(load_config().access) != "personal":
+        return {"folders": [], "multi_bank": False, "show_switcher": False}
+    person = configured_person()
+    if not person:
+        return {"folders": [], "multi_bank": False, "show_switcher": False}
+    try:
+        suffix = f"/people/{urllib.parse.quote(person)}/banks"
+        if year:
+            suffix += f"?year={urllib.parse.quote(year)}"
+        return hub_get(suffix)
+    except Exception as exc:
+        raise _hub_error(exc) from exc
+
+
 @app.get("/api/matrix")
-def api_matrix(year: str | None = Query(default=None)) -> dict[str, Any]:
-    from app.centrale_sync import hub_get, scope_matrix
+def api_matrix(
+    year: str | None = Query(default=None),
+    bank: str | None = Query(default=None),
+) -> dict[str, Any]:
+    from app.centrale_sync import hub_get, load_config, normalize_access, scope_matrix
     import urllib.parse
 
     try:
-        suffix = "/matrix"
+        params: list[str] = []
         if year:
-            # Forward selected year to hub.
-            suffix = f"/matrix?year={urllib.parse.quote(year)}"
+            params.append(f"year={urllib.parse.quote(year)}")
+        if bank and normalize_access(load_config().access) == "personal":
+            params.append(f"bank={urllib.parse.quote(bank)}")
+        suffix = "/matrix"
+        if params:
+            suffix += "?" + "&".join(params)
         payload = hub_get(suffix)
         return scope_matrix(payload) if isinstance(payload, dict) else payload
     except Exception as exc:
@@ -590,12 +616,19 @@ def api_refresh_person(short: str, body: PersonRefreshRequest | None = None) -> 
 
 
 @app.get("/api/transactions/{short}/{category_name}")
-def api_transactions(short: str, category_name: str) -> dict[str, Any]:
-    from app.centrale_sync import hub_get, require_person
+def api_transactions(
+    short: str,
+    category_name: str,
+    year: str | None = Query(default=None),
+    bank: str | None = Query(default=None),
+) -> dict[str, Any]:
+    from app.centrale_sync import hub_get, load_config, normalize_access, require_person
     import urllib.parse
 
     try:
         require_person(short)
+        cfg = load_config()
+        personal = normalize_access(cfg.access) == "personal"
         # Rafael-style local categorized JSON fallback: if present on disk, use it
         # for detail table rows (category click in overview), bypassing hub parser assumptions.
         people_payload = hub_get("/people")
@@ -608,10 +641,7 @@ def api_transactions(short: str, category_name: str) -> dict[str, Any]:
                 if str(person.get("short") or "").strip().lower() == short.strip().lower():
                     folder = str(person.get("folder") or "").strip()
                     break
-        if folder:
-            from app.centrale_sync import load_config
-
-            cfg = load_config()
+        if folder and not (personal and bank and bank.lower() != "consolidated"):
             local = _local_transactions_payload(
                 workspace=cfg.workspace,
                 short=short,
@@ -620,9 +650,18 @@ def api_transactions(short: str, category_name: str) -> dict[str, Any]:
             )
             if local is not None:
                 return local
-        return hub_get(
-            f"/transactions/{urllib.parse.quote(short)}/{urllib.parse.quote(category_name)}"
+        params: list[str] = []
+        if year:
+            params.append(f"year={urllib.parse.quote(year)}")
+        if personal and bank:
+            params.append(f"bank={urllib.parse.quote(bank)}")
+        suffix = (
+            f"/transactions/{urllib.parse.quote(short)}/"
+            f"{urllib.parse.quote(category_name)}"
         )
+        if params:
+            suffix += "?" + "&".join(params)
+        return hub_get(suffix)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:

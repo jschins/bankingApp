@@ -98,7 +98,9 @@ def build_matrix(
     people: list[PersonPack] | None = None,
     *,
     year: str | None = None,
+    bank: str | None = None,
 ) -> dict[str, Any]:
+    from app.core.bank_csv import pack_for_bank_view
     from app.runtime import active_workspace
 
     if people is not None:
@@ -111,8 +113,10 @@ def build_matrix(
     categories = category_names(packs)
     columns = [{"short": p.short, "folder": p.folder_name} for p in packs]
     cells: dict[str, dict[str, str]] = {name: {} for name in categories}
+    ws = active_workspace() or ""
     for pack in packs:
-        totals = person_totals(pack)
+        view_pack = pack_for_bank_view(pack, bank, center=ws) if bank else pack
+        totals = person_totals(view_pack)
         for name in categories:
             cells[name][pack.short] = str(totals.get(name, "0.00"))
         # Include any unexpected keys from totals (should not happen)
@@ -124,7 +128,8 @@ def build_matrix(
     balance_row: dict[str, str] = {}
     has_balance = False
     for pack in packs:
-        balance = person_current_balance(pack)
+        view_pack = pack_for_bank_view(pack, bank, center=ws) if bank else pack
+        balance = person_current_balance(view_pack)
         if balance is not None:
             has_balance = True
             balance_row[pack.short] = balance
