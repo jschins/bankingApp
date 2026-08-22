@@ -31,8 +31,12 @@ _pending_notifications: list[dict[str, Any]] = []
 _state_lock = threading.Lock()
 _worker_thread: threading.Thread | None = None
 _worker_stop = threading.Event()
+_BROWSER_HEARTBEAT_INTERVAL = 10.0
+_last_browser_heartbeat: dict[str, float] = {}
+_browser_heartbeat_lock = threading.Lock()
 _NOTIFY_TTL_SEC = 30.0
-_config_cache: HubConfig | None = None
+_base_cache: dict[str, Any] | None = None
+_file_profile_cache: HubConfig | None = None
 _data_epoch = 0
 _cached_has_secrets: bool = False
 
@@ -49,6 +53,8 @@ class HubConfig:
     port: int
     role: str  # "local" | "regional_admin"
     workspaces: tuple[str, ...] = ()  # locked targets for local/personal; country list; empty = all (regional)
+    username: str = ""
+    auth_required: bool = False
 
 
 def config_path() -> Path:
@@ -61,108 +67,33 @@ def config_path() -> Path:
     return project_root() / "dist" / "client_config.json"
 
 
-def load_config(*, force_reload: bool = False) -> HubConfig:
-    global _config_cache
-    if _config_cache is not None and not force_reload:
-        if selected_workspace() and selected_workspace() != _config_cache.workspace:
-            ws = selected_workspace() or _config_cache.workspace
-            _config_cache = HubConfig(
-                url=_config_cache.url,
-                workspace=ws,
-                author=_config_cache.author,
-                person=_config_cache.person,
-                access=_config_cache.access,
-                api_key=_config_cache.api_key,
-                enabled=_config_cache.enabled,
-                port=_config_cache.port,
-                role=_config_cache.role,
-                workspaces=_config_cache.workspaces,
-            )
-        return _config_cache
-
+def _read_file_cfg() -> dict[str, Any]:
     cfg_path = config_path()
-    file_cfg: dict[str, Any] = {}
-    if cfg_path.is_file():
-        try:
-            file_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            file_cfg = {}
+    if not cfg_path.is_file():
+        return {}
+    try:
+        file_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return file_cfg if isinstance(file_cfg, dict) else {}
 
+
+def load_base_settings(*, force_reload: bool = False) -> dict[str, Any]:
+    """Host settings from ``client_config.json`` (url, port, api_key, enabled, auth)."""
+    global _base_cache
+    if _base_cache is not None and not force_reload:
+        return _base_cache
+
+    file_cfg = _read_file_cfg()
     url = (
         os.environ.get("SERVER_URL", "").strip()
         or str(file_cfg.get("server_url") or "").strip()
         or "http://127.0.0.1:8200"
     ).rstrip("/")
-
-    access = normalize_access(str(file_cfg.get("access") or "local"))
-
-    workspace_key = str(file_cfg.get("workspace") or "").strip()
-    person_key = (
-        os.environ.get("CLIENT_PERSON", "").strip()
-        or str(file_cfg.get("person") or "").strip()
-    )
-
-    api_key_early = (
+    api_key = (
         os.environ.get("CENTRALE_API_KEY", "").strip()
         or str(file_cfg.get("api_key") or "").strip()
     )
-
-    if access == "regional":
-        # ``workspace`` in client_config is ignored; selection is via the UI switcher.
-        person = ""
-        role = "regional_admin"
-        author = "regional"
-        workspaces: tuple[str, ...] = ()
-        workspace = selected_workspace() or ""
-        if not workspace:
-            workspace = _first_hub_workspace(url, api_key=api_key_early) or "dkg"
-    elif access == "personal":
-        if not workspace_key:
-            raise ValueError('client_config access=personal requires a non-empty "workspace"')
-        person = person_key
-        if not person:
-            raise ValueError('client_config access=personal requires a non-empty "person"')
-        role = "local"
-        author = workspace_key
-        workspaces = (author,)
-        workspace = author
-    elif access == "local":
-        # local — one workspace, all people; ignore person key
-        if not workspace_key:
-            raise ValueError('client_config access=local requires a non-empty "workspace"')
-        person = ""
-        role = "local"
-        author = workspace_key
-        workspaces = (author,)
-        workspace = author
-    else:
-        # Country access: workspaces from hub upload_acl.json ``countries``.
-        # ``workspace`` in client_config is ignored; selection is via the UI switcher.
-        country_ws = _hub_country_workspaces(url, access, api_key=api_key_early)
-        if country_ws is None:
-            hint = (
-                f" (is the hub at {url} running a build that exposes countries?)"
-                if access in _KNOWN_COUNTRIES
-                else ""
-            )
-            raise ValueError(
-                f'client_config access={access!r} is not regional/local/personal '
-                f"and is not a country listed in hub upload_acl.json{hint}"
-            )
-        person = ""
-        role = "regional_admin"
-        author = access
-        workspaces = tuple(country_ws)
-        preferred = selected_workspace()
-        if preferred and preferred in workspaces:
-            workspace = preferred
-        elif workspaces:
-            workspace = workspaces[0]
-        else:
-            # Listed country with an empty workspace list — stay on a harmless label.
-            workspace = access
-
-    api_key = api_key_early
     enabled_raw = os.environ.get("CENTRALE_SYNC", "").strip().lower()
     if enabled_raw in ("0", "false", "off", "no"):
         enabled = False
@@ -171,23 +102,114 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     else:
         enabled = bool(file_cfg.get("enabled", True))
 
-    default_port = 8300 if role == "regional_admin" else (8302 if author == "jl" else 8301)
     try:
         port = int(
             os.environ.get("PORT", "").strip()
             or file_cfg.get("port")
-            or default_port
+            or 8300
         )
     except (TypeError, ValueError):
-        port = default_port
+        port = 8300
 
-    set_runtime(
-        workspace=workspace,
-        allowed_workspaces=list(workspaces),
-        access=access,
-    )
+    from app.auth import auth_enabled
 
-    _config_cache = HubConfig(
+    _base_cache = {
+        "url": url,
+        "api_key": api_key,
+        "enabled": enabled,
+        "port": port,
+        "auth_enabled": auth_enabled(),
+        "file_cfg": file_cfg,
+    }
+    return _base_cache
+
+
+def _build_hub_config(
+    *,
+    url: str,
+    api_key: str,
+    enabled: bool,
+    port: int,
+    access: str,
+    workspace_key: str,
+    person_key: str,
+    selected: str | None,
+    username: str = "",
+    auth_required: bool = False,
+    apply_process_runtime: bool = True,
+) -> HubConfig:
+    access = normalize_access(access)
+
+    if access == "regional":
+        person = ""
+        role = "regional_admin"
+        author = "regional"
+        workspaces: tuple[str, ...] = ()
+        workspace = (selected or "").strip()
+        if not workspace:
+            workspace = _first_hub_workspace(url, api_key=api_key) or "dkg"
+    elif access == "personal":
+        if not workspace_key:
+            raise ValueError('access=personal requires a non-empty "workspace"')
+        person = person_key
+        if not person:
+            raise ValueError('access=personal requires a non-empty "person"')
+        role = "local"
+        author = workspace_key
+        workspaces = (author,)
+        workspace = author
+    elif access == "local":
+        if not workspace_key:
+            raise ValueError('access=local requires a non-empty "workspace"')
+        person = ""
+        role = "local"
+        author = workspace_key
+        workspaces = (author,)
+        workspace = author
+    else:
+        country_ws = _hub_country_workspaces(url, access, api_key=api_key)
+        if country_ws is None:
+            hint = (
+                f" (is the hub at {url} running a build that exposes countries?)"
+                if access in _KNOWN_COUNTRIES
+                else ""
+            )
+            raise ValueError(
+                f"access={access!r} is not regional/local/personal "
+                f"and is not a country listed in hub upload_acl.json{hint}"
+            )
+        person = ""
+        role = "regional_admin"
+        author = access
+        workspaces = tuple(country_ws)
+        preferred = (selected or "").strip()
+        if preferred and preferred in workspaces:
+            workspace = preferred
+        elif workspaces:
+            workspace = workspaces[0]
+        else:
+            workspace = access
+
+    if apply_process_runtime:
+        set_runtime(
+            workspace=workspace,
+            allowed_workspaces=list(workspaces),
+            access=access,
+            username=username or None,
+        )
+    else:
+        from app.runtime import bind_request_runtime
+
+        bind_request_runtime(
+            access=access,
+            allowed_workspaces=list(workspaces),
+            workspace=workspace,
+            username=username or None,
+            workspace_key=workspace_key,
+            person_key=person_key,
+        )
+
+    return HubConfig(
         url=url,
         workspace=workspace,
         author=author,
@@ -198,8 +220,140 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         port=port,
         role=role,
         workspaces=workspaces,
+        username=username,
+        auth_required=auth_required,
     )
-    return _config_cache
+
+
+def load_config(*, force_reload: bool = False) -> HubConfig:
+    """Resolve hub + access profile for the current request (or file when auth off)."""
+    global _file_profile_cache
+    base = load_base_settings(force_reload=force_reload)
+    url = str(base["url"])
+    api_key = str(base["api_key"])
+    enabled = bool(base["enabled"])
+    port = int(base["port"])
+    auth_on = bool(base["auth_enabled"])
+    file_cfg: dict[str, Any] = base["file_cfg"]  # type: ignore[assignment]
+
+    from app.runtime import (
+        access_mode,
+        current_username,
+        request_person_key,
+        request_workspace_key,
+        selected_workspace,
+    )
+
+    # Request already bound a profile (middleware).
+    if auth_on and current_username():
+        return _build_hub_config(
+            url=url,
+            api_key=api_key,
+            enabled=enabled,
+            port=port,
+            access=access_mode(),
+            workspace_key=request_workspace_key() or "",
+            person_key=request_person_key() or "",
+            selected=selected_workspace(),
+            username=current_username() or "",
+            auth_required=True,
+            apply_process_runtime=False,
+        )
+
+    # Auth on but no session: bootstrap for lifespan / health (no person scope).
+    if auth_on:
+        bootstrap_ws = str(file_cfg.get("bootstrap_workspace") or file_cfg.get("workspace") or "").strip()
+        if not bootstrap_ws:
+            bootstrap_ws = _first_hub_workspace(url, api_key=api_key) or "dkg"
+        return _build_hub_config(
+            url=url,
+            api_key=api_key,
+            enabled=enabled,
+            port=port,
+            access="regional",
+            workspace_key="",
+            person_key="",
+            selected=bootstrap_ws,
+            username="",
+            auth_required=True,
+            apply_process_runtime=True,
+        )
+
+    if _file_profile_cache is not None and not force_reload:
+        if selected_workspace() and selected_workspace() != _file_profile_cache.workspace:
+            ws = selected_workspace() or _file_profile_cache.workspace
+            _file_profile_cache = HubConfig(
+                url=_file_profile_cache.url,
+                workspace=ws,
+                author=_file_profile_cache.author,
+                person=_file_profile_cache.person,
+                access=_file_profile_cache.access,
+                api_key=_file_profile_cache.api_key,
+                enabled=_file_profile_cache.enabled,
+                port=_file_profile_cache.port,
+                role=_file_profile_cache.role,
+                workspaces=_file_profile_cache.workspaces,
+                username=_file_profile_cache.username,
+                auth_required=False,
+            )
+        return _file_profile_cache
+
+    access = normalize_access(str(file_cfg.get("access") or "local"))
+    workspace_key = str(file_cfg.get("workspace") or "").strip()
+    person_key = (
+        os.environ.get("CLIENT_PERSON", "").strip()
+        or str(file_cfg.get("person") or "").strip()
+    )
+    default_port = 8300 if access == "regional" or access not in ("local", "personal") else (
+        8302 if workspace_key == "jl" else 8301
+    )
+    try:
+        port = int(
+            os.environ.get("PORT", "").strip()
+            or file_cfg.get("port")
+            or default_port
+        )
+    except (TypeError, ValueError):
+        port = default_port
+
+    cfg = _build_hub_config(
+        url=url,
+        api_key=api_key,
+        enabled=enabled,
+        port=port,
+        access=access,
+        workspace_key=workspace_key,
+        person_key=person_key,
+        selected=selected_workspace(),
+        username="",
+        auth_required=False,
+        apply_process_runtime=True,
+    )
+    _file_profile_cache = cfg
+    return cfg
+
+
+def apply_session_profile(session: dict[str, Any]) -> HubConfig:
+    """Bind request runtime from a decoded session and return HubConfig."""
+    base = load_base_settings()
+    access = normalize_access(str(session.get("access") or "local"))
+    workspace_key = str(session.get("workspace") or "").strip()
+    person_key = str(session.get("person") or "").strip()
+    selected = str(session.get("selected_workspace") or "").strip() or None
+    username = str(session.get("username") or "").strip()
+    return _build_hub_config(
+        url=str(base["url"]),
+        api_key=str(base["api_key"]),
+        enabled=bool(base["enabled"]),
+        port=int(base["port"]),
+        access=access,
+        workspace_key=workspace_key,
+        person_key=person_key,
+        selected=selected,
+        username=username,
+        auth_required=True,
+        apply_process_runtime=False,
+    )
 
 
 def _hub_get_json(url: str, path: str, *, api_key: str = "", timeout: float = 5.0) -> dict[str, Any]:
@@ -484,6 +638,8 @@ def sync_status() -> dict[str, Any]:
         "author": cfg.author,
         "person": cfg.person,
         "access": cfg.access,
+        "username": cfg.username,
+        "auth_required": cfg.auth_required,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,
         "error": _last_error,
@@ -621,8 +777,21 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
     if names and ws not in names:
         return {"ok": False, "error": f"Workspace {ws!r} not allowed"}
     allowed = list(cfg.workspaces) if is_country_access(cfg.access) else []
-    set_runtime(workspace=ws, allowed_workspaces=allowed, access=cfg.access)
-    load_config(force_reload=True)
+    from app.runtime import current_username
+
+    if cfg.auth_required and current_username():
+        set_runtime(
+            workspace=ws,
+            allowed_workspaces=allowed,
+            access=cfg.access,
+            username=cfg.username,
+            workspace_key=cfg.workspace if cfg.access in ("local", "personal") else "",
+            person_key=cfg.person,
+            request_scoped=True,
+        )
+    else:
+        set_runtime(workspace=ws, allowed_workspaces=allowed, access=cfg.access)
+        load_config(force_reload=True)
     with _state_lock:
         _pending_notifications.clear()
     try:
@@ -641,7 +810,7 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
         return {"ok": False, "error": _last_error, "workspace": ws}
 
 
-def _session_body() -> dict[str, Any]:
+def _session_body(*, session: dict[str, Any] | None = None, client_ip: str | None = None) -> dict[str, Any]:
     """Payload for hub session start / end / heartbeat."""
     cfg = load_config()
     hostname = (
@@ -653,19 +822,119 @@ def _session_body() -> dict[str, Any]:
             hostname = socket.gethostname().strip()
         except OSError:
             hostname = ""
-    # Prefer short name over FQDN.
     if hostname:
         hostname = hostname.split(".", 1)[0]
-    return {
-        "port": cfg.port,
+    body: dict[str, Any] = {
         "author": cfg.author,
-        "hostname": hostname or None,
     }
+    if client_ip:
+        body["client_ip"] = client_ip.strip()
+    else:
+        body["port"] = cfg.port
+        body["hostname"] = hostname or None
+    if session:
+        username = str(session.get("username") or "").strip()
+        if username:
+            body["username"] = username
+    return body
+
+
+def remote_client_ip(request: Any) -> str:
+    """Best-effort IP of the browser (or API caller) hitting this BFF."""
+    if request is None:
+        return "unknown"
+    client = getattr(request, "client", None)
+    if client is not None and getattr(client, "host", None):
+        return str(client.host).strip()
+    return "unknown"
+
+
+def _browser_session_key(session: dict[str, Any], client_ip: str) -> str:
+    username = str(session.get("username") or "").strip().lower()
+    return f"{username}@{client_ip}"
+
+
+def browser_session_start(request: Any, session: dict[str, Any]) -> None:
+    """Register a logged-in browser user on the hub session list."""
+    from app.auth import auth_enabled
+
+    if not auth_enabled():
+        return
+    apply_session_profile(session)
+    cfg = load_config()
+    if not cfg.enabled:
+        return
+    ip = remote_client_ip(request)
+    body = _session_body(session=session, client_ip=ip)
+    hub_request(
+        "POST",
+        f"/api/local/{urllib.parse.quote(cfg.workspace)}/session/start",
+        body=body,
+        timeout=10.0,
+    )
+    with _browser_heartbeat_lock:
+        _last_browser_heartbeat[_browser_session_key(session, ip)] = time.monotonic()
+
+
+def browser_session_end(request: Any, session: dict[str, Any]) -> None:
+    from app.auth import auth_enabled
+
+    if not auth_enabled():
+        return
+    apply_session_profile(session)
+    cfg = load_config()
+    if not cfg.enabled:
+        return
+    ip = remote_client_ip(request)
+    body = _session_body(session=session, client_ip=ip)
+    try:
+        hub_request(
+            "POST",
+            f"/api/local/{urllib.parse.quote(cfg.workspace)}/session/end",
+            body=body,
+            timeout=10.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    with _browser_heartbeat_lock:
+        _last_browser_heartbeat.pop(_browser_session_key(session, ip), None)
+
+
+def maybe_browser_session_heartbeat(request: Any, session: dict[str, Any]) -> None:
+    """Refresh hub session TTL for an active browser login (throttled)."""
+    from app.auth import auth_enabled
+
+    if not auth_enabled() or not session.get("username"):
+        return
+    ip = remote_client_ip(request)
+    key = _browser_session_key(session, ip)
+    now = time.monotonic()
+    with _browser_heartbeat_lock:
+        last = _last_browser_heartbeat.get(key, 0.0)
+        if now - last < _BROWSER_HEARTBEAT_INTERVAL:
+            return
+        _last_browser_heartbeat[key] = now
+    try:
+        apply_session_profile(session)
+        cfg = load_config()
+        if not cfg.enabled:
+            return
+        body = _session_body(session=session, client_ip=ip)
+        hub_request(
+            "POST",
+            f"/api/local/{urllib.parse.quote(cfg.workspace)}/session/heartbeat",
+            body=body,
+            timeout=10.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def start_session_and_pull() -> dict[str, Any]:
     """Connect to hub (no file pull). Hub must be reachable."""
     global _hub_session_active, _last_error, _last_event_id
+    from app.auth import auth_enabled
+
     load_config(force_reload=True)
     cfg = load_config()
     if not cfg.enabled:
@@ -674,11 +943,12 @@ def start_session_and_pull() -> dict[str, Any]:
     ws = cfg.workspace
     try:
         hub_request("GET", "/api/health", timeout=10.0)
-        hub_request(
-            "POST",
-            f"/api/local/{urllib.parse.quote(ws)}/session/start",
-            body=_session_body(),
-        )
+        if not auth_enabled():
+            hub_request(
+                "POST",
+                f"/api/local/{urllib.parse.quote(ws)}/session/start",
+                body=_session_body(),
+            )
         caps = refresh_capabilities()
         events = hub_request(
             "GET",
@@ -701,6 +971,8 @@ def start_session_and_pull() -> dict[str, Any]:
 
 def end_session_and_push() -> dict[str, Any]:
     global _hub_session_active, _last_error
+    from app.auth import auth_enabled
+
     cfg = load_config()
     if not _hub_session_active:
         return {"ok": True, "skipped": True, "reason": "no active hub session"}
@@ -709,11 +981,12 @@ def end_session_and_push() -> dict[str, Any]:
         return {"ok": True, "skipped": True, "reason": "sync disabled"}
     ws = cfg.workspace
     try:
-        hub_request(
-            "POST",
-            f"/api/local/{urllib.parse.quote(ws)}/session/end",
-            body=_session_body(),
-        )
+        if not auth_enabled():
+            hub_request(
+                "POST",
+                f"/api/local/{urllib.parse.quote(ws)}/session/end",
+                body=_session_body(),
+            )
         _last_error = None
         result: dict[str, Any] = {"ok": True, "workspace": ws}
     except Exception as exc:  # noqa: BLE001
@@ -728,7 +1001,9 @@ def _worker_loop() -> None:
         if _worker_stop.wait(timeout=1.5):
             break
         try:
-            if _hub_session_active:
+            from app.auth import auth_enabled
+
+            if _hub_session_active and not auth_enabled():
                 _heartbeat_session()
             poll_central_events()
         except Exception:
@@ -737,6 +1012,10 @@ def _worker_loop() -> None:
 
 def _heartbeat_session() -> None:
     """Keep hub session list fresh; missing heartbeats drop force-killed clients."""
+    from app.auth import auth_enabled
+
+    if auth_enabled():
+        return
     cfg = load_config()
     if not cfg.enabled:
         return

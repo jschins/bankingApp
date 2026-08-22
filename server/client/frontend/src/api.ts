@@ -9,7 +9,7 @@ import type {
 } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
-  const resp = await fetch(url);
+  const resp = await fetch(url, { credentials: "include" });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`${resp.status} ${resp.statusText}: ${text}`);
@@ -24,6 +24,7 @@ async function sendJson<T>(
 ): Promise<T> {
   const resp = await fetch(url, {
     method,
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -131,6 +132,8 @@ export interface CentraleSyncStatus {
   access?: string;
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
+  username?: string;
+  auth_required?: boolean;
   centrale_url: string;
   local_session_active: boolean;
   error: string | null;
@@ -143,6 +146,25 @@ export interface CentraleSyncStatus {
   has_secrets?: boolean;
   /** People whose bank consent just completed via hub callback. */
   consent_ready?: ConsentReadyPerson[];
+}
+
+export interface AuthMeResponse {
+  auth_required: boolean;
+  authenticated: boolean;
+  username: string | null;
+  access?: string | null;
+}
+
+export function getAuthMe(): Promise<AuthMeResponse> {
+  return getJson("/api/auth/me");
+}
+
+export function login(username: string, password: string): Promise<CentraleSyncStatus> {
+  return sendJson("/api/login", "POST", { username, password });
+}
+
+export function logout(): Promise<{ ok: boolean; auth_required: boolean; authenticated: boolean }> {
+  return sendJson("/api/logout", "POST", {});
 }
 
 export function getCentraleStatus(): Promise<CentraleSyncStatus> {

@@ -7,10 +7,57 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.yearpath import current_year
+
+
+_AUTH_PUBLIC_PREFIXES = (
+    "/api/login",
+    "/api/logout",
+    "/api/auth/",
+    "/api/health",
+)
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        from app.auth import COOKIE_NAME, auth_enabled, decode_session
+        from app.centrale_sync import apply_session_profile
+        from app.runtime import clear_request_runtime
+
+        clear_request_runtime()
+        path = request.url.path
+        needs_auth = auth_enabled() and path.startswith("/api/") and not any(
+            path == p or path.startswith(p) for p in _AUTH_PUBLIC_PREFIXES
+        )
+        token = request.cookies.get(COOKIE_NAME)
+        session = decode_session(token) if token else None
+        if session and session.get("username"):
+            try:
+                apply_session_profile(session)
+                request.state.session = session
+            except ValueError:
+                session = None
+                request.state.session = None
+        else:
+            request.state.session = None
+
+        if needs_auth and not session:
+            return JSONResponse({"detail": "login required"}, status_code=401)
+
+        response = await call_next(request)
+
+        if session and session.get("username"):
+            from app.centrale_sync import maybe_browser_session_heartbeat
+
+            maybe_browser_session_heartbeat(request, session)
+
+        clear_request_runtime()
+        return response
 
 
 @asynccontextmanager
@@ -42,6 +89,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="boekhouding-client", version="0.2", lifespan=lifespan)
+app.add_middleware(AuthMiddleware)
 
 
 class SettingsTermsRequest(BaseModel):
@@ -68,6 +116,11 @@ class PersonRefreshRequest(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     new_year: bool = False
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 def _hub_error(exc: Exception) -> HTTPException:
@@ -198,11 +251,93 @@ def _local_transactions_payload(
     return None
 
 
+@app.get("/api/auth/me")
+def api_auth_me(request: Request) -> dict[str, Any]:
+    from app.auth import auth_enabled
+
+    session = getattr(request.state, "session", None) or {}
+    username = str(session.get("username") or "").strip()
+    return {
+        "auth_required": auth_enabled(),
+        "authenticated": bool(username) if auth_enabled() else True,
+        "username": username or None,
+        "access": session.get("access") if username else None,
+    }
+
+
+@app.post("/api/login")
+def api_login(body: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
+    from app.auth import (
+        authenticate,
+        auth_enabled,
+        cookie_kwargs,
+        encode_session,
+        profile_from_user,
+    )
+    from app.centrale_sync import apply_session_profile, browser_session_start, sync_status
+
+    if not auth_enabled():
+        raise HTTPException(status_code=400, detail="auth is disabled on this client")
+    user = authenticate(body.username, body.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid username or password")
+    profile = profile_from_user(user)
+    try:
+        cfg = apply_session_profile(profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = {
+        **profile,
+        "selected_workspace": cfg.workspace if cfg.role == "regional_admin" else "",
+    }
+    response.set_cookie(value=encode_session(session), **cookie_kwargs())
+    try:
+        browser_session_start(request, session)
+    except Exception:  # noqa: BLE001
+        pass
+    status = sync_status()
+    status["authenticated"] = True
+    status["auth_required"] = True
+    return status
+
+
+@app.post("/api/logout")
+def api_logout(request: Request, response: Response) -> dict[str, Any]:
+    from app.auth import COOKIE_NAME, auth_enabled, cookie_kwargs, decode_session
+    from app.centrale_sync import browser_session_end
+
+    token = request.cookies.get(COOKIE_NAME)
+    session = decode_session(token) if token else None
+    if auth_enabled() and isinstance(session, dict) and session.get("username"):
+        try:
+            browser_session_end(request, session)
+        except Exception:  # noqa: BLE001
+            pass
+
+    response.set_cookie(**cookie_kwargs(clear=True))
+    return {"ok": True, "auth_required": auth_enabled(), "authenticated": False}
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    from app.centrale_sync import load_config, sync_status
+    from app.auth import auth_enabled
+    from app.centrale_sync import load_base_settings, load_config, sync_status
     from app.runtime import frontend_dist_ok, is_frozen
 
+    base = load_base_settings()
+    if auth_enabled():
+        return {
+            "ok": bool(base.get("enabled")),
+            "app": "boekhouding-client",
+            "frozen": is_frozen(),
+            "frontend_ok": frontend_dist_ok(),
+            "auth_required": True,
+            "hub": {
+                "url": base["url"],
+                "enabled": base["enabled"],
+                "port": base["port"],
+            },
+        }
     cfg = load_config()
     status = sync_status()
     return {
@@ -210,6 +345,7 @@ def health() -> dict[str, Any]:
         "app": "boekhouding-client",
         "frozen": is_frozen(),
         "frontend_ok": frontend_dist_ok(),
+        "auth_required": False,
         "hub": {
             "url": cfg.url,
             "workspace": cfg.workspace,
@@ -239,7 +375,8 @@ class WorkspaceRequest(BaseModel):
 
 
 @app.post("/api/workspace")
-def api_set_workspace(body: WorkspaceRequest) -> dict[str, Any]:
+def api_set_workspace(body: WorkspaceRequest, request: Request, response: Response) -> dict[str, Any]:
+    from app.auth import cookie_kwargs, encode_session
     from app.centrale_sync import list_hub_workspaces, load_config, switch_workspace
 
     cfg = load_config()
@@ -254,6 +391,11 @@ def api_set_workspace(body: WorkspaceRequest) -> dict[str, Any]:
     result = switch_workspace(body.workspace)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error") or "switch failed")
+    session = getattr(request.state, "session", None)
+    if isinstance(session, dict) and session.get("username"):
+        updated = {**session, "selected_workspace": body.workspace}
+        response.set_cookie(value=encode_session(updated), **cookie_kwargs())
+        request.state.session = updated
     return {
         "ok": True,
         "workspace": body.workspace,
@@ -620,19 +762,36 @@ def run() -> None:
 
     logging.getLogger("uvicorn.access").addFilter(_MutePollAccess())
 
-    cfg = load_config()
-    host = os.environ.get("HOST", "127.0.0.1" if is_frozen() else "0.0.0.0")
-    port = int(os.environ.get("PORT", str(cfg.port)))
-    print(
-        f"boekhouding-client → hub {cfg.url} "
-        f"(access={cfg.access}, workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
-    )
+    from app.auth import auth_enabled
 
-    if is_frozen():
+    cfg = load_config()
+    auth_on = auth_enabled()
+    if os.environ.get("HOST", "").strip():
+        host = os.environ.get("HOST", "").strip()
+    elif auth_on:
+        # Shared server: LAN/Tailscale clients connect; laptop exe stays local-only.
+        host = "0.0.0.0"
+    else:
+        host = "127.0.0.1" if is_frozen() else "0.0.0.0"
+    port = int(os.environ.get("PORT", str(cfg.port)))
+
+    if auth_on:
+        print(
+            f"boekhouding-client → hub {cfg.url} "
+            f"(auth_enabled, listen={host}:{port})"
+        )
+    else:
+        print(
+            f"boekhouding-client → hub {cfg.url} "
+            f"(access={cfg.access}, workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
+        )
+
+    if is_frozen() and not auth_on:
 
         def _open_browser() -> None:
             time.sleep(1.2)
-            webbrowser.open(f"http://{host}:{port}/")
+            open_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+            webbrowser.open(f"http://{open_host}:{port}/")
 
         threading.Thread(target=_open_browser, daemon=True).start()
 

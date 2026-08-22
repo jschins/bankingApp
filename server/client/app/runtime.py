@@ -2,12 +2,23 @@
 from __future__ import annotations
 
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 
 _selected_workspace: str | None = None
 _allowed_workspaces: list[str] = []
 # regional | local | personal | <country from upload_acl countries>
 _access_mode: str = "local"
+
+# Per-request overrides (multi-user auth). Fall back to process globals when unset.
+_cv_selected_workspace: ContextVar[str | None] = ContextVar("selected_workspace", default=None)
+_cv_allowed_workspaces: ContextVar[tuple[str, ...] | None] = ContextVar(
+    "allowed_workspaces", default=None
+)
+_cv_access_mode: ContextVar[str | None] = ContextVar("access_mode", default=None)
+_cv_username: ContextVar[str | None] = ContextVar("username", default=None)
+_cv_workspace_key: ContextVar[str | None] = ContextVar("workspace_key", default=None)
+_cv_person_key: ContextVar[str | None] = ContextVar("person_key", default=None)
 
 
 def is_frozen() -> bool:
@@ -47,7 +58,7 @@ def normalize_access(raw: str | None) -> str:
 
 def is_country_access(mode: str | None = None) -> bool:
     """True when access is a country key (not regional/local/personal)."""
-    value = normalize_access(mode if mode is not None else _access_mode)
+    value = normalize_access(mode if mode is not None else access_mode())
     return value not in ("regional", "local", "personal")
 
 
@@ -56,26 +67,104 @@ def set_runtime(
     workspace: str | None = None,
     allowed_workspaces: list[str] | None = None,
     access: str | None = None,
+    username: str | None = None,
+    workspace_key: str | None = None,
+    person_key: str | None = None,
+    request_scoped: bool = False,
     **_ignored: object,
 ) -> None:
+    """Update process globals, or only the current request context when ``request_scoped``."""
     global _selected_workspace, _allowed_workspaces, _access_mode
-    if access is not None:
-        _access_mode = normalize_access(access)
-    if allowed_workspaces is not None:
-        _allowed_workspaces = [str(w).strip() for w in allowed_workspaces if str(w).strip()]
-    if workspace:
-        _selected_workspace = workspace.strip()
+
+    access_n = normalize_access(access) if access is not None else None
+    allowed_t = (
+        tuple(str(w).strip() for w in allowed_workspaces if str(w).strip())
+        if allowed_workspaces is not None
+        else None
+    )
+    ws = workspace.strip() if workspace else None
+
+    if request_scoped:
+        if access_n is not None:
+            _cv_access_mode.set(access_n)
+        if allowed_t is not None:
+            _cv_allowed_workspaces.set(allowed_t)
+        if ws:
+            _cv_selected_workspace.set(ws)
+        elif allowed_t and _cv_selected_workspace.get() is None:
+            _cv_selected_workspace.set(allowed_t[0])
+        if username is not None:
+            _cv_username.set(username.strip() or None)
+        if workspace_key is not None:
+            _cv_workspace_key.set(workspace_key.strip() or None)
+        if person_key is not None:
+            _cv_person_key.set(person_key.strip() or None)
+        return
+
+    if access_n is not None:
+        _access_mode = access_n
+        _cv_access_mode.set(None)
+    if allowed_t is not None:
+        _allowed_workspaces = list(allowed_t)
+        _cv_allowed_workspaces.set(None)
+    if ws:
+        _selected_workspace = ws
+        _cv_selected_workspace.set(None)
     elif _allowed_workspaces and not _selected_workspace:
         _selected_workspace = _allowed_workspaces[0]
+    if username is not None:
+        _cv_username.set(username.strip() or None)
+    if workspace_key is not None:
+        _cv_workspace_key.set(None)
+    if person_key is not None:
+        _cv_person_key.set(None)
+
+
+def clear_request_runtime() -> None:
+    _cv_selected_workspace.set(None)
+    _cv_allowed_workspaces.set(None)
+    _cv_access_mode.set(None)
+    _cv_username.set(None)
+    _cv_workspace_key.set(None)
+    _cv_person_key.set(None)
+
+
+def bind_request_runtime(
+    *,
+    access: str,
+    allowed_workspaces: list[str] | None = None,
+    workspace: str | None = None,
+    username: str | None = None,
+    workspace_key: str | None = None,
+    person_key: str | None = None,
+) -> None:
+    set_runtime(
+        access=access,
+        allowed_workspaces=allowed_workspaces,
+        workspace=workspace,
+        username=username,
+        workspace_key=workspace_key,
+        person_key=person_key,
+        request_scoped=True,
+    )
+
+
+def request_workspace_key() -> str | None:
+    return _cv_workspace_key.get()
+
+
+def request_person_key() -> str | None:
+    return _cv_person_key.get()
 
 
 def access_mode() -> str:
-    return _access_mode
+    cv = _cv_access_mode.get()
+    return cv if cv is not None else _access_mode
 
 
 def is_regional_admin() -> bool:
     """True when this BFF may switch workspaces (all hubs or country-scoped)."""
-    return _access_mode == "regional" or is_country_access()
+    return access_mode() == "regional" or is_country_access()
 
 
 def is_central_admin() -> bool:
@@ -88,22 +177,40 @@ def role() -> str:
 
 
 def selected_workspace() -> str | None:
+    cv = _cv_selected_workspace.get()
+    if cv is not None:
+        return cv
     return _selected_workspace
 
 
 def set_selected_workspace(workspace: str) -> None:
     global _selected_workspace
     ws = workspace.strip()
-    if _access_mode == "regional":
-        _selected_workspace = ws
+    mode = access_mode()
+    allowed = allowed_workspaces()
+    if mode == "regional":
+        if _cv_access_mode.get() is not None:
+            _cv_selected_workspace.set(ws)
+        else:
+            _selected_workspace = ws
         return
-    if _allowed_workspaces and ws not in _allowed_workspaces:
-        raise ValueError(f"Workspace {ws!r} not in config: {_allowed_workspaces}")
-    _selected_workspace = ws
+    if allowed and ws not in allowed:
+        raise ValueError(f"Workspace {ws!r} not in config: {allowed}")
+    if _cv_access_mode.get() is not None:
+        _cv_selected_workspace.set(ws)
+    else:
+        _selected_workspace = ws
 
 
 def allowed_workspaces() -> list[str]:
+    cv = _cv_allowed_workspaces.get()
+    if cv is not None:
+        return list(cv)
     return list(_allowed_workspaces)
+
+
+def current_username() -> str | None:
+    return _cv_username.get()
 
 
 def bundle_dir() -> Path | None:

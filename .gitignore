@@ -12,8 +12,11 @@ single-docker/dist/boekh_onedir/
 boekh-multiperson/boekhouding/
 dkg/
 jl/
+brk/
+gph/
 centraleBoekhouding/boekhouding/
 secret/
 data/
 server/workspaces/server.exe
+server/client/dist/users.json
 

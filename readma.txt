@@ -251,3 +251,10 @@ foreach ($ip in $ips) {
 }
 
 
+tailscale funnel --set-path=/upload off                    
+>> tailscale funnel --bg --set-path=/upload http://127.0.0.1:8200/upload
+
+PS C:\Coding\bankingApp\server\client> tailscale funnel status    
+
+PS C:\Coding\bankingApp\server\client> Test-NetConnection 192.168.1.48 -Port 8200      
+PS C:\Coding\bankingApp\server\client> Invoke-WebRequest http://192.168.1.48:8200/api/status -TimeoutSec 3

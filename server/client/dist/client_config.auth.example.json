@@ -1,0 +1,8 @@
+{
+  "server_url": "http://127.0.0.1:8200",
+  "port": 8300,
+  "auth_enabled": true,
+  "session_secret": "replace-me-with-a-long-random-string",
+  "api_key": "",
+  "enabled": true
+}

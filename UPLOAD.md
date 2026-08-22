@@ -54,8 +54,8 @@ The page has three fields after the grant loads:
 | Field  | Default      | Meaning                                                                                       |
 | ------ | ------------ | --------------------------------------------------------------------------------------------- |
 | Year   | Current year | Target year folder                                                                            |
-| Format | Excel        | `Excel` = balance check + import + categorization. `Test` = save file only, no processing. `Dry run` = run balance check and report result, nothing saved |
-| File   | —            | `.xlsx` to upload                                                                             |
+| Format | Excel        | `Excel` = balance check + import + categorization. `Test` = save any file as-is (no checks). `Dry run` = run balance check and report result, nothing saved |
+| File   | —            | Any file in Test mode; `.xlsx` for Excel / Dry run |
 
 
 

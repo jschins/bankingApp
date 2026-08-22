@@ -238,23 +238,57 @@ def save_upload(
 ) -> dict[str, Any]:
     """Write into ``{center}/{person}/{year}/{original filename}``.
 
-    For ``.xlsx`` uploads the year comes from the first dated sheet entry.
-    A missing year folder is created only in that reading phase (when the file
-    will actually be stored). Processing never opens a later year for rows that
-    spill past 31 Dec.
+    **Test mode:** store the uploaded bytes as-is under the chosen year — no Excel
+    parse, balance check, or import.
+
+    **Excel / dry run:** year comes from the first dated sheet entry. A missing year
+    folder is created only when the file will actually be stored (not dry run).
     """
     client = client_ip(ip)
     safe_name = Path(filename or "").name if filename else ""
-    is_xlsx = bool(safe_name.lower().endswith(".xlsx")) or str(rel_path or "").lower().endswith(
-        ".xlsx"
-    )
+    if not safe_name:
+        raise ValueError("filename is required")
 
-    from app import store
     from app.paths import shared_categories_path
     from app.yearpath import previous_year_name
 
     person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
+
+    # --- Test: raw save only -------------------------------------------------
+    if test:
+        y = parse_year(year)
+        dest = f"{grant.year_folder(y)}/{safe_name}"
+        if not path_allowed(grant, dest, year=y):
+            raise PermissionError(f"Path {dest!r} is not allowed for {grant.person}")
+        rel = _normalize_rel(dest)
+        full = resolve_under_data_root(rel)
+        # Ensure the year directory exists so we can place the file; no sheet checks.
+        if not (person_folder / y).is_dir():
+            ensure_year_folder(
+                person_folder,
+                y,
+                categories_path=shared_categories_path(),
+                include_downloaded=False,
+            )
+        else:
+            full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_bytes(content)
+        _log_upload(ip=client, grant=grant, rel=rel, nbytes=len(content))
+        return {
+            "ok": True,
+            "path": rel,
+            "bytes": len(content),
+            "via": "test",
+            "person": grant.person,
+            "year": y,
+        }
+
+    is_xlsx = bool(safe_name.lower().endswith(".xlsx")) or str(rel_path or "").lower().endswith(
+        ".xlsx"
+    )
     created_year = False
+
+    from app import store
 
     if is_xlsx:
         import xml.etree.ElementTree as ET
@@ -271,12 +305,9 @@ def save_upload(
         if not sheet_year:
             raise ValueError("No dated transaction entry found in Excel sheet")
         y = parse_year(sheet_year)
-        if not safe_name:
-            raise ValueError("filename is required")
         dest = f"{grant.year_folder(y)}/{safe_name}"
         year_path = person_folder / y
         if year_path.is_dir():
-            # Existing year: sync category names only; do not invent another year.
             ensure_year_folder(
                 person_folder,
                 y,
@@ -284,8 +315,6 @@ def save_upload(
                 include_downloaded=False,
             )
         elif not dry_run:
-            # New year only when the first entry's year has no folder yet, and
-            # only when we are about to place the sheet (not dry run / process).
             ensure_year_folder(
                 person_folder,
                 y,
@@ -297,8 +326,6 @@ def save_upload(
         y = parse_year(year)
         dest = (rel_path or "").strip()
         if not dest:
-            if not safe_name:
-                raise ValueError("filename is required")
             dest = f"{grant.year_folder(y)}/{safe_name}"
         elif not Path(dest).name and safe_name:
             dest = dest.rstrip("/") + "/" + safe_name
@@ -350,7 +377,7 @@ def save_upload(
         except ValueError:
             pass
 
-    if is_xlsx and not test:
+    if is_xlsx:
         import xml.etree.ElementTree as ET
         import zipfile
 
@@ -360,7 +387,6 @@ def save_upload(
         if year_path.is_dir():
             totals_path = year_path / "category_totals.json"
         else:
-            # Dry run against a year that does not exist yet: use previous closing.
             prev = previous_year_name(person_folder, y)
             totals_path = (
                 (person_folder / prev / "category_totals.json")
@@ -404,6 +430,7 @@ def save_upload(
         finally:
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
+
     if dry_run:
         return {
             "ok": True,
@@ -420,16 +447,15 @@ def save_upload(
         "ok": True,
         "path": rel,
         "bytes": len(content),
-        "via": "test" if test else "raw",
+        "via": "raw",
         "person": grant.person,
         "year": y,
         "year_created": created_year,
     }
-    if is_xlsx and not test:
-        # Import every dated row into this year folder — including next-calendar-year
-        # spillover rows. Do not create another year folder here.
+    if is_xlsx:
         payload_out["excel"] = _process_excel_upload(grant, year=y)
     return payload_out
+
 
 
 def ensure_example_acl() -> Path:

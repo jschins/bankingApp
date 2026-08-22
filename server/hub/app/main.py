@@ -131,10 +131,13 @@ class FilePutPayload(BaseModel):
 
 
 class SessionPayload(BaseModel):
-    """Client listen port, config author, and optional computer hostname."""
+    """Client listen port, config author, optional computer hostname, browser viewer."""
+
     port: int | None = None
     author: str | None = None
     hostname: str | None = None
+    client_ip: str | None = None
+    username: str | None = None
 
 
 def _short_computer_name(raw: str) -> str:
@@ -159,12 +162,21 @@ def _request_client_host(request: Request) -> str:
     return "unknown"
 
 
+def _session_label_host(request: Request, body: SessionPayload) -> str:
+    from app import upload_acl
+
+    explicit = (body.client_ip or "").strip()
+    if explicit:
+        return upload_acl.client_ip(explicit)
+    return _request_client_host(request)
+
+
 def _client_session_label(
     request: Request, _workspace: str, body: SessionPayload
 ) -> str:
     import socket
 
-    host = _request_client_host(request)
+    host = _session_label_host(request, body)
     port = body.port
     addr = (
         f"{host}:{int(port)}"
@@ -172,6 +184,9 @@ def _client_session_label(
         else host
     )
     author = (body.author or "").strip() or "?"
+    username = (body.username or "").strip()
+    if username:
+        author = f"{username} · {author}" if author != "?" else username
     computer = _short_computer_name(body.hostname or "")
     if not computer and host not in ("unknown", "127.0.0.1"):
         # Fallback when client is an older build: reverse-DNS / Tailscale MagicDNS.
@@ -1360,7 +1375,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         <ul id="xlsxList"></ul>
       </div>
       <label>File <span style="font-weight:400;color:#666">(max 32 MB)</span>
-        <input id="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>
+        <input id="file" type="file"/>
       </label>
       <div class="actions">
         <button type="button" id="btnUpload" class="primary">Upload</button>
@@ -1392,9 +1407,8 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     const formatEl = document.getElementById("format");
     function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
     function formatValue() { return (formatEl.value || "Excel").trim(); }
-    function isExcelOrTestFormat() {
-      const fmt = formatValue().toLowerCase();
-      return fmt === "excel" || fmt === "test";
+    function isExcelFormat() {
+      return formatValue().toLowerCase() === "excel";
     }
     function ensureYearSelected(y) {
       if (!y) return;
@@ -1488,7 +1502,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 
     document.getElementById("file").addEventListener("change", async () => {
       errEl.textContent = "";
-      if (!isExcelOrTestFormat()) return;
+      if (!isExcelFormat()) return;
       const fileInput = document.getElementById("file");
       const file = fileInput.files && fileInput.files[0];
       if (!file) return;

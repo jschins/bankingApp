@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   ackCentralWinsRefusal,
   addCategoryTerm,
+  getAuthMe,
   getCentralWinsRefusals,
   getCentraleNotifications,
   getCentraleStatus,
@@ -10,6 +11,8 @@ import {
   getSettings,
   getTransactions,
   getYears,
+  login,
+  logout,
   recalculate,
   recordModification,
   refreshAll,
@@ -339,10 +342,14 @@ function SyncNotifyShell({
   children,
   onWorkspaceChanged,
   termsView = false,
+  authUser = null,
+  onLogout,
 }: {
   children: (brandName: string, activeYear: string) => ReactNode;
   onWorkspaceChanged?: () => void;
   termsView?: boolean;
+  authUser?: string | null;
+  onLogout?: () => void;
 }) {
   const [status, setStatus] = useState<CentraleSyncStatus | null>(null);
   const [notes, setNotes] = useState<SyncNotification[]>([]);
@@ -456,7 +463,8 @@ function SyncNotifyShell({
       });
   }
 
-  const showBar = Boolean(status?.enabled) || isRegionalAdmin || headerActions.length > 0;
+  const showBar =
+    Boolean(status?.enabled) || isRegionalAdmin || headerActions.length > 0 || Boolean(onLogout);
 
   return (
     <HeaderActionsContext.Provider value={setHeaderActions}>
@@ -482,6 +490,14 @@ function SyncNotifyShell({
               />
             ) : null}
             <ActionsMenu items={headerActions} />
+            {authUser ? (
+              <span className="auth-user-label">{authUser}</span>
+            ) : null}
+            {onLogout ? (
+              <button type="button" className="logout-btn" onClick={onLogout}>
+                Log out
+              </button>
+            ) : null}
             {switching ? <span className="workspace-switcher-busy">switching…</span> : null}
             {status?.error ? <span> · sync error: {status.error}</span> : null}
           </div>
@@ -595,9 +611,67 @@ function isPlainAlt(e: KeyboardEvent): boolean {
 export default function App() {
   const isTerms = new URLSearchParams(window.location.search).get("view") === "terms";
   const [wsEpoch, setWsEpoch] = useState(0);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authUser, setAuthUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAuthMe()
+      .then((me) => {
+        if (cancelled) return;
+        setAuthRequired(me.auth_required);
+        setAuthenticated(me.authenticated);
+        setAuthUser(me.username);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAuthRequired(false);
+        setAuthenticated(true);
+        setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!authChecked) {
+    return <div className="login-screen"><p className="login-muted">Loading…</p></div>;
+  }
+
+  if (authRequired && !authenticated) {
+    return (
+      <LoginScreen
+        onSuccess={(username) => {
+          setAuthenticated(true);
+          setAuthUser(username);
+          setWsEpoch((n) => n + 1);
+        }}
+      />
+    );
+  }
+
   return (
     <SyncNotifyShell
       termsView={isTerms}
+      authUser={authRequired ? authUser : null}
+      onLogout={
+        authRequired
+          ? () => {
+              logout()
+                .then(() => {
+                  setAuthenticated(false);
+                  setAuthUser(null);
+                })
+                .catch(() => {
+                  setAuthenticated(false);
+                  setAuthUser(null);
+                });
+            }
+          : undefined
+      }
       onWorkspaceChanged={() => setWsEpoch((n) => n + 1)}
     >
       {(brandName, year) =>
@@ -608,6 +682,61 @@ export default function App() {
         )
       }
     </SyncNotifyShell>
+  );
+}
+
+function LoginScreen({ onSuccess }: { onSuccess: (username: string) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    login(username.trim(), password)
+      .then(() => onSuccess(username.trim()))
+      .catch((err: Error) => {
+        setError(err.message.includes("401") ? "Invalid username or password" : err.message);
+      })
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div className="login-screen">
+      <form className="login-card" onSubmit={submit}>
+        <h1 className="login-title">Boekhouding</h1>
+        <p className="login-muted">Sign in to continue</p>
+        <label className="login-label">
+          Username
+          <input
+            className="login-input"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={busy}
+            required
+          />
+        </label>
+        <label className="login-label">
+          Password
+          <input
+            className="login-input"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+            required
+          />
+        </label>
+        {error ? <p className="login-error">{error}</p> : null}
+        <button className="login-submit" type="submit" disabled={busy}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
   );
 }
 
