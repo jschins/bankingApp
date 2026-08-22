@@ -72,6 +72,14 @@ def read_csv_rows_bytes(data: bytes) -> list[dict[str, str]]:
     raise ValueError("CSV is not valid UTF-8 or Windows-1252 text")
 
 
+def is_natwest_csv_bytes(data: bytes) -> bool:
+    try:
+        read_csv_rows_bytes(data)
+        return True
+    except (ValueError, OSError, UnicodeDecodeError):
+        return False
+
+
 def parse_natwest_date(value: str) -> str | None:
     """NatWest ``14 Aug 2026`` → ``14-08-2026`` (app date format)."""
     text = str(value or "").strip()
@@ -103,16 +111,27 @@ def first_entry_year_from_csv_bytes(data: bytes) -> str | None:
     return first_entry_year(read_csv_rows_bytes(data))
 
 
+def _app_date_key(value: str) -> tuple[int, int, int]:
+    parts = str(value or "").split("-")
+    if len(parts) != 3:
+        return (0, 0, 0)
+    try:
+        return (int(parts[2]), int(parts[1]), int(parts[0]))
+    except ValueError:
+        return (0, 0, 0)
+
+
 def _latest_balance_cents(rows: list[dict[str, str]]) -> int | None:
     """Balance after the most recent dated row (each row carries its own Balance)."""
-    latest: tuple[str, int] | None = None
+    latest: tuple[tuple[int, int, int], int] | None = None
     for row in rows:
         date = parse_natwest_date(row.get("date", ""))
         if not date:
             continue
         balance = cell_amount_cents(row.get("balance"))
-        if latest is None or date > latest[0]:
-            latest = (date, balance)
+        key = _app_date_key(date)
+        if latest is None or key > latest[0]:
+            latest = (key, balance)
     return latest[1] if latest else None
 
 
@@ -149,11 +168,15 @@ def _account_balances_from_csv(
     accounts[0] = account
     return accounts
 
+TX_TYPE_DEFAULT = "Natwest-csv"
+
+
 def rows_to_transactions(
     rows: list[dict[str, str]],
     *,
     source: str,
     registered: set[int],
+    tx_type: str,
 ) -> list[dict[str, Any]]:
     """Convert every dated row; do not filter by calendar year."""
     transactions: list[dict[str, Any]] = []
@@ -181,7 +204,7 @@ def rows_to_transactions(
                 "id": transaction_id(source, row_index, "0"),
                 "amount": amount,
                 "currency": currency,
-                "type": "Natwest-csv",
+                "type": tx_type,
                 "name": name,
                 "iban": account_number.replace("-", ""),
                 "description": description,
@@ -205,6 +228,7 @@ def convert_csv_files(
     folder: Path,
     *,
     categories_path: Path,
+    tx_type: str = TX_TYPE_DEFAULT,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     files = list_csv_files(folder)
     if not files:
@@ -219,7 +243,9 @@ def convert_csv_files(
     for path in files:
         try:
             rows = read_csv_rows(path.read_text(encoding="utf-8-sig"))
-            parsed = rows_to_transactions(rows, source=path.name, registered=registered)
+            parsed = rows_to_transactions(
+                rows, source=path.name, registered=registered, tx_type=tx_type
+            )
         except (OSError, ValueError) as exc:
             file_errors.append(f"{path.name}: {exc}")
             continue
@@ -280,10 +306,13 @@ def write_outputs(
     data: Path,
     *,
     categories_path: Path,
+    tx_type: str = TX_TYPE_DEFAULT,
 ) -> tuple[Path, Path, dict[str, Any]]:
     folder = data
     folder.mkdir(parents=True, exist_ok=True)
-    categorized, totals, info = convert_csv_files(folder, categories_path=categories_path)
+    categorized, totals, info = convert_csv_files(
+        folder, categories_path=categories_path, tx_type=tx_type
+    )
     categorized_path = folder / "categorized_transactions.json"
     totals_path = folder / "category_totals.json"
     categorized_path.write_text(
@@ -293,7 +322,18 @@ def write_outputs(
     return categorized_path, totals_path, info
 
 
-def import_person_natwest_csv(*, data_dir: Path, categories_path: Path) -> dict[str, Any]:
-    """Hub upload / refresh entry: rewrite JSON from ``YYYY/*.csv``."""
-    _categorized_path, _totals_path, info = write_outputs(data_dir, categories_path=categories_path)
+def import_person_value_balance_csv(
+    *, data_dir: Path, categories_path: Path, tx_type: str = TX_TYPE_DEFAULT
+) -> dict[str, Any]:
+    """Hub upload / refresh entry: rewrite JSON from ``*.csv`` (NatWest/RBS layout)."""
+    _categorized_path, _totals_path, info = write_outputs(
+        data_dir, categories_path=categories_path, tx_type=tx_type
+    )
     return info
+
+
+def import_person_natwest_csv(*, data_dir: Path, categories_path: Path) -> dict[str, Any]:
+    """Back-compat alias."""
+    return import_person_value_balance_csv(
+        data_dir=data_dir, categories_path=categories_path, tx_type="Natwest-csv"
+    )

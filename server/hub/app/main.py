@@ -1367,11 +1367,15 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       <label>Year
         <select id="year"><option value="__YEAR__">__YEAR__</option></select>
       </label>
-      <label>Format
+      <label id="folderBox" style="display:none">Folder
+        <input id="folder" type="text" list="folderList" autocomplete="off"/>
+        <datalist id="folderList"></datalist>
+      </label>
+      <label id="formatBox">Format
         <input id="format" type="text"/>
       </label>
       <div id="xlsxBox" style="margin-top:0.75rem">
-        <div>Excel files already on the hub <span id="fileCount" style="color:#666"></span>:</div>
+        <div><span id="uploadFilesLabel">Excel files already on the hub</span> <span id="fileCount" style="color:#666"></span>:</div>
         <ul id="xlsxList"></ul>
       </div>
       <label>File <span style="font-weight:400;color:#666">(max 32 MB)</span>
@@ -1405,20 +1409,25 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     function token() { return _token; }
     const yearEl = document.getElementById("year");
     const formatEl = document.getElementById("format");
+    const folderEl = document.getElementById("folder");
+    const folderListEl = document.getElementById("folderList");
+    let _banks = [];
+    let _multiBank = false;
     function yearValue() { return (yearEl.value || yearEl.placeholder || "").trim(); }
     function formatValue() { return (formatEl.value || "Excel").trim(); }
+    function folderValue() { return (folderEl && folderEl.value || "").trim(); }
+    function isBankGrant() { return _banks.length > 0; }
     function isExcelFormat() {
-      return formatValue().toLowerCase() === "excel";
+      return !isBankGrant() && formatValue().toLowerCase() === "excel";
     }
-    function isNatwestFormat() {
-      const f = formatValue().toLowerCase().replace(/_/g, "-");
-      return f === "natwest-csv" || f === "natwest csv" || f === "natwest";
+    function isCsvBankFormat() {
+      return isBankGrant();
     }
     function isPeekYearFormat() {
-      return isExcelFormat() || isNatwestFormat();
+      return isExcelFormat() || isCsvBankFormat();
     }
     function uploadFileLabel() {
-      if (isNatwestFormat()) return "CSV files already on the hub";
+      if (isCsvBankFormat()) return "CSV files already on the hub";
       return "Excel files already on the hub";
     }
     function ensureYearSelected(y) {
@@ -1457,7 +1466,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     let _grantLoaded = false;
     function showGrant(g) {
       document.getElementById("grantBox").style.display = "block";
-      document.getElementById("grantLabel").textContent = (g.folder || "");
+      document.getElementById("grantLabel").textContent = (g.data_folder || "");
       if (!_grantLoaded) {
         _grantLoaded = true;
         if (g.year_options && g.year_options.length) {
@@ -1471,16 +1480,42 @@ _UPLOAD_HTML = """<!DOCTYPE html>
             yearEl.appendChild(opt);
           }
         }
-        if (g.format) formatEl.value = g.format;
+        _banks = g.banks || [];
+        _multiBank = !!g.multi_bank;
+        const folderBox = document.getElementById("folderBox");
+        const formatBox = document.getElementById("formatBox");
+        if (_banks.length) {
+          folderBox.style.display = "";
+          formatBox.style.display = "none";
+        } else {
+          folderBox.style.display = "none";
+          formatBox.style.display = "";
+          if (g.format) formatEl.value = g.format;
+        }
+      }
+      if (_banks.length) {
+        const options = g.bank_folders || g.banks || [];
+        folderListEl.replaceChildren();
+        const seen = new Set();
+        for (const name of options) {
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          const opt = document.createElement("option");
+          opt.value = name;
+          folderListEl.appendChild(opt);
+        }
+        if (g.folder) folderEl.value = g.folder;
+        else if (!folderEl.value && options.length) folderEl.value = options[0];
+        folderEl.readOnly = !_multiBank;
       }
       document.getElementById("yourIp").textContent = g.client_ip || "?";
       const xlsxUl = document.getElementById("xlsxList");
       xlsxUl.replaceChildren();
       const files = g.upload_files || g.xlsx_files || [];
-      document.getElementById("xlsxBox").firstElementChild.textContent =
-        uploadFileLabel() + " ";
+      const labelEl = document.getElementById("uploadFilesLabel");
+      if (labelEl) labelEl.textContent = uploadFileLabel();
       const countEl = document.getElementById("fileCount");
-      countEl.textContent = files.length ? "(" + files.length + ")" : "";
+      if (countEl) countEl.textContent = files.length ? "(" + files.length + ")" : "";
       if (files.length === 0) {
         const empty = document.createElement("li");
         empty.textContent = "(none yet)";
@@ -1495,13 +1530,22 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     }
 
     async function loadGrant() {
-      const g = await api(
-        "GET",
-        "/upload/api/upload/grant?year=" + encodeURIComponent(yearValue())
-      );
+      let url = "/upload/api/upload/grant?year=" + encodeURIComponent(yearValue());
+      if (folderValue()) url += "&folder=" + encodeURIComponent(folderValue());
+      const g = await api("GET", url);
       showGrant(g);
       return g;
     }
+
+    folderEl.addEventListener("change", async () => {
+      if (document.getElementById("grantBox").style.display === "none") return;
+      errEl.textContent = "";
+      try {
+        await loadGrant();
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      }
+    });
 
     yearEl.addEventListener("change", async () => {
       if (document.getElementById("grantBox").style.display === "none") return;
@@ -1522,6 +1566,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       try {
         const fd = new FormData();
         fd.append("file", file, file.name);
+        if (isBankGrant() && folderValue()) fd.append("folder", folderValue());
         const res = await api("POST", "/upload/api/upload/peek-year", fd, true);
         if (res.year) {
           ensureYearSelected(String(res.year));
@@ -1551,6 +1596,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
         const fd = new FormData();
         fd.append("file", file, file.name);
         fd.append("year", yearValue());
+        if (isBankGrant() && folderValue()) fd.append("folder", folderValue());
         const fmt = formatValue().toLowerCase();
         if (fmt === "test" || fmt === "dry run") fd.append("format", fmt);
         const res = await api("POST", "/upload/api/upload", fd, true);
@@ -1569,8 +1615,11 @@ _UPLOAD_HTML = """<!DOCTYPE html>
           let extra = "";
           if (res.excel && res.excel.import) {
             extra = " — " + (res.excel.import.transaction_count || 0) + " transactions imported.";
-          } else if (res.natwest_csv && res.natwest_csv.import) {
-            extra = " — " + (res.natwest_csv.import.transaction_count || 0) + " transactions imported.";
+          } else if (res.bank_csv && res.bank_csv.import) {
+            extra = " — " + (res.bank_csv.import.transaction_count || 0) + " transactions imported.";
+            if (res.bank_csv.consolidation && res.bank_csv.consolidation.consolidated) {
+              extra += " Consolidated " + (res.bank_csv.consolidation.transaction_count || 0) + " at year level.";
+            }
           }
           okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + extra;
           showDone();
@@ -1607,8 +1656,11 @@ def api_upload_grant(
     request: Request,
     authorization: str | None = Header(default=None),
     year: str | None = Query(default=None),
+    folder: str | None = Query(default=None),
+    bank: str | None = Query(default=None),
 ) -> dict[str, Any]:
     from app import upload_acl
+    from app.core.bank_csv import person_uses_bank_subfolders
     from app.yearpath import parse_year
 
     token = _upload_token(authorization, None)
@@ -1624,21 +1676,41 @@ def api_upload_grant(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     from app.yearpath import list_year_names
 
+    folder_options = (
+        upload_acl.list_grant_folder_options(grant, year=y) if grant.is_bank_grant() else []
+    )
+    resolved = grant
+    if grant.is_bank_grant():
+        target = (folder or bank or "").strip()
+        try:
+            if target:
+                resolved = upload_acl.grant_for_upload(grant, folder=target, bank=target)
+            elif len(grant.banks) == 1:
+                resolved = upload_acl.grant_for_upload(grant)
+            elif folder_options:
+                resolved = upload_acl.grant_for_upload(grant, folder=folder_options[0])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     person_folder = upload_acl.resolve_under_data_root(f"{grant.center}/{grant.person}")
     existing = list_year_names(person_folder)
     default_y = default_upload_year()
     next_y = str(int(default_y) + 1)
     year_options = sorted(set(existing + [default_y, next_y]))
+    multi_bank = person_uses_bank_subfolders(grant.person, grant.center)
 
     return {
         "person": grant.person,
         "center": grant.center,
         "year": y,
-        "format": grant.format,
-        "folder": grant.year_folder(y),
+        "data_folder": resolved.year_folder(y),
+        "folder": resolved.effective_bank(),
+        "bank_folders": folder_options,
+        "banks": list(grant.banks),
+        "multi_bank": multi_bank,
         "client_ip": ip,
-        "xlsx_files": upload_acl.list_grant_upload_files(grant, year=y),
-        "upload_files": upload_acl.list_grant_upload_files(grant, year=y),
+        "xlsx_files": upload_acl.list_grant_upload_files(resolved, year=y),
+        "upload_files": upload_acl.list_grant_upload_files(resolved, year=y),
         "default_year": default_y,
         "year_options": year_options,
     }
@@ -1652,6 +1724,8 @@ async def api_upload(
     token: str | None = Form(None),
     year: str | None = Form(None),
     format: str | None = Form(None),
+    folder: str | None = Form(None),
+    bank: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     from app import upload_acl
@@ -1660,6 +1734,10 @@ async def api_upload(
     grant = upload_acl.find_grant_by_token(auth_token)
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
+    try:
+        grant = upload_acl.grant_for_upload(grant, folder=folder, bank=bank)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     ip = _upload_client_ip(request)
     content = await file.read()
     if not content:
@@ -1696,29 +1774,40 @@ async def api_upload_peek_year(
     request: Request,
     file: UploadFile = File(...),
     token: str | None = Form(None),
+    folder: str | None = Form(None),
+    bank: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    """Return the calendar year of the first dated row (Excel or NatWest CSV)."""
+    """Return the calendar year of the first dated row (Excel or bank CSV)."""
     from app import upload_acl
+    from app.core.bank_csv import csv_layout
+    from app.core.bos_lloyds_csv_import import first_entry_year_from_csv_bytes as bos_year_from_csv
     from app.core.excel_import import first_entry_year_from_xlsx_bytes
-    from app.core.natwest_csv_import import first_entry_year_from_csv_bytes
+    from app.core.natwest_csv_import import first_entry_year_from_csv_bytes as natwest_year_from_csv
 
     auth_token = _upload_token(authorization, token)
     grant = upload_acl.find_grant_by_token(auth_token)
     if grant is None:
         raise HTTPException(status_code=401, detail="Invalid upload token")
+    try:
+        grant = upload_acl.grant_for_upload(grant, folder=folder, bank=bank)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
     if len(content) > 32 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
     name = (file.filename or "").lower()
-    grant_fmt = upload_acl.normalize_upload_format(grant.format)
-    if grant_fmt == "natwest-csv":
+    if grant.is_bank_grant():
         if not name.endswith(".csv"):
             raise HTTPException(status_code=400, detail="Expected a .csv file")
+        grant_fmt = grant.normalized_format()
         try:
-            year = await run_in_threadpool(first_entry_year_from_csv_bytes, content)
+            if csv_layout(grant_fmt) == "debit_credit":
+                year = await run_in_threadpool(bos_year_from_csv, content)
+            else:
+                year = await run_in_threadpool(natwest_year_from_csv, content)
         except (ValueError, OSError, UnicodeDecodeError) as exc:
             raise HTTPException(status_code=400, detail=f"Could not read CSV: {exc}") from exc
     else:
@@ -1730,7 +1819,11 @@ async def api_upload_peek_year(
             raise HTTPException(status_code=400, detail=f"Could not read Excel: {exc}") from exc
     if not year:
         raise HTTPException(status_code=400, detail="No dated transaction entry found")
-    return {"year": year, "person": grant.person, "format": grant.format}
+    return {
+        "year": year,
+        "person": grant.person,
+        "folder": grant.effective_bank(),
+    }
 
 
 @app.get("/upload/api/upload/grant")
@@ -1745,7 +1838,13 @@ def api_upload_grant_proxy(
     also forwarding ``/api/upload``.
     """
 
-    return api_upload_grant(request, authorization=authorization, year=year)
+    return api_upload_grant(
+        request,
+        authorization=authorization,
+        year=year,
+        folder=request.query_params.get("folder"),
+        bank=request.query_params.get("bank"),
+    )
 
 
 @app.post("/upload/api/upload")
@@ -1756,6 +1855,8 @@ async def api_upload_proxy(
     token: str | None = Form(None),
     year: str | None = Form(None),
     format: str | None = Form(None),
+    folder: str | None = Form(None),
+    bank: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Upload endpoints variant under ``/upload`` (see ``api_upload_grant_proxy``)."""
@@ -1767,6 +1868,8 @@ async def api_upload_proxy(
         token=token,
         year=year,
         format=format,
+        folder=folder,
+        bank=bank,
         authorization=authorization,
     )
 
@@ -1776,12 +1879,16 @@ async def api_upload_peek_year_proxy(
     request: Request,
     file: UploadFile = File(...),
     token: str | None = Form(None),
+    folder: str | None = Form(None),
+    bank: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     return await api_upload_peek_year(
         request,
         file=file,
         token=token,
+        folder=folder,
+        bank=bank,
         authorization=authorization,
     )
 

@@ -9,18 +9,20 @@
     "14 Gewone uitgaven": "0.00",
     "15 Buitengewone uitgaven": "0.00",
     "16 Auto": "0.00",
-    "18 Overige uitgaven": "0.00",
+    "18 Overige uitgaven": "1317.02",
     "19 Giften": "0.00",
     "20 Werk": "0.00",
     "21 Familie": "0.00"
   },
   "account_balances": [
     {
-      "iban": "1234563489",
-      "name": "Xavier Bosch",
-      "currency": "EUR",
-      "balance": "500.05",
-      "files": []
+      "iban": "800724/00173870",
+      "name": "800724/00173870",
+      "currency": "GBP",
+      "balance": "1949.97",
+      "files": [
+        "BoS TEST.csv"
+      ]
     }
   ]
 }

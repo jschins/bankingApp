@@ -166,24 +166,51 @@ def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
 
 
 def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
+    from app.core.bank_csv import person_csv_banks, refresh_bank_csv_year
     from app.core.excel_import import import_person_excel, list_xlsx_files
-    from app.core.natwest_csv_import import import_person_natwest_csv, list_csv_files
     from app.paths import shared_categories_path
 
     categories_path = shared_categories_path()
-    if list_csv_files(pack.data_dir):
-        info = import_person_natwest_csv(data_dir=pack.data_dir, categories_path=categories_path)
+    center = pack.folder.parent.name
+    person = pack.folder_name
+    banks = person_csv_banks(person, center)
+    if banks:
+        refreshed = refresh_bank_csv_year(
+            pack.folder,
+            year=pack.year,
+            person=person,
+            center=center,
+            categories_path=categories_path,
+        )
+        if refreshed.get("skipped"):
+            return {
+                "short": pack.short,
+                "folder": pack.folder_name,
+                "skipped": True,
+                "source": "bank-csv",
+                "reason": refreshed.get("reason") or "no csv bank data",
+            }
+        bank_results = refreshed.get("banks") or []
+        consolidation = refreshed.get("consolidation") or {}
+        total_tx = sum(int(item.get("transaction_count") or 0) for item in bank_results)
+        all_files: list[str] = []
+        all_new: list[str] = []
+        all_errors: list[str] = []
+        for item in bank_results:
+            all_files.extend(item.get("files") or [])
+            all_new.extend(item.get("new_files") or [])
+            all_errors.extend(item.get("file_errors") or [])
         return {
             "short": pack.short,
             "folder": pack.folder_name,
             "skipped": False,
-            "source": "natwest-csv",
-            "transaction_count": info.get("transaction_count", 0),
-            "files": info.get("files") or [],
-            "new_files": info.get("new_files") or [],
-            "balance_updated": bool(info.get("balance_updated")),
-            "balance": info.get("balance"),
-            "file_errors": info.get("file_errors") or [],
+            "source": "bank-csv",
+            "transaction_count": total_tx,
+            "banks": [item.get("bank") for item in bank_results if item.get("bank")],
+            "consolidated": bool(consolidation.get("consolidated")),
+            "files": all_files,
+            "new_files": all_new,
+            "file_errors": all_errors,
         }
     if not list_xlsx_files(pack.data_dir):
         return {

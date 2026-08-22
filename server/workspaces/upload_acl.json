@@ -5,6 +5,12 @@
     "sweden": [],
     "ireland": []
   },
+  "bank modalities": {
+    "BoS": "BoS-csv",
+    "Natwest": "Natwest-csv",
+    "RBS": "RBS-csv",
+    "LLOYDS": "LLOYDS-csv"
+  },
   "mappings": {
     "juleon prive": "192.168.1.107",
     "juleon ydigital": {
@@ -61,13 +67,13 @@
       "person": "xavier_bosch",
       "token": "token_xavier_bosch",
       "center": "gph",
-      "format": "Test"
+      "banks": ["BoS", "LLOYDS", "Natwest", "RBS"]
     },
     {
       "person": "mark_fox",
       "token": "token_mark_fox",
       "center": "brk",
-      "format": "Natwest-csv"
+      "banks": ["Natwest"]
     }
   ]
 }

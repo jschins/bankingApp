@@ -5,7 +5,7 @@ import json
 import secrets
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,9 +24,44 @@ class UploadGrant:
     token: str
     center: str
     format: str = "Excel"
+    banks: tuple[str, ...] = ()
+    bank: str = ""
 
     def year_folder(self, year: str | None = None) -> str:
         return f"{self.center}/{self.person}/{parse_year(year)}"
+
+    def is_bank_grant(self) -> bool:
+        return bool(self.banks)
+
+    def effective_bank(self) -> str:
+        if self.bank:
+            return self.bank.strip()
+        if len(self.banks) == 1:
+            return self.banks[0]
+        return ""
+
+    def normalized_format(self) -> str:
+        from app.core.bank_csv import format_for_bank, normalize_upload_format
+
+        if self.is_bank_grant():
+            bank = self.effective_bank()
+            if bank:
+                return format_for_bank(bank)
+            return "excel"
+        return normalize_upload_format(self.format)
+
+    def format_label(self) -> str:
+        from app.core.bank_csv import format_label_for_bank, normalize_upload_format
+
+        if self.is_bank_grant():
+            bank = self.effective_bank()
+            if bank:
+                return format_label_for_bank(bank)
+            return ""
+        return self.format or "Excel"
+
+    def bank_folder(self) -> str:
+        return self.effective_bank()
 
 
 def acl_path() -> Path:
@@ -141,14 +176,69 @@ def load_grants(*, force: bool = False) -> list[UploadGrant]:
             continue
         if "/" in person or "\\" in person or "/" in center or "\\" in center:
             continue
+        banks_raw = item.get("banks")
+        banks: tuple[str, ...] = ()
+        if isinstance(banks_raw, list):
+            banks = tuple(str(b).strip() for b in banks_raw if str(b).strip())
+        format_str = str(item.get("format") or "").strip()
+        bank = str(item.get("bank") or "").strip()
+        if not banks and format_str:
+            from app.core.bank_csv import default_bank_folder_for_format, is_csv_bank_format
+
+            if is_csv_bank_format(format_str):
+                folder = bank or default_bank_folder_for_format(format_str)
+                banks = (folder,) if folder else ()
+                format_str = ""
+        if not format_str and not banks:
+            format_str = "Excel"
         out.append(
             UploadGrant(
                 person=person,
                 token=str(item.get("token") or ""),
                 center=center,
-                format=str(item.get("format") or "Excel"),
+                format=format_str,
+                banks=banks,
+                bank=bank,
             )
         )
+    return out
+
+
+def grant_for_upload(
+    grant: UploadGrant, *, bank: str | None = None, folder: str | None = None
+) -> UploadGrant:
+    """Resolve the target folder; csv format follows from ``bank modalities``."""
+    if not grant.is_bank_grant():
+        return grant
+    from app.core.bank_csv import format_for_bank, validate_bank_folder_name
+
+    raw = (folder or bank or grant.bank or "").strip()
+    if not raw:
+        if len(grant.banks) == 1:
+            raw = grant.banks[0]
+        else:
+            raise ValueError("Enter a folder name for this upload")
+    chosen = validate_bank_folder_name(raw)
+    format_for_bank(chosen)
+    return replace(grant, bank=chosen)
+
+
+def list_grant_folder_options(grant: UploadGrant, *, year: str | None = None) -> list[str]:
+    """Folder names for datalist: existing year subfolders + configured banks."""
+    from app.core.bank_csv import list_year_bank_folders, person_uses_bank_subfolders
+
+    y = parse_year(year)
+    person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
+    year_path = person_folder / y
+    existing: list[str] = []
+    if grant.is_bank_grant() and person_uses_bank_subfolders(grant.person, grant.center):
+        existing = list_year_bank_folders(year_path)
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in existing + list(grant.banks):
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
     return out
 
 
@@ -184,22 +274,47 @@ def path_allowed(grant: UploadGrant, rel_path: str, *, year: str | None = None) 
 
 
 def normalize_upload_format(fmt: str | None) -> str:
-    """``excel`` | ``test`` | ``natwest-csv``."""
-    value = str(fmt or "Excel").strip().lower().replace("_", "-")
-    if value == "test":
-        return "test"
-    if value in ("natwest-csv", "natwest csv", "natwest"):
-        return "natwest-csv"
-    return "excel"
+    from app.core.bank_csv import normalize_upload_format as _norm
+
+    return _norm(fmt)
+
+
+def _grant_uses_csv(grant: UploadGrant) -> bool:
+    return grant.is_bank_grant()
+
+
+def grant_csv_data_rel(grant: UploadGrant, year: str | None, filename: str) -> str:
+    """Relative path for a CSV upload (flat year or ``YYYY/<bank>/``)."""
+    from app.core.bank_csv import person_uses_bank_subfolders
+
+    y = parse_year(year)
+    bank = grant.bank_folder()
+    if person_uses_bank_subfolders(grant.person, grant.center):
+        if not bank:
+            raise ValueError("Enter a folder name for this upload")
+        return f"{grant.year_folder(y)}/{bank}/{filename}"
+    return f"{grant.year_folder(y)}/{filename}"
+
+
+def grant_csv_data_dir(grant: UploadGrant, year: str | None) -> Path:
+    from app.core.bank_csv import person_uses_bank_subfolders
+
+    y = parse_year(year)
+    base = resolve_under_data_root(grant.year_folder(y))
+    if person_uses_bank_subfolders(grant.person, grant.center):
+        bank = grant.bank_folder()
+        if not bank:
+            raise ValueError("Enter a folder name for this upload")
+        return base / bank
+    return base
 
 
 def list_grant_upload_files(grant: UploadGrant, *, year: str | None = None) -> list[str]:
-    """Basenames of upload data files already in the grant year folder."""
-    fmt = normalize_upload_format(grant.format)
-    folder = resolve_under_data_root(grant.year_folder(year))
+    """Basenames of upload data files already in the grant year folder (or bank subfolder)."""
+    folder = grant_csv_data_dir(grant, year)
     if not folder.is_dir():
         return []
-    pattern = "*.csv" if fmt == "natwest-csv" else "*.xlsx"
+    pattern = "*.csv" if _grant_uses_csv(grant) else "*.xlsx"
     names: list[str] = []
     for path in sorted(folder.glob(pattern), key=lambda p: p.name.lower()):
         if path.is_file() and not path.name.startswith("~$") and not path.name.startswith("."):
@@ -231,22 +346,36 @@ def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dic
     }
 
 
-def _process_natwest_csv_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
+def _process_bank_csv_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
     from app import store
     from app import workspace_api
-    from app.core.natwest_csv_import import import_person_natwest_csv
+    from app.core.bank_csv import consolidate_person_year, import_bank_csv_dir, person_uses_bank_subfolders
     from app.paths import shared_categories_path
 
     y = parse_year(year)
-    data_dir = resolve_under_data_root(grant.year_folder(y))
-    info = import_person_natwest_csv(data_dir=data_dir, categories_path=shared_categories_path())
+    fmt = grant.normalized_format()
+    data_dir = grant_csv_data_dir(grant, y)
+    categories_path = shared_categories_path()
+    info = import_bank_csv_dir(data_dir, categories_path=categories_path, fmt=fmt)
+    consolidation: dict[str, Any] = {"consolidated": False}
+    if person_uses_bank_subfolders(grant.person, grant.center):
+        person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
+        consolidation = consolidate_person_year(
+            person_folder,
+            year=y,
+            person=grant.person,
+            center=grant.center,
+            categories_path=categories_path,
+        )
     with workspace_api._workspace_scope(grant.center) as ws:
         inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person], year=y)
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
     return {
         "import": info,
+        "consolidation": consolidation,
         "affected_files": mut.get("affected_files") or [],
         "year": y,
+        "bank": grant.bank_folder(),
     }
 
 
@@ -289,13 +418,16 @@ def save_upload(
     from app.yearpath import previous_year_name
 
     person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
-    grant_fmt = normalize_upload_format(grant.format)
+    grant_fmt = grant.normalized_format()
     name_lower = safe_name.lower()
 
     # --- Test: raw save only -------------------------------------------------
     if test:
         y = parse_year(year)
-        dest = f"{grant.year_folder(y)}/{safe_name}"
+        if _grant_uses_csv(grant):
+            dest = grant_csv_data_rel(grant, y, safe_name)
+        else:
+            dest = f"{grant.year_folder(y)}/{safe_name}"
         if not path_allowed(grant, dest, year=y):
             raise PermissionError(f"Path {dest!r} is not allowed for {grant.person}")
         rel = _normalize_rel(dest)
@@ -323,25 +455,36 @@ def save_upload(
 
     is_xlsx = name_lower.endswith(".xlsx") or str(rel_path or "").lower().endswith(".xlsx")
     is_csv = name_lower.endswith(".csv") or str(rel_path or "").lower().endswith(".csv")
-    is_natwest = grant_fmt == "natwest-csv"
+    is_csv_bank = _grant_uses_csv(grant)
     created_year = False
 
     from app import store
 
-    if is_natwest:
+    if is_csv_bank:
+        if not grant.effective_bank():
+            raise ValueError("Enter a folder name for this upload")
         if not is_csv:
-            raise ValueError("This upload token expects a NatWest .csv file")
-        from app.core.natwest_csv_import import first_entry_year_from_csv_bytes
+            raise ValueError(
+                f"This upload token expects a bank .csv file ({grant.format_label()})"
+            )
+        from app.core.bank_csv import csv_layout
+
+        layout = csv_layout(grant_fmt)
+        if layout == "debit_credit":
+            from app.core.bos_lloyds_csv_import import first_entry_year_from_csv_bytes as _year_from_csv
+        else:
+            from app.core.natwest_csv_import import first_entry_year_from_csv_bytes as _year_from_csv
 
         try:
-            sheet_year = first_entry_year_from_csv_bytes(content)
+            sheet_year = _year_from_csv(content)
         except (UnicodeDecodeError, ValueError, OSError) as exc:
-            raise ValueError(f"Could not read the NatWest CSV: {exc}") from exc
+            raise ValueError(f"Could not read the bank CSV: {exc}") from exc
         if not sheet_year:
             raise ValueError("No dated transaction entry found in CSV")
         y = parse_year(sheet_year)
-        dest = f"{grant.year_folder(y)}/{safe_name}"
+        dest = grant_csv_data_rel(grant, y, safe_name)
         year_path = person_folder / y
+        data_path = grant_csv_data_dir(grant, y)
         if year_path.is_dir():
             ensure_year_folder(
                 person_folder,
@@ -357,6 +500,8 @@ def save_upload(
                 include_downloaded=False,
             )
             created_year = True
+        if not dry_run or data_path.parent.is_dir():
+            data_path.mkdir(parents=True, exist_ok=True)
     elif is_xlsx:
         import xml.etree.ElementTree as ET
         import zipfile
@@ -521,8 +666,8 @@ def save_upload(
     }
     if is_xlsx:
         payload_out["excel"] = _process_excel_upload(grant, year=y)
-    elif is_natwest:
-        payload_out["natwest_csv"] = _process_natwest_csv_upload(grant, year=y)
+    elif is_csv_bank:
+        payload_out["bank_csv"] = _process_bank_csv_upload(grant, year=y)
     return payload_out
 
 

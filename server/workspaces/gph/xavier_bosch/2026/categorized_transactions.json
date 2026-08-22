@@ -1,4 +1,82 @@
 {
-  "transactions": [],
+  "transactions": [
+    {
+      "id": "BoS TEST_2_0",
+      "amount": "-2057.59",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPO: XAVIER BOSCH",
+      "iban": "800724/00173870",
+      "description": "XAVIER BOSCH",
+      "date": "14-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_3_0",
+      "amount": "+900.00",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPI: NETHERHALL EDUCATI",
+      "iban": "800724/00173870",
+      "description": "NETHERHALL EDUCATI",
+      "date": "13-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_4_0",
+      "amount": "-900.00",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPO: TDESIGN ARCHITECTU",
+      "iban": "800724/00173870",
+      "description": "TDESIGN ARCHITECTU",
+      "date": "06-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_5_0",
+      "amount": "-2000.00",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPO: GREYGARTH HALL",
+      "iban": "800724/00173870",
+      "description": "GREYGARTH HALL",
+      "date": "06-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_6_0",
+      "amount": "+5000.00",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPI: PHILLIP QUIZA",
+      "iban": "800724/00173870",
+      "description": "PHILLIP QUIZA",
+      "date": "04-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_7_0",
+      "amount": "+309.38",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPI: NETHERHALL EDUCATI",
+      "iban": "800724/00173870",
+      "description": "NETHERHALL EDUCATI",
+      "date": "03-08-2026",
+      "category": 18
+    },
+    {
+      "id": "BoS TEST_8_0",
+      "amount": "+65.23",
+      "currency": "GBP",
+      "type": "BoS-csv",
+      "name": "FPI: NETHERHALL EDUCATI",
+      "iban": "800724/00173870",
+      "description": "NETHERHALL EDUCATI",
+      "date": "03-08-2026",
+      "category": 18
+    }
+  ],
   "modifications": []
 }
