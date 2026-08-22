@@ -1410,6 +1410,17 @@ _UPLOAD_HTML = """<!DOCTYPE html>
     function isExcelFormat() {
       return formatValue().toLowerCase() === "excel";
     }
+    function isNatwestFormat() {
+      const f = formatValue().toLowerCase().replace(/_/g, "-");
+      return f === "natwest-csv" || f === "natwest csv" || f === "natwest";
+    }
+    function isPeekYearFormat() {
+      return isExcelFormat() || isNatwestFormat();
+    }
+    function uploadFileLabel() {
+      if (isNatwestFormat()) return "CSV files already on the hub";
+      return "Excel files already on the hub";
+    }
     function ensureYearSelected(y) {
       if (!y) return;
       let found = false;
@@ -1465,7 +1476,9 @@ _UPLOAD_HTML = """<!DOCTYPE html>
       document.getElementById("yourIp").textContent = g.client_ip || "?";
       const xlsxUl = document.getElementById("xlsxList");
       xlsxUl.replaceChildren();
-      const files = g.xlsx_files || [];
+      const files = g.upload_files || g.xlsx_files || [];
+      document.getElementById("xlsxBox").firstElementChild.textContent =
+        uploadFileLabel() + " ";
       const countEl = document.getElementById("fileCount");
       countEl.textContent = files.length ? "(" + files.length + ")" : "";
       if (files.length === 0) {
@@ -1502,7 +1515,7 @@ _UPLOAD_HTML = """<!DOCTYPE html>
 
     document.getElementById("file").addEventListener("change", async () => {
       errEl.textContent = "";
-      if (!isExcelFormat()) return;
+      if (!isPeekYearFormat()) return;
       const fileInput = document.getElementById("file");
       const file = fileInput.files && fileInput.files[0];
       if (!file) return;
@@ -1553,7 +1566,13 @@ _UPLOAD_HTML = """<!DOCTYPE html>
           okEl.textContent = "Saved " + res.path + " (" + res.bytes + " bytes) — no processing (test mode).";
           showDone();
         } else {
-          okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + ".";
+          let extra = "";
+          if (res.excel && res.excel.import) {
+            extra = " — " + (res.excel.import.transaction_count || 0) + " transactions imported.";
+          } else if (res.natwest_csv && res.natwest_csv.import) {
+            extra = " — " + (res.natwest_csv.import.transaction_count || 0) + " transactions imported.";
+          }
+          okEl.textContent = "Uploaded " + res.path + " (" + res.bytes + " bytes) via " + res.via + extra;
           showDone();
         }
       } catch (e) {
@@ -1618,7 +1637,8 @@ def api_upload_grant(
         "format": grant.format,
         "folder": grant.year_folder(y),
         "client_ip": ip,
-        "xlsx_files": upload_acl.list_grant_xlsx_files(grant, year=y),
+        "xlsx_files": upload_acl.list_grant_upload_files(grant, year=y),
+        "upload_files": upload_acl.list_grant_upload_files(grant, year=y),
         "default_year": default_y,
         "year_options": year_options,
     }
@@ -1678,9 +1698,10 @@ async def api_upload_peek_year(
     token: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    """Return the calendar year of the first dated Excel row (Excel/Test upload UI)."""
+    """Return the calendar year of the first dated row (Excel or NatWest CSV)."""
     from app import upload_acl
     from app.core.excel_import import first_entry_year_from_xlsx_bytes
+    from app.core.natwest_csv_import import first_entry_year_from_csv_bytes
 
     auth_token = _upload_token(authorization, token)
     grant = upload_acl.find_grant_by_token(auth_token)
@@ -1692,14 +1713,23 @@ async def api_upload_peek_year(
     if len(content) > 32 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 32 MiB)")
     name = (file.filename or "").lower()
-    if not name.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Expected an .xlsx file")
-    try:
-        year = await run_in_threadpool(first_entry_year_from_xlsx_bytes, content)
-    except (ValueError, zipfile.BadZipFile, OSError) as exc:
-        raise HTTPException(status_code=400, detail=f"Could not read Excel: {exc}") from exc
+    grant_fmt = upload_acl.normalize_upload_format(grant.format)
+    if grant_fmt == "natwest-csv":
+        if not name.endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Expected a .csv file")
+        try:
+            year = await run_in_threadpool(first_entry_year_from_csv_bytes, content)
+        except (ValueError, OSError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Could not read CSV: {exc}") from exc
+    else:
+        if not name.endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail="Expected an .xlsx file")
+        try:
+            year = await run_in_threadpool(first_entry_year_from_xlsx_bytes, content)
+        except (ValueError, zipfile.BadZipFile, OSError) as exc:
+            raise HTTPException(status_code=400, detail=f"Could not read Excel: {exc}") from exc
     if not year:
-        raise HTTPException(status_code=400, detail="No dated transaction entry found in sheet")
+        raise HTTPException(status_code=400, detail="No dated transaction entry found")
     return {"year": year, "person": grant.person, "format": grant.format}
 
 

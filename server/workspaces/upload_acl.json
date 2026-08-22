@@ -67,8 +67,7 @@
       "person": "mark_fox",
       "token": "token_mark_fox",
       "center": "brk",
-      "format": "Test"
+      "format": "Natwest-csv"
     }
-
   ]
 }

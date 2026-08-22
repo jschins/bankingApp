@@ -167,17 +167,33 @@ def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
 
 def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
     from app.core.excel_import import import_person_excel, list_xlsx_files
+    from app.core.natwest_csv_import import import_person_natwest_csv, list_csv_files
     from app.paths import shared_categories_path
 
+    categories_path = shared_categories_path()
+    if list_csv_files(pack.data_dir):
+        info = import_person_natwest_csv(data_dir=pack.data_dir, categories_path=categories_path)
+        return {
+            "short": pack.short,
+            "folder": pack.folder_name,
+            "skipped": False,
+            "source": "natwest-csv",
+            "transaction_count": info.get("transaction_count", 0),
+            "files": info.get("files") or [],
+            "new_files": info.get("new_files") or [],
+            "balance_updated": bool(info.get("balance_updated")),
+            "balance": info.get("balance"),
+            "file_errors": info.get("file_errors") or [],
+        }
     if not list_xlsx_files(pack.data_dir):
         return {
             "short": pack.short,
             "folder": pack.folder_name,
             "skipped": True,
             "source": "excel",
-            "reason": "no xlsx files",
+            "reason": "no xlsx or csv files",
         }
-    info = import_person_excel(data_dir=pack.data_dir, categories_path=shared_categories_path())
+    info = import_person_excel(data_dir=pack.data_dir, categories_path=categories_path)
     return {
         "short": pack.short,
         "folder": pack.folder_name,

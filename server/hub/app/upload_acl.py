@@ -183,16 +183,33 @@ def path_allowed(grant: UploadGrant, rel_path: str, *, year: str | None = None) 
     return target == prefix or target.startswith(prefix + "/")
 
 
-def list_grant_xlsx_files(grant: UploadGrant, *, year: str | None = None) -> list[str]:
-    """Basenames of ``*.xlsx`` already present under the grant year folder."""
+def normalize_upload_format(fmt: str | None) -> str:
+    """``excel`` | ``test`` | ``natwest-csv``."""
+    value = str(fmt or "Excel").strip().lower().replace("_", "-")
+    if value == "test":
+        return "test"
+    if value in ("natwest-csv", "natwest csv", "natwest"):
+        return "natwest-csv"
+    return "excel"
+
+
+def list_grant_upload_files(grant: UploadGrant, *, year: str | None = None) -> list[str]:
+    """Basenames of upload data files already in the grant year folder."""
+    fmt = normalize_upload_format(grant.format)
     folder = resolve_under_data_root(grant.year_folder(year))
     if not folder.is_dir():
         return []
+    pattern = "*.csv" if fmt == "natwest-csv" else "*.xlsx"
     names: list[str] = []
-    for path in sorted(folder.glob("*.xlsx"), key=lambda p: p.name.lower()):
-        if path.is_file() and not path.name.startswith("~$"):
+    for path in sorted(folder.glob(pattern), key=lambda p: p.name.lower()):
+        if path.is_file() and not path.name.startswith("~$") and not path.name.startswith("."):
             names.append(path.name)
     return names
+
+
+def list_grant_xlsx_files(grant: UploadGrant, *, year: str | None = None) -> list[str]:
+    """Back-compat alias — prefer :func:`list_grant_upload_files`."""
+    return list_grant_upload_files(grant, year=year)
 
 
 def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
@@ -204,6 +221,25 @@ def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dic
     y = parse_year(year)
     data_dir = resolve_under_data_root(grant.year_folder(y))
     info = import_person_excel(data_dir=data_dir, categories_path=shared_categories_path())
+    with workspace_api._workspace_scope(grant.center) as ws:
+        inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person], year=y)
+    mut = store.mutate_and_recalculate(ws, inputs, source="central")
+    return {
+        "import": info,
+        "affected_files": mut.get("affected_files") or [],
+        "year": y,
+    }
+
+
+def _process_natwest_csv_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
+    from app import store
+    from app import workspace_api
+    from app.core.natwest_csv_import import import_person_natwest_csv
+    from app.paths import shared_categories_path
+
+    y = parse_year(year)
+    data_dir = resolve_under_data_root(grant.year_folder(y))
+    info = import_person_natwest_csv(data_dir=data_dir, categories_path=shared_categories_path())
     with workspace_api._workspace_scope(grant.center) as ws:
         inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person], year=y)
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
@@ -253,6 +289,8 @@ def save_upload(
     from app.yearpath import previous_year_name
 
     person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
+    grant_fmt = normalize_upload_format(grant.format)
+    name_lower = safe_name.lower()
 
     # --- Test: raw save only -------------------------------------------------
     if test:
@@ -283,14 +321,43 @@ def save_upload(
             "year": y,
         }
 
-    is_xlsx = bool(safe_name.lower().endswith(".xlsx")) or str(rel_path or "").lower().endswith(
-        ".xlsx"
-    )
+    is_xlsx = name_lower.endswith(".xlsx") or str(rel_path or "").lower().endswith(".xlsx")
+    is_csv = name_lower.endswith(".csv") or str(rel_path or "").lower().endswith(".csv")
+    is_natwest = grant_fmt == "natwest-csv"
     created_year = False
 
     from app import store
 
-    if is_xlsx:
+    if is_natwest:
+        if not is_csv:
+            raise ValueError("This upload token expects a NatWest .csv file")
+        from app.core.natwest_csv_import import first_entry_year_from_csv_bytes
+
+        try:
+            sheet_year = first_entry_year_from_csv_bytes(content)
+        except (UnicodeDecodeError, ValueError, OSError) as exc:
+            raise ValueError(f"Could not read the NatWest CSV: {exc}") from exc
+        if not sheet_year:
+            raise ValueError("No dated transaction entry found in CSV")
+        y = parse_year(sheet_year)
+        dest = f"{grant.year_folder(y)}/{safe_name}"
+        year_path = person_folder / y
+        if year_path.is_dir():
+            ensure_year_folder(
+                person_folder,
+                y,
+                categories_path=shared_categories_path(),
+                include_downloaded=False,
+            )
+        elif not dry_run:
+            ensure_year_folder(
+                person_folder,
+                y,
+                categories_path=shared_categories_path(),
+                include_downloaded=False,
+            )
+            created_year = True
+    elif is_xlsx:
         import xml.etree.ElementTree as ET
         import zipfile
 
@@ -454,6 +521,8 @@ def save_upload(
     }
     if is_xlsx:
         payload_out["excel"] = _process_excel_upload(grant, year=y)
+    elif is_natwest:
+        payload_out["natwest_csv"] = _process_natwest_csv_upload(grant, year=y)
     return payload_out
 
 
