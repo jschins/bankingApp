@@ -295,8 +295,6 @@ def api_login(body: LoginRequest, request: Request, response: Response) -> dict[
     except Exception:  # noqa: BLE001
         pass
     status = sync_status()
-    if profile.get("title"):
-        status["title"] = profile["title"]
     status["authenticated"] = True
     status["auth_required"] = True
     return status
@@ -412,11 +410,6 @@ def api_centrale_status(request: Request) -> dict[str, Any]:
 
     poll_central_events()
     status = sync_status()
-    session = getattr(request.state, "session", None)
-    if isinstance(session, dict):
-        title = str(session.get("title") or "").strip()
-        if title:
-            status["title"] = title
     cfg = load_config()
     if is_regional_admin():
         status["workspaces"] = list_hub_workspaces()

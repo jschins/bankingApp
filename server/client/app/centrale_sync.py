@@ -53,6 +53,7 @@ class HubConfig:
     port: int
     workspaces: tuple[str, ...] = ()  # locked targets for local/personal; allow-list; empty = all
     username: str = ""
+    title: str = ""
     auth_required: bool = False
 
 
@@ -144,11 +145,13 @@ def _build_hub_config(
     person_key: str,
     selected: str | None,
     username: str = "",
+    title: str = "",
     auth_required: bool = False,
     apply_process_runtime: bool = True,
     workspaces_allowlist: list[str] | None = None,
 ) -> HubConfig:
     access = _coerce_access(access)
+    title = str(title or "").strip()
     parsed_ws = (
         [str(w).strip() for w in workspaces_allowlist if str(w).strip()]
         if workspaces_allowlist is not None
@@ -181,8 +184,16 @@ def _build_hub_config(
             preferred = (selected or "").strip()
             workspace = preferred if preferred in workspaces else workspaces[0]
         else:
-            workspaces = ()
-            workspace = (selected or "").strip() or _first_hub_workspace(url, api_key=api_key) or "dkg"
+            # DB workspace NULL/empty → every existing hub folder.
+            all_ws = _fetch_hub_workspace_names(url, api_key=api_key)
+            workspaces = tuple(all_ws)
+            preferred = (selected or "").strip()
+            if preferred and preferred in workspaces:
+                workspace = preferred
+            elif workspaces:
+                workspace = workspaces[0]
+            else:
+                workspace = preferred or "dkg"
 
     if apply_process_runtime:
         set_runtime(
@@ -190,6 +201,7 @@ def _build_hub_config(
             allowed_workspaces=list(workspaces),
             access=access,
             username=username or None,
+            title=title or None,
         )
     else:
         from app.runtime import bind_request_runtime
@@ -199,6 +211,7 @@ def _build_hub_config(
             allowed_workspaces=list(workspaces),
             workspace=workspace,
             username=username or None,
+            title=title or None,
             workspace_key=workspace_key,
             person_key=person_key,
         )
@@ -214,6 +227,7 @@ def _build_hub_config(
         port=port,
         workspaces=workspaces,
         username=username,
+        title=title,
         auth_required=auth_required,
     )
 
@@ -231,6 +245,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
 
     from app.runtime import (
         access_mode,
+        current_title,
         current_username,
         request_allowed_workspaces,
         request_person_key,
@@ -250,6 +265,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             person_key=request_person_key() or "",
             selected=selected_workspace(),
             username=current_username() or "",
+            title=current_title() or "",
             auth_required=True,
             apply_process_runtime=False,
             workspaces_allowlist=request_allowed_workspaces(),
@@ -288,6 +304,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
                 port=_file_profile_cache.port,
                 workspaces=_file_profile_cache.workspaces,
                 username=_file_profile_cache.username,
+                title=_file_profile_cache.title,
                 auth_required=False,
             )
         return _file_profile_cache
@@ -340,6 +357,7 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
         or None
     )
     username = str(session.get("username") or "").strip()
+    title = str(session.get("title") or "").strip()
     workspaces_raw = session.get("workspaces")
     workspaces_allowlist: list[str] | None = None
     if isinstance(workspaces_raw, list):
@@ -355,6 +373,7 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
         person_key=person_key,
         selected=selected,
         username=username,
+        title=title,
         auth_required=True,
         apply_process_runtime=False,
         workspaces_allowlist=workspaces_allowlist,
@@ -375,16 +394,22 @@ def _hub_get_json(url: str, path: str, *, api_key: str = "", timeout: float = 5.
     return data if isinstance(data, dict) else {}
 
 
-def _first_hub_workspace(url: str, *, api_key: str = "") -> str | None:
-    """Best-effort first workspace name from hub status (regional bootstrap)."""
+def _fetch_hub_workspace_names(url: str, *, api_key: str = "") -> list[str]:
+    """All workspace folder names from hub ``/api/status`` (existing dirs)."""
     try:
         data = _hub_get_json(url, "/api/status", api_key=api_key)
         names = data.get("workspaces") or []
         if isinstance(names, list) and names:
-            return str(names[0]).strip() or None
+            return [str(n).strip() for n in names if str(n).strip()]
     except Exception:  # noqa: BLE001
-        return None
-    return None
+        pass
+    return []
+
+
+def _first_hub_workspace(url: str, *, api_key: str = "") -> str | None:
+    """Best-effort first workspace name from hub status (regional bootstrap)."""
+    names = _fetch_hub_workspace_names(url, api_key=api_key)
+    return names[0] if names else None
 
 
 def configured_person() -> str:
@@ -599,6 +624,7 @@ def sync_status() -> dict[str, Any]:
         "person": cfg.person,
         "access": cfg.access,
         "username": cfg.username,
+        "title": cfg.title,
         "auth_required": cfg.auth_required,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,
@@ -678,13 +704,9 @@ def list_hub_workspaces() -> list[str]:
     if is_regional_admin():
         if not cfg.enabled:
             return [cfg.workspace] if cfg.workspace else []
-        try:
-            status = hub_request("GET", "/api/status", timeout=10.0)
-            names = status.get("workspaces") or []
-            if isinstance(names, list) and names:
-                return [str(n).strip() for n in names if str(n).strip()]
-        except Exception:
-            pass
+        names = _fetch_hub_workspace_names(cfg.url, api_key=cfg.api_key)
+        if names:
+            return names
         return [cfg.workspace] if cfg.workspace else []
     return [cfg.workspace] if cfg.workspace else []
 

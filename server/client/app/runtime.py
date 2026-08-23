@@ -18,6 +18,7 @@ _cv_allowed_workspaces: ContextVar[tuple[str, ...] | None] = ContextVar(
 )
 _cv_access_mode: ContextVar[str | None] = ContextVar("access_mode", default=None)
 _cv_username: ContextVar[str | None] = ContextVar("username", default=None)
+_cv_title: ContextVar[str | None] = ContextVar("title", default=None)
 _cv_workspace_key: ContextVar[str | None] = ContextVar("workspace_key", default=None)
 _cv_person_key: ContextVar[str | None] = ContextVar("person_key", default=None)
 
@@ -55,6 +56,7 @@ def set_runtime(
     allowed_workspaces: list[str] | None = None,
     access: str | None = None,
     username: str | None = None,
+    title: str | None = None,
     workspace_key: str | None = None,
     person_key: str | None = None,
     request_scoped: bool = False,
@@ -70,6 +72,7 @@ def set_runtime(
         else None
     )
     ws = workspace.strip() if workspace else None
+    title_s = title.strip() if title is not None else None
 
     if request_scoped:
         if access_n is not None:
@@ -82,6 +85,8 @@ def set_runtime(
             _cv_selected_workspace.set(allowed_t[0])
         if username is not None:
             _cv_username.set(username.strip() or None)
+        if title is not None:
+            _cv_title.set(title_s or None)
         if workspace_key is not None:
             _cv_workspace_key.set(workspace_key.strip() or None)
         if person_key is not None:
@@ -101,6 +106,8 @@ def set_runtime(
         _selected_workspace = _allowed_workspaces[0]
     if username is not None:
         _cv_username.set(username.strip() or None)
+    if title is not None:
+        _cv_title.set(None)
     if workspace_key is not None:
         _cv_workspace_key.set(None)
     if person_key is not None:
@@ -112,6 +119,7 @@ def clear_request_runtime() -> None:
     _cv_allowed_workspaces.set(None)
     _cv_access_mode.set(None)
     _cv_username.set(None)
+    _cv_title.set(None)
     _cv_workspace_key.set(None)
     _cv_person_key.set(None)
 
@@ -122,6 +130,7 @@ def bind_request_runtime(
     allowed_workspaces: list[str] | None = None,
     workspace: str | None = None,
     username: str | None = None,
+    title: str | None = None,
     workspace_key: str | None = None,
     person_key: str | None = None,
 ) -> None:
@@ -130,6 +139,7 @@ def bind_request_runtime(
         allowed_workspaces=allowed_workspaces,
         workspace=workspace,
         username=username,
+        title=title,
         workspace_key=workspace_key,
         person_key=person_key,
         request_scoped=True,
@@ -195,6 +205,10 @@ def allowed_workspaces() -> list[str]:
 
 def current_username() -> str | None:
     return _cv_username.get()
+
+
+def current_title() -> str | None:
+    return _cv_title.get()
 
 
 def bundle_dir() -> Path | None:

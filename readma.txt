@@ -258,3 +258,15 @@ PS C:\Coding\bankingApp\server\client> tailscale funnel status
 
 PS C:\Coding\bankingApp\server\client> Test-NetConnection 192.168.1.48 -Port 8200      
 PS C:\Coding\bankingApp\server\client> Invoke-WebRequest http://192.168.1.48:8200/api/status -TimeoutSec 3
+
+
+VRAAG VOOR BEN
+session_secret
+Used by the client to sign and verify the login cookie (boekhouding_session). Without a secret shared across restarts (and across multiple client processes if you ever run more than one), anyone who can forge a cookie could impersonate a user. The placeholder "replace-me-with-a-long-random-string" is fine only for local/dev — for a real deploy, set a long random value (or CLIENT_SESSION_SECRET).
+
+api_key
+Optional shared secret between client → hub. If the hub is started with CENTRALE_API_KEY set, almost all hub /api/... routes require Authorization: Bearer <key>. The client sends whatever is in api_key (or CENTRALE_API_KEY in its environment).
+
+Empty on both sides (your current setup): hub accepts requests without a key — normal for home/LAN behind hub_ips.
+Set the same value on hub and in the client config when the hub is reachable more widely and you want an extra gate beyond IP allowlisting.
+

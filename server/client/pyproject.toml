@@ -26,7 +26,7 @@ boekhouding-client = "app.main:run"
 build = ["pyinstaller>=6.0"]
 
 [tool.uv.sources]
-banking-app-shared = { path = "../../shared" }
+banking-app-shared = { path = "../../shared", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

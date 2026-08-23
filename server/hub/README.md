@@ -70,6 +70,12 @@ uv sync
 uv run hub
 ```
 
+If `shared.passwords` is missing after adding modules under ``shared/``, force a refresh:
+
+```powershell
+uv sync --reinstall-package banking-app-shared
+```
+
 ## Onefile
 
 ```powershell

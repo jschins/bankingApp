@@ -51,9 +51,11 @@ def _row_to_user(row: sqlite3.Row) -> dict[str, Any]:
         "username": str(row["username"] or ""),
         "password_hash": str(row["password_hash"] or ""),
         "title": str(row["title"] or ""),
-        "workspace": str(row["workspace"] or ""),
-        "person": str(row["person"] or ""),
-        "selected_workspace": str(row["selected_workspace"] or ""),
+        "workspace": str(row["workspace"]) if row["workspace"] is not None else "",
+        "person": str(row["person"]) if row["person"] is not None else "",
+        "selected_workspace": (
+            str(row["selected_workspace"]) if row["selected_workspace"] is not None else ""
+        ),
     }
 
 

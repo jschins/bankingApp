@@ -45,7 +45,7 @@ wheels = [
 [[package]]
 name = "banking-app-shared"
 version = "0.1"
-source = { directory = "../../shared" }
+source = { editable = "../../shared" }
 dependencies = [
     { name = "cryptography" },
     { name = "pyjwt" },
@@ -79,7 +79,7 @@ build = [
 
 [package.metadata]
 requires-dist = [
-    { name = "banking-app-shared", directory = "../../shared" },
+    { name = "banking-app-shared", editable = "../../shared" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },

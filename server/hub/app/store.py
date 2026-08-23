@@ -125,8 +125,9 @@ def list_workspaces() -> list[str]:
     """Peer workspace folder names under the data root (e.g. dkg, jl, gph).
 
     Lists directories that already exist on disk (including empty ones).
-    Does not create workspace folders.
+    Does not create workspace folders. Skips known meta dirs/names.
     """
+    skip = frozenset({"upload_acl.json", "users.db", "upload.log", "categories.json"})
     root = data_root()
     if not root.is_dir():
         return []
@@ -135,6 +136,8 @@ def list_workspaces() -> list[str]:
         if not child.is_dir():
             continue
         if child.name.startswith("_"):
+            continue
+        if child.name in skip:
             continue
         names.append(child.name)
     return names
