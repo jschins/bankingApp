@@ -15,10 +15,10 @@ from app.runtime import data_root
 from app.yearpath import ensure_year_folder, has_person_layout, parse_year
 
 ACL_FILENAME = "upload_acl.json"
-USERS_FILENAME = "users.json"
+USERS_DB_FILENAME = "users.db"
 UPLOAD_LOG_FILENAME = "upload.log"
 _SKIP_WORKSPACE_NAMES = frozenset(
-    {ACL_FILENAME, USERS_FILENAME, UPLOAD_LOG_FILENAME, "categories.json"}
+    {ACL_FILENAME, USERS_DB_FILENAME, UPLOAD_LOG_FILENAME, "categories.json"}
 )
 _log_lock = threading.Lock()
 
@@ -69,20 +69,6 @@ class UploadGrant:
 
 def acl_path() -> Path:
     return data_root() / ACL_FILENAME
-
-
-def users_json_path() -> Path:
-    env = os.environ.get("HUB_USERS_JSON", "").strip()
-    if env:
-        return Path(env)
-    root = data_root()
-    for candidate in (
-        root / USERS_FILENAME,
-        root.parent / "client" / "dist" / USERS_FILENAME,
-    ):
-        if candidate.is_file():
-            return candidate
-    return root / USERS_FILENAME
 
 
 def upload_log_path() -> Path:

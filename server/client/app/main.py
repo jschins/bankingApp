@@ -74,8 +74,6 @@ async def lifespan(_app: FastAPI):
     pull = start_session_and_pull()
     if not pull.get("ok"):
         print(f"ERROR: hub required but unavailable: {pull.get('error')}")
-    else:
-        print(f"hub session ok (workspace={pull.get('workspace')}, access={cfg.access})")
     start_event_worker()
     try:
         yield
@@ -297,6 +295,8 @@ def api_login(body: LoginRequest, request: Request, response: Response) -> dict[
     except Exception:  # noqa: BLE001
         pass
     status = sync_status()
+    if profile.get("title"):
+        status["title"] = profile["title"]
     status["authenticated"] = True
     status["auth_required"] = True
     return status
@@ -406,12 +406,17 @@ def api_set_workspace(body: WorkspaceRequest, request: Request, response: Respon
 
 
 @app.get("/api/centrale/status")
-def api_centrale_status() -> dict[str, Any]:
+def api_centrale_status(request: Request) -> dict[str, Any]:
     from app.centrale_sync import list_hub_workspaces, load_config, poll_central_events, sync_status
     from app.runtime import is_regional_admin
 
     poll_central_events()
     status = sync_status()
+    session = getattr(request.state, "session", None)
+    if isinstance(session, dict):
+        title = str(session.get("title") or "").strip()
+        if title:
+            status["title"] = title
     cfg = load_config()
     if is_regional_admin():
         status["workspaces"] = list_hub_workspaces()
@@ -508,10 +513,11 @@ def api_years() -> dict[str, Any]:
 
 @app.get("/api/banks")
 def api_banks(year: str | None = Query(default=None)) -> dict[str, Any]:
-    from app.centrale_sync import configured_person, hub_get, load_config, normalize_access
+    from app.centrale_sync import configured_person, hub_get, load_config
+    from shared.user_access import ACCESS_PERSONAL
     import urllib.parse
 
-    if normalize_access(load_config().access) != "personal":
+    if load_config().access != ACCESS_PERSONAL:
         return {"folders": [], "multi_bank": False, "show_switcher": False}
     person = configured_person()
     if not person:
@@ -530,14 +536,15 @@ def api_matrix(
     year: str | None = Query(default=None),
     bank: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    from app.centrale_sync import hub_get, load_config, normalize_access, scope_matrix
+    from app.centrale_sync import hub_get, load_config, scope_matrix
+    from shared.user_access import ACCESS_PERSONAL
     import urllib.parse
 
     try:
         params: list[str] = []
         if year:
             params.append(f"year={urllib.parse.quote(year)}")
-        if bank and normalize_access(load_config().access) == "personal":
+        if bank and load_config().access == ACCESS_PERSONAL:
             params.append(f"bank={urllib.parse.quote(bank)}")
         suffix = "/matrix"
         if params:
@@ -625,13 +632,14 @@ def api_transactions(
     year: str | None = Query(default=None),
     bank: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    from app.centrale_sync import hub_get, load_config, normalize_access, require_person
+    from app.centrale_sync import hub_get, load_config, require_person
+    from shared.user_access import ACCESS_PERSONAL
     import urllib.parse
 
     try:
         require_person(short)
         cfg = load_config()
-        personal = normalize_access(cfg.access) == "personal"
+        personal = cfg.access == ACCESS_PERSONAL
         # Rafael-style local categorized JSON fallback: if present on disk, use it
         # for detail table rows (category click in overview), bypassing hub parser assumptions.
         people_payload = hub_get("/people")

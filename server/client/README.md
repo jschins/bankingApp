@@ -6,8 +6,8 @@ Thin BFF + frontend. All data comes from the hub (no local workspace copies). Se
 
 | Key | Meaning |
 |-----|---------|
-| `access` | `regional` (all workspaces) \| country name from hub `upload_acl.json` (e.g. `netherlands`) \| `local` (one workspace) \| `personal` (one person). Used when `auth_enabled` is false. |
-| `workspace` | **Required only for `local` and `personal`.** Ignored for `regional` and country access (use the UI switcher). |
+| `access` | `regional_admin` (all workspaces) \| `local` (one workspace) \| `personal` (one person). Used when `auth_enabled` is false. |
+| `workspace` | **Required only for `local` and `personal`.** Ignored for `regional_admin` (use the UI switcher). |
 | `person` | Required when `access` is `personal` (folder name, e.g. `juleon_schins`) |
 | `server_url` | Hub URL |
 | `port` | Client listen port |
@@ -20,7 +20,7 @@ When `auth_enabled` is `true`, the client listens on **`0.0.0.0`** (all interfac
 
 Logged-in browser users appear on the hub `:8200` session list (hostname from reverse-DNS when possible, username, and client IP).
 
-Users are stored in **`server/workspaces/users.db`** on the hub (auto-imported from legacy `users.json` on first hub start). Seed password for sample users is `changeme`. Hash new passwords with:
+Users are stored in **`server/workspaces/users.db`** on the hub. Hash new passwords with:
 
 ```powershell
 uv run python scripts/hash_password.py yourpassword
@@ -30,7 +30,6 @@ Manage users on the hub:
 
 ```powershell
 cd server\hub
-uv run python scripts/user_admin.py import-json
 uv run python scripts/user_admin.py list
 ```
 

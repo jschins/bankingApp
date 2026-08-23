@@ -37,6 +37,7 @@ def enrich_user_record(user: dict[str, Any]) -> dict[str, Any]:
     access = deduce_access(person=person, workspaces=workspaces)
     return {
         "username": str(user.get("username") or "").strip(),
+        "title": str(user.get("title") or "").strip(),
         "access": access,
         "workspace": str(user.get("workspace") or "").strip(),
         "workspaces": workspaces,

@@ -17,10 +17,8 @@ from shared.user_access import ACCESS_LOCAL, ACCESS_PERSONAL, ACCESS_REGIONAL_AD
 
 from app.runtime import (
     exe_dir,
-    is_country_access,
     is_frozen,
     is_regional_admin,
-    normalize_access,
     project_root,
     selected_workspace,
     set_runtime,
@@ -49,7 +47,7 @@ class HubConfig:
     workspace: str  # currently selected target (from access / switcher)
     author: str  # session label: workspace for local/personal; regional/country name otherwise
     person: str  # empty unless access=personal
-    access: str  # personal | local | regional_admin | <legacy country>
+    access: str  # personal | local | regional_admin
     api_key: str
     enabled: bool
     port: int
@@ -125,6 +123,16 @@ def load_base_settings(*, force_reload: bool = False) -> dict[str, Any]:
     return _base_cache
 
 
+def _coerce_access(raw: str | None) -> str:
+    mode = str(raw or ACCESS_LOCAL).strip().lower()
+    if mode not in (ACCESS_PERSONAL, ACCESS_LOCAL, ACCESS_REGIONAL_ADMIN):
+        raise ValueError(
+            f"access must be one of {ACCESS_PERSONAL!r}, {ACCESS_LOCAL!r}, "
+            f"{ACCESS_REGIONAL_ADMIN!r}; got {raw!r}"
+        )
+    return mode
+
+
 def _build_hub_config(
     *,
     url: str,
@@ -140,7 +148,7 @@ def _build_hub_config(
     apply_process_runtime: bool = True,
     workspaces_allowlist: list[str] | None = None,
 ) -> HubConfig:
-    access = normalize_access(access)
+    access = _coerce_access(access)
     parsed_ws = (
         [str(w).strip() for w in workspaces_allowlist if str(w).strip()]
         if workspaces_allowlist is not None
@@ -175,28 +183,6 @@ def _build_hub_config(
         else:
             workspaces = ()
             workspace = (selected or "").strip() or _first_hub_workspace(url, api_key=api_key) or "dkg"
-    else:
-        country_ws = _hub_country_workspaces(url, access, api_key=api_key)
-        if country_ws is None:
-            hint = (
-                f" (is the hub at {url} running a build that exposes countries?)"
-                if access in _KNOWN_COUNTRIES
-                else ""
-            )
-            raise ValueError(
-                f"access={access!r} is not personal/local/regional_admin "
-                f"and is not a country listed in hub upload_acl.json{hint}"
-            )
-        person = ""
-        author = username or access
-        workspaces = tuple(country_ws)
-        preferred = (selected or "").strip()
-        if preferred and preferred in workspaces:
-            workspace = preferred
-        elif workspaces:
-            workspace = workspaces[0]
-        else:
-            workspace = access
 
     if apply_process_runtime:
         set_runtime(
@@ -246,6 +232,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     from app.runtime import (
         access_mode,
         current_username,
+        request_allowed_workspaces,
         request_person_key,
         request_workspace_key,
         selected_workspace,
@@ -265,6 +252,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             username=current_username() or "",
             auth_required=True,
             apply_process_runtime=False,
+            workspaces_allowlist=request_allowed_workspaces(),
         )
 
     # Auth on but no session: bootstrap for lifespan / health (no person scope).
@@ -304,7 +292,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             )
         return _file_profile_cache
 
-    access = normalize_access(str(file_cfg.get("access") or "local"))
+    access = _coerce_access(str(file_cfg.get("access") or "local"))
     workspace_key = str(file_cfg.get("workspace") or "").strip()
     person_key = (
         os.environ.get("CLIENT_PERSON", "").strip()
@@ -312,7 +300,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     )
     default_port = (
         8300
-        if access == ACCESS_REGIONAL_ADMIN or is_country_access(access)
+        if access == ACCESS_REGIONAL_ADMIN
         else (8302 if workspace_key == "jl" else 8301)
     )
     try:
@@ -344,15 +332,19 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
 def apply_session_profile(session: dict[str, Any]) -> HubConfig:
     """Bind request runtime from a decoded session and return HubConfig."""
     base = load_base_settings()
-    access = normalize_access(str(session.get("access") or "local"))
-    workspace_key = str(session.get("workspace") or "").strip()
+    access = _coerce_access(str(session.get("access") or "local"))
     person_key = str(session.get("person") or "").strip()
-    selected = str(session.get("selected_workspace") or "").strip() or None
+    selected = (
+        str(session.get("selected_workspace") or "").strip()
+        or str(session.get("workspace") or "").strip()
+        or None
+    )
     username = str(session.get("username") or "").strip()
     workspaces_raw = session.get("workspaces")
     workspaces_allowlist: list[str] | None = None
     if isinstance(workspaces_raw, list):
         workspaces_allowlist = [str(w).strip() for w in workspaces_raw if str(w).strip()]
+    workspace_key = ",".join(workspaces_allowlist) if workspaces_allowlist else ""
     return _build_hub_config(
         url=str(base["url"]),
         api_key=str(base["api_key"]),
@@ -392,51 +384,6 @@ def _first_hub_workspace(url: str, *, api_key: str = "") -> str | None:
             return str(names[0]).strip() or None
     except Exception:  # noqa: BLE001
         return None
-    return None
-
-
-_KNOWN_COUNTRIES = frozenset({"netherlands", "united kingdom", "sweden", "ireland"})
-# Used when the hub is unreachable or still on a build without ``countries`` in /api/status.
-_DEFAULT_COUNTRY_WORKSPACES: dict[str, list[str]] = {
-    "netherlands": ["dkg", "jl"],
-    "united kingdom": ["gph"],
-    "sweden": [],
-    "ireland": [],
-}
-
-
-def _hub_country_workspaces(url: str, country: str, *, api_key: str = "") -> list[str] | None:
-    """Workspace list for ``country`` from hub ``upload_acl.json``.
-
-    Prefers hub ``/api/status`` → ``countries``. Falls back to the built-in map when
-    the hub omits that field or cannot be reached. The ACL list is authoritative
-    (not intersected with currently non-empty hub folders).
-    """
-    name = str(country or "").strip().lower()
-    if not name:
-        return None
-    try:
-        data = _hub_get_json(url, "/api/status", api_key=api_key)
-    except Exception:  # noqa: BLE001
-        data = None
-
-    if isinstance(data, dict):
-        countries = data.get("countries")
-        if isinstance(countries, dict):
-            for key, value in countries.items():
-                if str(key).strip().lower() != name:
-                    continue
-                if isinstance(value, list):
-                    return [str(item).strip() for item in value if str(item).strip()]
-                return []
-            return None
-        # Old hub: status works but no countries field.
-        if name in _DEFAULT_COUNTRY_WORKSPACES:
-            return list(_DEFAULT_COUNTRY_WORKSPACES[name])
-        return None
-
-    if name in _DEFAULT_COUNTRY_WORKSPACES:
-        return list(_DEFAULT_COUNTRY_WORKSPACES[name])
     return None
 
 
@@ -739,8 +686,6 @@ def list_hub_workspaces() -> list[str]:
         except Exception:
             pass
         return [cfg.workspace] if cfg.workspace else []
-    if is_country_access(cfg.access):
-        return list(cfg.workspaces) if cfg.workspaces else ([cfg.workspace] if cfg.workspace else [])
     return [cfg.workspace] if cfg.workspace else []
 
 

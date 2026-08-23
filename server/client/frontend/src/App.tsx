@@ -209,26 +209,9 @@ function afterPaint(fn: () => void): () => void {
 type CellSelection = { short: string; category: string };
 
 function brandTitle(status: CentraleSyncStatus | null): string {
-  const access = (status?.access || "").trim().toLowerCase();
-  if (
-    access === "regional_admin" ||
-    access === "regional" ||
-    access === "central"
-  )
-    return "Regionale Boekhouding";
-  const ws = (status?.author || status?.workspace || "").trim();
-  if (access === "personal") {
-    const person = (status?.person || "").trim();
-    if (ws && person) return `Boekhouding ${ws}/${person}`;
-    if (ws) return `Boekhouding ${ws}`;
-    return "Boekhouding";
-  }
-  if (access && access !== "local") {
-    // Country access (e.g. netherlands): title-case the country name.
-    const country = access.replace(/\b\w/g, (ch) => ch.toUpperCase());
-    return `Boekhouding ${country}`;
-  }
-  // local (default)
+  const title = (status?.title || "").trim();
+  if (title) return title;
+  const ws = (status?.workspace || "").trim();
   return ws ? `Boekhouding ${ws}` : "Boekhouding";
 }
 
@@ -596,11 +579,7 @@ function SyncNotifyShell({
   }, [onWorkspaceChanged]);
 
   const access = (status?.access || "").trim().toLowerCase();
-  const isRegionalAdmin =
-    access === "regional_admin" ||
-    access === "regional" ||
-    access === "central" ||
-    (access !== "personal" && access !== "local" && access !== "");
+  const isRegionalAdmin = access === "regional_admin";
   // Multi-workspace login: switcher when access allows.
   const workspaces = isRegionalAdmin
     ? status?.workspaces?.length

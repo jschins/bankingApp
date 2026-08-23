@@ -19,12 +19,6 @@ def main() -> None:
     hash_cmd = sub.add_parser("hash", help="print scrypt password_hash")
     hash_cmd.add_argument("password")
 
-    import_cmd = sub.add_parser("import-json", help="import users.json into users.db")
-    import_cmd.add_argument(
-        "--path",
-        help="users.json path (default: auto-discover under workspaces/)",
-    )
-
     list_cmd = sub.add_parser("list", help="list users in users.db")
 
     args = parser.parse_args()
@@ -34,14 +28,8 @@ def main() -> None:
         print(hash_password(args.password))
         return
 
-    if args.cmd == "import-json":
-        json_path = Path(args.path).resolve() if args.path else None
-        count = user_store.import_users_json(json_path)
-        print(f"imported/updated {count} user(s) in {user_store.users_db_path()}")
-        return
-
     if args.cmd == "list":
-        user_store.init_user_store(migrate_json=False)
+        user_store.init_user_store()
         print(user_store.users_db_path())
         for user in user_store.list_users():
             ws = user.get("workspace") or ""

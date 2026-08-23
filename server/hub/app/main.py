@@ -150,7 +150,7 @@ def api_auth_login(
 def api_auth_users(_: None = Depends(require_api_key)) -> dict[str, Any]:
     from app import user_store
 
-    user_store.init_user_store(migrate_json=False)
+    user_store.init_user_store()
     return {"users": user_store.list_users()}
 
 

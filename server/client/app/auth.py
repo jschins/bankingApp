@@ -19,8 +19,6 @@ from shared.user_access import (
     parse_workspaces,
 )
 
-from app.runtime import normalize_access
-
 COOKIE_NAME = "boekhouding_session"
 SESSION_TTL_SEC = 12 * 3600
 
@@ -111,7 +109,7 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
         workspaces = [str(w).strip() for w in workspaces_raw if str(w).strip()]
     else:
         workspaces = parse_workspaces(str(user.get("workspace") or ""))
-    access = normalize_access(deduce_access(person=person, workspaces=workspaces))
+    access = deduce_access(person=person, workspaces=workspaces)
     selected = str(user.get("selected_workspace") or "").strip()
     username = str(user.get("username") or "").strip()
 
@@ -125,6 +123,7 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "username": username,
         "access": access,
+        "title": str(user.get("title") or "").strip(),
         "workspace": workspace,
         "workspaces": workspaces,
         "person": person,
