@@ -20,11 +20,7 @@ When `auth_enabled` is `true`, the client listens on **`0.0.0.0`** (all interfac
 
 Logged-in browser users appear on the hub `:8200` session list (hostname from reverse-DNS when possible, username, and client IP).
 
-Users are stored in **`server/workspaces/users.db`** on the hub. Hash new passwords with:
-
-```powershell
-uv run python scripts/hash_password.py yourpassword
-```
+Users are stored in **`server/workspaces/users.db`** on the hub. Login password equals the username (no `password_hash` column).
 
 Manage users on the hub:
 

@@ -49,5 +49,5 @@ def enrich_user_record(user: dict[str, Any]) -> dict[str, Any]:
         "workspace": "" if raw_ws is None else str(raw_ws).strip(),
         "workspaces": workspaces,
         "person": person,
-        "selected_workspace": str(user.get("selected_workspace") or "").strip(),
+        "format": str(user.get("format") or "").strip(),
     }

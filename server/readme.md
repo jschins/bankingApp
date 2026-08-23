@@ -61,7 +61,37 @@ Previous year = max of existing year folders that are **strictly less than Y** (
 
 Do **not** copy xlsx, transactions, or last year’s `files` list.
 
-### When it runs
+## User store `format` (bank upload layout)
+
+Personal users in `workspaces/users.db` have a **`format`** column. It records how uploads for that person are laid out under their year folder.
+
+### 1. `format` is empty / NULL
+
+Means the person is **not** on a single flat CSV layout yet. Either:
+
+- **1a.** there are already **multiple bank/format subfolders** under the year folder, or  
+- **1b.** the person has a **`secret/`** folder (Enable Banking / PEM flow).
+
+### 2. `format` has a single value (e.g. `ing`, `natwest`)
+
+Means: all existing uploads in the year folder (which has **no** bank subfolders) were loaded with that format.
+
+If a **new** file is uploaded whose detected format **differs** from the stored `format`:
+
+1. **2a.** Create a subfolder named after the **existing** format; move all current files from the year folder into it.  
+2. **2b.** Create a subfolder named after the **newly detected** format; write the new upload there.  
+3. Write **consolidated** results of the two folders back into the year folder (matrix / totals / categorized store at the year root).
+
+### First upload and add-person
+
+- **First upload** for a person with empty `format` and a flat year folder: detect the file’s format and **write it into `users.db.format`**.  
+- **Add person**: insert a **new row** in `users.db` (personal login: `username` = person folder, `workspace` = center, `person` set, `format` empty until first upload).
+
+### Password
+
+Temporary rule: login password equals the **username** (e.g. user `regional_admin` → password `regional_admin`). There is **no** `password_hash` column.
+
+## Year folder seeding (when it runs)
 
 `ensure_year_folder()` in `hub/app/yearpath.py` (and the client copy). If `person/Y` exists, it returns immediately.
 

@@ -1250,7 +1250,7 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
         <p class="note" style="margin-top:0">Open the client and sign in with:</p>
         <dl>
           <dt>Username</dt><dd><code id="loginUser">…</code></dd>
-          <dt>Password</dt><dd><code>changeme</code></dd>
+          <dt>Password</dt><dd><code id="loginPass">…</code> <span class="note">(same as username)</span></dd>
         </dl>
         <p class="note">After login, start bank consent (authorization URL), then fetch transactions from 1 January of the current year.</p>
       </div>
@@ -1323,11 +1323,14 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
       const login = payload && payload.login;
       const box = document.getElementById("loginBox");
       const userEl = document.getElementById("loginUser");
+      const passEl = document.getElementById("loginPass");
       if (!login) {
         box.style.display = "none";
         return;
       }
-      userEl.textContent = login.username || payload.folder || "";
+      const user = login.username || payload.folder || "";
+      userEl.textContent = user;
+      passEl.textContent = login.password || user;
       box.style.display = "";
     }
 

@@ -110,7 +110,6 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
     else:
         workspaces = parse_workspaces(str(user.get("workspace") or ""))
     access = deduce_access(person=person, workspaces=workspaces)
-    selected = str(user.get("selected_workspace") or "").strip()
     username = str(user.get("username") or "").strip()
 
     if access == ACCESS_PERSONAL:
@@ -118,7 +117,7 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
     elif access == ACCESS_LOCAL:
         workspace = workspaces[0]
     else:
-        workspace = selected or (workspaces[0] if workspaces else "")
+        workspace = workspaces[0] if workspaces else ""
 
     return {
         "username": username,
@@ -127,7 +126,6 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
         "workspace": workspace,
         "workspaces": workspaces,
         "person": person,
-        "selected_workspace": selected,
     }
 
 

@@ -527,14 +527,11 @@ def refresh_person(
 
 
 
-# Seed password for new personal logins created by add-person.
-_DEFAULT_PERSONAL_PASSWORD_HASH = (
-    "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ"
-)
+# Personal logins: password equals username (see user_store.password_for_username).
 
 
 def ensure_personal_login_user(*, workspace: str, person: str) -> dict[str, Any]:
-    """Upsert a personal login (username=person, password changeme) in users.db."""
+    """Upsert a personal login (username=person, password=username) in users.db."""
     from app import user_store
 
     ws = _clean_ws(workspace)
@@ -543,11 +540,10 @@ def ensure_personal_login_user(*, workspace: str, person: str) -> dict[str, Any]
     public = user_store.upsert_personal_login(
         workspace=ws,
         person=folder,
-        password_hash=_DEFAULT_PERSONAL_PASSWORD_HASH,
     )
     return {
         "username": public["username"],
-        "password": "changeme",
+        "password": user_store.password_for_username(public["username"]),
         "workspace": ws,
         "person": folder,
         "users_db": str(user_store.users_db_path()),

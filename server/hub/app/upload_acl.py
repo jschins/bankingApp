@@ -118,7 +118,7 @@ def load_acl_document() -> dict[str, Any]:
 def _password_hash_by_person_center() -> dict[tuple[str, str], str]:
     from app import user_store
 
-    return user_store.password_hash_by_person_center()
+    return user_store.upload_token_by_person_center()
 
 
 def discover_workspace_persons() -> list[tuple[str, str]]:
@@ -730,7 +730,29 @@ def save_upload(
         payload_out["excel"] = _process_excel_upload(grant, year=y)
     elif is_csv:
         payload_out["bank_csv"] = _process_bank_csv_upload(grant, year=y)
+        _maybe_record_first_upload_format(grant)
     return payload_out
+
+
+def _maybe_record_first_upload_format(grant: UploadGrant) -> None:
+    """On first flat-layout CSV upload, store detected format in users.db."""
+    from app import user_store
+
+    fmt = grant.normalized_format()
+    if not fmt:
+        return
+    user = user_store.find_user(grant.person)
+    if user is None:
+        return
+    if str(user.get("format") or "").strip():
+        return
+    # Only set when year folder is still flat (no bank subfolders) — empty format
+    # otherwise means multi-folder or secret (see server/readme.md).
+    from app.core.bank_csv import person_uses_bank_subfolders
+
+    if person_uses_bank_subfolders(grant.person, grant.center):
+        return
+    user_store.set_user_format(username=grant.person, format=fmt)
 
 
 def ensure_example_acl() -> Path:
