@@ -62,6 +62,14 @@ The hub reads client IP from common proxy headers for the upload endpoints (`X-F
 - UI: [http://127.0.0.1:8200/add-person](http://127.0.0.1:8200/add-person) (pass `?workspace=dkg`)
 - Client **Add person** opens the same URL using `server_url` from `client_config.json`
 
+## Run
+
+```powershell
+cd server\hub
+uv sync
+uv run hub
+```
+
 ## Onefile
 
 ```powershell
