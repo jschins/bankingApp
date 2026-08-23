@@ -86,6 +86,10 @@ Only when `format` is a **concrete bank CSV value** (not empty / `secret` / `mul
 - **First CSV upload** with empty `format` and a flat year folder → store the detected format.  
 - **Add person (PEM)** → insert user row and set `format` to `secret`.  
 - **Add person (Excel)** → insert user row with empty `format` until first upload.
+- **PEM refresh with multiple enabled accounts** → write each account under
+  `YYYY/{aspsp}_{accountNumber}/` (e.g. `ING_NL94INGB0005818522`), set `format` to
+  `multiple`, and consolidate into the year folder root. A single enabled account
+  still writes flat files in `YYYY/`.
 
 ### Password
 

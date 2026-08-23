@@ -726,6 +726,20 @@ def _account_index_by_uid() -> dict[str, int]:
     }
 
 
+def account_index_by_uid() -> dict[str, int]:
+    """Public wrapper: consent account uid → 0-based index (matches fetch tagging)."""
+    return _account_index_by_uid()
+
+
+def enabled_bank_accounts() -> list[dict[str, Any]]:
+    """Active + enabled accounts from profile (same set as transaction fetch)."""
+    return [
+        acc
+        for acc in list_bank_accounts().get("accounts", [])
+        if isinstance(acc, dict) and bool(acc.get("enabled")) and bool(acc.get("active"))
+    ]
+
+
 def _load_stored_accounts() -> list[dict[str, Any]]:
     return _iter_accounts(_load_consent(), active_only=False)
 
@@ -1068,6 +1082,7 @@ def fetch_transactions(
         for tx in batch:
             tagged = dict(tx)
             tagged["_account_index"] = account_index
+            tagged["_account_uid"] = account_uid
             raw_transactions.append(tagged)
 
     if not raw_transactions and account_errors:

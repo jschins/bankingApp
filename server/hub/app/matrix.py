@@ -241,6 +241,60 @@ def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
     }
 
 
+def _narrow_totals_to_account(uid: str) -> None:
+    """Keep only this account's balance row in the bound category_totals.json."""
+    from app import paths as path_mod
+
+    path = path_mod.CATEGORY_TOTALS_PATH
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    balances = data.get("account_balances")
+    if not isinstance(balances, list):
+        return
+    needle = str(uid or "")
+    data["account_balances"] = [
+        row
+        for row in balances
+        if isinstance(row, dict) and str(row.get("uid") or "") == needle
+    ]
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _txs_for_account(
+    transactions: list[dict[str, Any]],
+    *,
+    uid: str,
+    account_index: int,
+) -> list[dict[str, Any]]:
+    needle = str(uid or "")
+    by_uid = [
+        tx
+        for tx in transactions
+        if isinstance(tx, dict) and str(tx.get("_account_uid") or "") == needle
+    ]
+    if by_uid or any(
+        isinstance(tx, dict) and str(tx.get("_account_uid") or "").strip() for tx in transactions
+    ):
+        return by_uid
+    out: list[dict[str, Any]] = []
+    for tx in transactions:
+        if not isinstance(tx, dict):
+            continue
+        try:
+            idx = int(tx.get("_account_index", -1))
+        except (TypeError, ValueError):
+            continue
+        if idx == account_index:
+            out.append(tx)
+    return out
+
+
 def _bank_refresh_one(
     pack: PersonPack,
     *,
@@ -248,12 +302,23 @@ def _bank_refresh_one(
     date_to: str | None,
     new_year: bool,
 ) -> tuple[dict[str, Any], list[str]]:
+    from dataclasses import replace
+
+    from app.core.bank_csv import (
+        consolidate_person_year,
+        list_year_bank_folders,
+        migrate_year_root_json_into_folder,
+        pem_account_folder_name,
+    )
     from app.core.categorize import process_transactions
     from app.core.single_client import (
+        account_index_by_uid,
+        enabled_bank_accounts,
         fetch_transactions,
         get_authorization_url,
         needs_consent_renewal,
     )
+    from app.paths import apply_person, shared_categories_path
     from app.runtime import active_workspace
 
     warnings: list[str] = []
@@ -286,7 +351,57 @@ def _bank_refresh_one(
         )
 
     fetched = fetch_transactions(date_from=date_from, date_to=date_to)
-    process_transactions(fetched.transactions, new_year=bool(new_year))
+    accounts = enabled_bank_accounts()
+    account_folders: list[str] = []
+
+    if len(accounts) <= 1:
+        process_transactions(fetched.transactions, new_year=bool(new_year))
+    else:
+        year_path = pack.data_dir
+        index_by_uid = account_index_by_uid()
+        targets: list[tuple[dict[str, Any], str, int]] = []
+        for acc in accounts:
+            folder = pem_account_folder_name(
+                aspsp=str(acc.get("aspsp") or ""),
+                account_number=str(acc.get("iban") or acc.get("name") or ""),
+            )
+            uid = str(acc.get("uid") or "")
+            targets.append((acc, folder, index_by_uid.get(uid, -1)))
+            account_folders.append(folder)
+
+        if not list_year_bank_folders(year_path):
+            migrate_year_root_json_into_folder(year_path, targets[0][1])
+
+        try:
+            from app import user_store
+
+            user_store.set_user_format(
+                username=pack.folder_name, format=user_store.FORMAT_MULTIPLE
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        for acc, folder, account_index in targets:
+            sub = (year_path / folder).resolve()
+            sub.mkdir(parents=True, exist_ok=True)
+            apply_person(replace(pack, data_dir=sub))
+            batch = _txs_for_account(
+                fetched.transactions,
+                uid=str(acc.get("uid") or ""),
+                account_index=account_index,
+            )
+            process_transactions(batch, new_year=bool(new_year))
+            _narrow_totals_to_account(str(acc.get("uid") or ""))
+
+        consolidate_person_year(
+            pack.folder,
+            year=pack.year,
+            person=pack.folder_name,
+            center=active_workspace(),
+            categories_path=shared_categories_path(),
+        )
+        apply_person(pack)
+
     if fetched.warnings:
         for w in fetched.warnings:
             warnings.append(f"{pack.short}: {w}")
@@ -304,6 +419,8 @@ def _bank_refresh_one(
         "warnings": fetched.warnings,
         "account_errors": fetched.account_errors,
     }
+    if account_folders:
+        result["account_folders"] = account_folders
     if new_year:
         result["new_year"] = True
     return result, warnings

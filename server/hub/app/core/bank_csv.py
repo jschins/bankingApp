@@ -196,7 +196,8 @@ def discover_person_banks(person: str, center: str) -> tuple[str, ...]:
     for year in list_year_names(person_folder):
         year_path = person_folder / year
         for sub in list_year_bank_folders(year_path):
-            if _matches_modality_folder(sub, modalities):
+            # CSV modality folders, or PEM multi-account ``BANK_accountNumber``.
+            if _matches_modality_folder(sub, modalities) or "_" in sub:
                 found.add(sub)
     return tuple(sorted(found))
 
@@ -215,6 +216,40 @@ def list_year_bank_folders(year_path: Path) -> list[str]:
         for child in year_path.iterdir()
         if child.is_dir() and not child.name.startswith(".")
     )
+
+
+_YEAR_ROOT_JSON_FILES = (
+    "categorized_transactions.json",
+    "downloaded_transactions.json",
+    "category_totals.json",
+)
+
+
+def pem_account_folder_name(*, aspsp: str, account_number: str) -> str:
+    """Folder name ``{bank}_{accountNumber}`` for multi-account PEM downloads."""
+    bank = str(aspsp or "").strip() or "BANK"
+    number = str(account_number or "").strip() or "unknown"
+    for ch in ('/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+        number = number.replace(ch, "_")
+    return validate_bank_folder_name(f"{bank}_{number}")
+
+
+def migrate_year_root_json_into_folder(year_path: Path, folder_name: str) -> list[str]:
+    """Move flat year-root JSON stores into ``folder_name`` (first multi-account layout)."""
+    folder = validate_bank_folder_name(folder_name)
+    target = year_path / folder
+    moved: list[str] = []
+    for name in _YEAR_ROOT_JSON_FILES:
+        src = year_path / name
+        if not src.is_file():
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        dest = target / name
+        if dest.exists():
+            continue
+        src.rename(dest)
+        moved.append(name)
+    return moved
 
 
 def person_bank_folder_options(

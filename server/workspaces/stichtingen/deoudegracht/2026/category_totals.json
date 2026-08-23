@@ -1,0 +1,54 @@
+{
+  "categories": {
+    "08 Naar kas": "0.00",
+    "09 Pension": "43400.00",
+    "10 Gezondheid": "-11.23",
+    "11 Convivencias": "0.00",
+    "12 Vervoer": "0.00",
+    "13 Kleding Fiets": "-90.93",
+    "14 Gewone uitgaven": "-14290.95",
+    "15 Buitengewone uitgaven": "-769.31",
+    "16 Auto": "0.00",
+    "18 Overige uitgaven": "-73509.32",
+    "19 Giften": "30685.00",
+    "20 Werk": "-50102.32",
+    "21 Familie": "0.00"
+  },
+  "account_balances": [
+    {
+      "uid": "38ba1fbf-82ba-4a8f-80f5-564a4f99aa5f",
+      "iban": "NL09INGB0006364222",
+      "name": "HULPFONDS PAUSELIJKUNIVERSITEIT VAN HET H KRUIS",
+      "currency": "EUR",
+      "balance": "1962.45"
+    },
+    {
+      "uid": "8f136a29-2f86-4854-9627-2e86773cdb48",
+      "iban": "NL94INGB0006200605",
+      "name": "Stichting De Oude Gracht",
+      "currency": "EUR",
+      "balance": "10333.75"
+    },
+    {
+      "uid": "37b9225e-93e1-4584-9867-a2a8b594bc62",
+      "iban": "NL34INGB0004378667",
+      "name": "Stichting de Oude Gracht",
+      "currency": "EUR",
+      "balance": "11442.80"
+    },
+    {
+      "uid": "ca636df6-ad6b-440e-870a-e4c993e91107",
+      "iban": "NL44INGB0006494736",
+      "name": "HULPFONDS ONTW PROJECTEN STICHTING DE OUDE GRACHT",
+      "currency": "EUR",
+      "balance": "2237.96"
+    },
+    {
+      "uid": "20d9fbc2-7d80-4bf2-b0d0-d3c668acd46a",
+      "iban": "NL93INGB0669986755",
+      "name": "stichting de Oude Gracht",
+      "currency": "EUR",
+      "balance": "1907.18"
+    }
+  ]
+}
