@@ -46,8 +46,16 @@ def main() -> None:
         for user in user_store.list_users():
             ws = user.get("workspace") or ""
             person = user.get("person") or ""
-            extra = f" workspace={ws} person={person}" if ws or person else ""
-            print(f"  {user['username']} ({user['access']}){extra}")
+            access = user.get("access") or ""
+            allow = user.get("workspaces") or []
+            extra = f" access={access}"
+            if allow:
+                extra += f" workspaces={','.join(allow)}"
+            elif ws:
+                extra += f" workspace={ws!r}"
+            if person:
+                extra += f" person={person}"
+            print(f"  {user['username']}{extra}")
         return
 
 

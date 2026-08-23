@@ -210,7 +210,12 @@ type CellSelection = { short: string; category: string };
 
 function brandTitle(status: CentraleSyncStatus | null): string {
   const access = (status?.access || "").trim().toLowerCase();
-  if (access === "regional" || access === "central") return "Regionale Boekhouding";
+  if (
+    access === "regional_admin" ||
+    access === "regional" ||
+    access === "central"
+  )
+    return "Regionale Boekhouding";
   const ws = (status?.author || status?.workspace || "").trim();
   if (access === "personal") {
     const person = (status?.person || "").trim();
@@ -590,9 +595,13 @@ function SyncNotifyShell({
     };
   }, [onWorkspaceChanged]);
 
+  const access = (status?.access || "").trim().toLowerCase();
   const isRegionalAdmin =
-    status?.role === "regional_admin" || status?.role === "central_admin";
-  // Multi-workspace (regional / country): switcher when role allows.
+    access === "regional_admin" ||
+    access === "regional" ||
+    access === "central" ||
+    (access !== "personal" && access !== "local" && access !== "");
+  // Multi-workspace login: switcher when access allows.
   const workspaces = isRegionalAdmin
     ? status?.workspaces?.length
       ? status.workspaces

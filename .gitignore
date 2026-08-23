@@ -1,5 +1,5 @@
 .venv/
-
+*.exe
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,8 +17,7 @@ gph/
 centraleBoekhouding/boekhouding/
 secret/
 data/
-server/workspaces/server.exe
 server/client/dist/users.json
 server/client/dist/client_config.json
 server/workspaces/users.db
-
+server/workspaces/bankingApp.sqbpro

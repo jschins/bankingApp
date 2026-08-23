@@ -75,7 +75,7 @@ async def lifespan(_app: FastAPI):
     if not pull.get("ok"):
         print(f"ERROR: hub required but unavailable: {pull.get('error')}")
     else:
-        print(f"hub session ok (workspace={pull.get('workspace')}, role={cfg.role})")
+        print(f"hub session ok (workspace={pull.get('workspace')}, access={cfg.access})")
     start_event_worker()
     try:
         yield
@@ -275,6 +275,7 @@ def api_login(body: LoginRequest, request: Request, response: Response) -> dict[
         profile_from_user,
     )
     from app.centrale_sync import apply_session_profile, browser_session_start, sync_status
+    from app.runtime import is_regional_admin
 
     if not auth_enabled():
         raise HTTPException(status_code=400, detail="auth is disabled on this client")
@@ -288,7 +289,7 @@ def api_login(body: LoginRequest, request: Request, response: Response) -> dict[
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     session = {
         **profile,
-        "selected_workspace": cfg.workspace if cfg.role == "regional_admin" else "",
+        "selected_workspace": cfg.workspace if is_regional_admin() else "",
     }
     response.set_cookie(value=encode_session(session), **cookie_kwargs())
     try:
@@ -351,7 +352,7 @@ def health() -> dict[str, Any]:
             "workspace": cfg.workspace,
             "enabled": cfg.enabled,
             "port": cfg.port,
-            "role": cfg.role,
+            "access": cfg.access,
             "error": status.get("error"),
             "has_secrets": status.get("has_secrets"),
         },
@@ -366,7 +367,7 @@ def api_workspaces() -> dict[str, Any]:
     return {
         "workspaces": list_hub_workspaces(),
         "workspace": cfg.workspace,
-        "role": cfg.role,
+        "access": cfg.access,
     }
 
 
@@ -378,12 +379,13 @@ class WorkspaceRequest(BaseModel):
 def api_set_workspace(body: WorkspaceRequest, request: Request, response: Response) -> dict[str, Any]:
     from app.auth import cookie_kwargs, encode_session
     from app.centrale_sync import list_hub_workspaces, load_config, switch_workspace
+    from app.runtime import is_regional_admin
 
     cfg = load_config()
-    if cfg.role != "regional_admin":
+    if not is_regional_admin():
         raise HTTPException(
             status_code=400,
-            detail="workspace switch requires access=regional or a country",
+            detail="workspace switch requires access=regional_admin",
         )
     names = list_hub_workspaces()
     if body.workspace not in names and names:
@@ -406,11 +408,12 @@ def api_set_workspace(body: WorkspaceRequest, request: Request, response: Respon
 @app.get("/api/centrale/status")
 def api_centrale_status() -> dict[str, Any]:
     from app.centrale_sync import list_hub_workspaces, load_config, poll_central_events, sync_status
+    from app.runtime import is_regional_admin
 
     poll_central_events()
     status = sync_status()
     cfg = load_config()
-    if cfg.role == "regional_admin":
+    if is_regional_admin():
         status["workspaces"] = list_hub_workspaces()
     try:
         from app.centrale_sync import refresh_capabilities
@@ -814,14 +817,15 @@ def run() -> None:
         host = "127.0.0.1" if is_frozen() else "0.0.0.0"
     port = int(os.environ.get("PORT", str(cfg.port)))
 
+    arrow = "->" if is_frozen() else "→"
     if auth_on:
         print(
-            f"boekhouding-client → hub {cfg.url} "
+            f"boekhouding-client {arrow} hub {cfg.url} "
             f"(auth_enabled, listen={host}:{port})"
         )
     else:
         print(
-            f"boekhouding-client → hub {cfg.url} "
+            f"boekhouding-client {arrow} hub {cfg.url} "
             f"(access={cfg.access}, workspace={cfg.workspace}, person={cfg.person or '*'}, port={port})"
         )
 

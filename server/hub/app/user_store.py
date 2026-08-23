@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from shared.passwords import hash_password, verify_password
+from shared.user_access import enrich_user_record, parse_workspaces
 
 from app.runtime import data_root
 
@@ -23,7 +24,6 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
     password_hash TEXT NOT NULL,
-    access TEXT NOT NULL,
     workspace TEXT,
     person TEXT,
     selected_workspace TEXT,
@@ -33,6 +33,66 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_person_workspace
     ON users(person COLLATE NOCASE, workspace COLLATE NOCASE);
 """
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return [str(row[1]) for row in rows]
+
+
+def _migrate_drop_access_column(conn: sqlite3.Connection) -> None:
+    """Recreate ``users`` without the legacy ``access`` column."""
+    if "access" not in _table_columns(conn, "users"):
+        return
+    conn.executescript(
+        """
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            password_hash TEXT NOT NULL,
+            workspace TEXT,
+            person TEXT,
+            selected_workspace TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO users_new
+            (id, username, password_hash, workspace, person, selected_workspace, created_at, updated_at)
+        SELECT id, username, password_hash, workspace, person, selected_workspace, created_at, updated_at
+        FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX IF NOT EXISTS idx_users_person_workspace
+            ON users(person COLLATE NOCASE, workspace COLLATE NOCASE);
+        """
+    )
+
+
+def _legacy_fields_from_json(item: dict[str, Any]) -> tuple[str, str, str]:
+    """Map legacy ``users.json`` rows (optional ``access``) to workspace/person fields."""
+    workspace = str(item.get("workspace") or "").strip()
+    person = str(item.get("person") or "").strip()
+    selected = str(item.get("selected_workspace") or "").strip()
+    if workspace or person:
+        return workspace, person, selected
+
+    access = str(item.get("access") or "").strip().lower()
+    if access in ("personal",):
+        return workspace, person, selected
+    if access in ("local",):
+        return workspace, person, selected
+    if access in ("regional", "regional_admin", "central"):
+        return "", person, selected
+    if access:
+        try:
+            from app.upload_acl import country_workspace_map
+
+            country_ws = country_workspace_map().get(access) or []
+            if country_ws:
+                return ",".join(country_ws), person, selected
+        except Exception:
+            pass
+    return workspace, person, selected
 
 
 def users_db_path() -> Path:
@@ -70,7 +130,6 @@ def _row_to_user(row: sqlite3.Row) -> dict[str, Any]:
         "id": int(row["id"]),
         "username": str(row["username"] or ""),
         "password_hash": str(row["password_hash"] or ""),
-        "access": str(row["access"] or ""),
         "workspace": str(row["workspace"] or ""),
         "person": str(row["person"] or ""),
         "selected_workspace": str(row["selected_workspace"] or ""),
@@ -78,13 +137,7 @@ def _row_to_user(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _public_user(user: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "username": user.get("username"),
-        "access": user.get("access"),
-        "workspace": user.get("workspace"),
-        "person": user.get("person"),
-        "selected_workspace": user.get("selected_workspace"),
-    }
+    return enrich_user_record(user)
 
 
 def _connect() -> sqlite3.Connection:
@@ -96,6 +149,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _migrate_drop_access_column(conn)
     conn.commit()
     _CONN = conn
     return conn
@@ -120,16 +174,15 @@ def import_users_json(path: Path | None = None) -> int:
                 continue
             username = str(item.get("username") or "").strip()
             password_hash = str(item.get("password_hash") or "").strip()
-            access = str(item.get("access") or "").strip()
-            if not username or not password_hash or not access:
+            if not username or not password_hash:
                 continue
+            workspace, person, selected = _legacy_fields_from_json(item)
             upsert_user(
                 username=username,
                 password_hash=password_hash,
-                access=access,
-                workspace=str(item.get("workspace") or "").strip(),
-                person=str(item.get("person") or "").strip(),
-                selected_workspace=str(item.get("selected_workspace") or "").strip(),
+                workspace=workspace,
+                person=person,
+                selected_workspace=selected,
             )
             imported += 1
     return imported
@@ -165,19 +218,19 @@ def _migrate_from_json(conn: sqlite3.Connection) -> int:
                 continue
             username = str(item.get("username") or "").strip()
             password_hash = str(item.get("password_hash") or "").strip()
-            access = str(item.get("access") or "").strip()
-            if not username or not password_hash or not access:
+            if not username or not password_hash:
                 continue
-            workspace = str(item.get("workspace") or "").strip() or None
-            person = str(item.get("person") or "").strip() or None
-            selected = str(item.get("selected_workspace") or "").strip() or None
+            workspace, person, selected = _legacy_fields_from_json(item)
+            workspace_val = workspace or None
+            person_val = person or None
+            selected_val = selected or None
             conn.execute(
                 """
                 INSERT OR IGNORE INTO users
-                    (username, password_hash, access, workspace, person, selected_workspace, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (username, password_hash, workspace, person, selected_workspace, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (username, password_hash, access, workspace, person, selected, now, now),
+                (username, password_hash, workspace_val, person_val, selected_val, now, now),
             )
             imported += 1
     return imported
@@ -224,7 +277,6 @@ def upsert_user(
     *,
     username: str,
     password_hash: str,
-    access: str,
     workspace: str = "",
     person: str = "",
     selected_workspace: str = "",
@@ -232,9 +284,6 @@ def upsert_user(
     name = (username or "").strip()
     if not name:
         raise ValueError("username is required")
-    access_s = (access or "").strip()
-    if not access_s:
-        raise ValueError("access is required")
     token = (password_hash or "").strip()
     if not token:
         raise ValueError("password_hash is required")
@@ -253,20 +302,20 @@ def upsert_user(
             conn.execute(
                 """
                 UPDATE users
-                SET password_hash = ?, access = ?, workspace = ?, person = ?,
+                SET password_hash = ?, workspace = ?, person = ?,
                     selected_workspace = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (token, access_s, ws, person_s, selected, now, int(row["id"])),
+                (token, ws, person_s, selected, now, int(row["id"])),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO users
-                    (username, password_hash, access, workspace, person, selected_workspace, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (username, password_hash, workspace, person, selected_workspace, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, token, access_s, ws, person_s, selected, now, now),
+                (name, token, ws, person_s, selected, now, now),
             )
         conn.commit()
     user = find_user(name)
@@ -285,45 +334,12 @@ def upsert_personal_login(
     ws = (workspace or "").strip()
     if not folder or not ws:
         raise ValueError("workspace and person are required")
-    token = (password_hash or "").strip()
-    if not token:
-        raise ValueError("password_hash is required")
-    now = _utc_now()
-    with _LOCK:
-        init_user_store(migrate_json=False)
-        conn = _connect()
-        row = conn.execute(
-            """
-            SELECT id, username FROM users
-            WHERE username = ? COLLATE NOCASE
-               OR (person = ? COLLATE NOCASE AND workspace = ? COLLATE NOCASE)
-            """,
-            (folder, folder, ws),
-        ).fetchone()
-        if row:
-            conn.execute(
-                """
-                UPDATE users
-                SET username = ?, password_hash = ?, access = 'personal',
-                    workspace = ?, person = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (folder, token, ws, folder, now, int(row["id"])),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO users
-                    (username, password_hash, access, workspace, person, selected_workspace, created_at, updated_at)
-                VALUES (?, ?, 'personal', ?, ?, NULL, ?, ?)
-                """,
-                (folder, token, ws, folder, now, now),
-            )
-        conn.commit()
-    user = find_user(folder)
-    if user is None:
-        raise RuntimeError(f"failed to upsert personal login {folder!r}")
-    return _public_user(user)
+    return upsert_user(
+        username=folder,
+        password_hash=password_hash,
+        workspace=ws,
+        person=folder,
+    )
 
 
 def password_hash_by_person_center() -> dict[tuple[str, str], str]:
@@ -340,8 +356,11 @@ def password_hash_by_person_center() -> dict[tuple[str, str], str]:
     out: dict[tuple[str, str], str] = {}
     for row in rows:
         person = str(row["person"] or "").strip()
-        center = str(row["workspace"] or "").strip()
+        raw_ws = str(row["workspace"] or "").strip()
         token = str(row["password_hash"] or "").strip()
-        if person and center and token:
-            out[(person, center)] = token
+        if not person or not token:
+            continue
+        for center in parse_workspaces(raw_ws) or ([raw_ws] if raw_ws else []):
+            if center:
+                out[(person, center)] = token
     return out

@@ -151,7 +151,7 @@ export interface CentraleSyncStatus {
   workspace: string;
   /** Fixed identity from client_config ``workspace`` (does not follow switcher). */
   author?: string;
-  /** regional | local | personal | country — from client_config ``access``. */
+  /** personal | local | regional_admin | legacy country (file config). */
   access?: string;
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
@@ -163,7 +163,6 @@ export interface CentraleSyncStatus {
   last_event_id?: number;
   notifications?: SyncNotification[];
   port?: number;
-  role?: "local" | "regional_admin" | "central_admin";
   workspaces?: string[];
   data_epoch?: number;
   has_secrets?: boolean;
@@ -219,7 +218,7 @@ export function ackCentralWinsRefusal(id: number): Promise<{
 export function getWorkspaces(): Promise<{
   workspaces: string[];
   workspace: string;
-  role: string;
+  access: string;
 }> {
   return getJson("/api/workspaces");
 }

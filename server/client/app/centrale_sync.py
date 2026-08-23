@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from shared.user_access import ACCESS_LOCAL, ACCESS_PERSONAL, ACCESS_REGIONAL_ADMIN, parse_workspaces
+
 from app.runtime import (
     exe_dir,
     is_country_access,
@@ -47,12 +49,11 @@ class HubConfig:
     workspace: str  # currently selected target (from access / switcher)
     author: str  # session label: workspace for local/personal; regional/country name otherwise
     person: str  # empty unless access=personal
-    access: str  # regional | local | personal | <country>
+    access: str  # personal | local | regional_admin | <legacy country>
     api_key: str
     enabled: bool
     port: int
-    role: str  # "local" | "regional_admin"
-    workspaces: tuple[str, ...] = ()  # locked targets for local/personal; country list; empty = all (regional)
+    workspaces: tuple[str, ...] = ()  # locked targets for local/personal; allow-list; empty = all
     username: str = ""
     auth_required: bool = False
 
@@ -137,35 +138,43 @@ def _build_hub_config(
     username: str = "",
     auth_required: bool = False,
     apply_process_runtime: bool = True,
+    workspaces_allowlist: list[str] | None = None,
 ) -> HubConfig:
     access = normalize_access(access)
+    parsed_ws = (
+        [str(w).strip() for w in workspaces_allowlist if str(w).strip()]
+        if workspaces_allowlist is not None
+        else parse_workspaces(workspace_key)
+    )
 
-    if access == "regional":
-        person = ""
-        role = "regional_admin"
-        author = "regional"
-        workspaces: tuple[str, ...] = ()
-        workspace = (selected or "").strip()
-        if not workspace:
-            workspace = _first_hub_workspace(url, api_key=api_key) or "dkg"
-    elif access == "personal":
-        if not workspace_key:
-            raise ValueError('access=personal requires a non-empty "workspace"')
+    if access == ACCESS_PERSONAL:
+        if not person_key:
+            raise ValueError("personal login requires a non-empty person")
+        if not parsed_ws and workspace_key:
+            parsed_ws = parse_workspaces(workspace_key)
+        if not parsed_ws:
+            raise ValueError("personal login requires a workspace")
         person = person_key
-        if not person:
-            raise ValueError('access=personal requires a non-empty "person"')
-        role = "local"
-        author = workspace_key
-        workspaces = (author,)
-        workspace = author
-    elif access == "local":
-        if not workspace_key:
-            raise ValueError('access=local requires a non-empty "workspace"')
+        author = username or person_key
+        workspaces = (parsed_ws[0],)
+        workspace = parsed_ws[0]
+    elif access == ACCESS_LOCAL:
+        if not parsed_ws:
+            raise ValueError("local login requires a workspace")
         person = ""
-        role = "local"
-        author = workspace_key
-        workspaces = (author,)
-        workspace = author
+        author = username or parsed_ws[0]
+        workspaces = (parsed_ws[0],)
+        workspace = parsed_ws[0]
+    elif access == ACCESS_REGIONAL_ADMIN:
+        person = ""
+        author = username or "regional_admin"
+        if parsed_ws:
+            workspaces = tuple(parsed_ws)
+            preferred = (selected or "").strip()
+            workspace = preferred if preferred in workspaces else workspaces[0]
+        else:
+            workspaces = ()
+            workspace = (selected or "").strip() or _first_hub_workspace(url, api_key=api_key) or "dkg"
     else:
         country_ws = _hub_country_workspaces(url, access, api_key=api_key)
         if country_ws is None:
@@ -175,12 +184,11 @@ def _build_hub_config(
                 else ""
             )
             raise ValueError(
-                f"access={access!r} is not regional/local/personal "
+                f"access={access!r} is not personal/local/regional_admin "
                 f"and is not a country listed in hub upload_acl.json{hint}"
             )
         person = ""
-        role = "regional_admin"
-        author = access
+        author = username or access
         workspaces = tuple(country_ws)
         preferred = (selected or "").strip()
         if preferred and preferred in workspaces:
@@ -218,7 +226,6 @@ def _build_hub_config(
         api_key=api_key,
         enabled=enabled,
         port=port,
-        role=role,
         workspaces=workspaces,
         username=username,
         auth_required=auth_required,
@@ -270,7 +277,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             api_key=api_key,
             enabled=enabled,
             port=port,
-            access="regional",
+            access=ACCESS_REGIONAL_ADMIN,
             workspace_key="",
             person_key="",
             selected=bootstrap_ws,
@@ -291,7 +298,6 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
                 api_key=_file_profile_cache.api_key,
                 enabled=_file_profile_cache.enabled,
                 port=_file_profile_cache.port,
-                role=_file_profile_cache.role,
                 workspaces=_file_profile_cache.workspaces,
                 username=_file_profile_cache.username,
                 auth_required=False,
@@ -304,8 +310,10 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
         os.environ.get("CLIENT_PERSON", "").strip()
         or str(file_cfg.get("person") or "").strip()
     )
-    default_port = 8300 if access == "regional" or access not in ("local", "personal") else (
-        8302 if workspace_key == "jl" else 8301
+    default_port = (
+        8300
+        if access == ACCESS_REGIONAL_ADMIN or is_country_access(access)
+        else (8302 if workspace_key == "jl" else 8301)
     )
     try:
         port = int(
@@ -341,6 +349,10 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
     person_key = str(session.get("person") or "").strip()
     selected = str(session.get("selected_workspace") or "").strip() or None
     username = str(session.get("username") or "").strip()
+    workspaces_raw = session.get("workspaces")
+    workspaces_allowlist: list[str] | None = None
+    if isinstance(workspaces_raw, list):
+        workspaces_allowlist = [str(w).strip() for w in workspaces_raw if str(w).strip()]
     return _build_hub_config(
         url=str(base["url"]),
         api_key=str(base["api_key"]),
@@ -353,6 +365,7 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
         username=username,
         auth_required=True,
         apply_process_runtime=False,
+        workspaces_allowlist=workspaces_allowlist,
     )
 
 
@@ -539,7 +552,7 @@ def scope_consent_ready(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _events_viewer() -> str:
     # Hub protocol still uses viewer=central for unrestricted event fan-out.
-    return "central" if load_config().access == "regional" else "local"
+    return "central" if is_regional_admin() else "local"
 
 
 def _push_source() -> str:
@@ -646,15 +659,14 @@ def sync_status() -> dict[str, Any]:
         "last_event_id": _last_event_id,
         "notifications": notes,
         "port": cfg.port,
-        "role": cfg.role,
         "workspaces": (
             list(cfg.workspaces)
             if cfg.workspaces
-            else (list_hub_workspaces() if cfg.role == "regional_admin" else [cfg.workspace])
+            else (list_hub_workspaces() if is_regional_admin() else [cfg.workspace])
         ),
         "data_epoch": _data_epoch,
         "has_secrets": _cached_has_secrets,
-        "layout": "regional" if cfg.role == "regional_admin" else "local",
+        "layout": "regional_admin" if is_regional_admin() else "local",
         "consent_ready": scope_consent_ready(consent_ready),
     }
 
@@ -714,7 +726,9 @@ def _queue_notification(display_path: str) -> None:
 
 def list_hub_workspaces() -> list[str]:
     cfg = load_config()
-    if cfg.access == "regional":
+    if cfg.workspaces:
+        return list(cfg.workspaces)
+    if is_regional_admin():
         if not cfg.enabled:
             return [cfg.workspace] if cfg.workspace else []
         try:
@@ -741,7 +755,7 @@ def poll_central_events() -> dict[str, Any]:
             "viewer": _events_viewer(),
             "since_id": _last_event_id,
         }
-        if cfg.access != "regional":
+        if not is_regional_admin():
             params["workspace"] = cfg.workspace
         q = urllib.parse.urlencode(params)
         data = hub_request("GET", f"/api/events?{q}", timeout=10.0)
@@ -771,26 +785,29 @@ def switch_workspace(workspace: str) -> dict[str, Any]:
     global _last_error, _last_event_id, _data_epoch
     cfg = load_config()
     ws = workspace.strip()
-    if cfg.role != "regional_admin":
-        return {"ok": False, "error": "Workspace switch requires access=regional or a country"}
-    names = list_hub_workspaces()
-    if names and ws not in names:
+    if not is_regional_admin():
+        return {"ok": False, "error": "Workspace switch requires a multi-workspace login"}
+    allow = list(cfg.workspaces)
+    if allow and ws not in allow:
         return {"ok": False, "error": f"Workspace {ws!r} not allowed"}
-    allowed = list(cfg.workspaces) if is_country_access(cfg.access) else []
+    if not allow:
+        names = list_hub_workspaces()
+        if names and ws not in names:
+            return {"ok": False, "error": f"Workspace {ws!r} not allowed"}
     from app.runtime import current_username
 
     if cfg.auth_required and current_username():
         set_runtime(
             workspace=ws,
-            allowed_workspaces=allowed,
+            allowed_workspaces=allow,
             access=cfg.access,
             username=cfg.username,
-            workspace_key=cfg.workspace if cfg.access in ("local", "personal") else "",
+            workspace_key=cfg.workspace if cfg.access in (ACCESS_LOCAL, ACCESS_PERSONAL) else "",
             person_key=cfg.person,
             request_scoped=True,
         )
     else:
-        set_runtime(workspace=ws, allowed_workspaces=allowed, access=cfg.access)
+        set_runtime(workspace=ws, allowed_workspaces=allow, access=cfg.access)
         load_config(force_reload=True)
     with _state_lock:
         _pending_notifications.clear()

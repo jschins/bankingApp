@@ -11,13 +11,19 @@ from pathlib import Path
 from typing import Any
 
 from shared.passwords import hash_password, verify_password
+from shared.user_access import (
+    ACCESS_LOCAL,
+    ACCESS_PERSONAL,
+    ACCESS_REGIONAL_ADMIN,
+    deduce_access,
+    parse_workspaces,
+)
 
 from app.runtime import normalize_access
 
 COOKIE_NAME = "boekhouding_session"
 SESSION_TTL_SEC = 12 * 3600
 
-# Re-export for scripts that import from app.auth.
 __all__ = [
     "COOKIE_NAME",
     "SESSION_TTL_SEC",
@@ -73,7 +79,6 @@ def session_secret() -> str:
     secret = str(read_client_file_cfg().get("session_secret") or "").strip()
     if secret:
         return secret
-    # Dev fallback — set session_secret in client_config for real deploys.
     return "dev-insecure-boekhouding-session-secret"
 
 
@@ -100,14 +105,28 @@ def authenticate(username: str, password: str) -> dict[str, Any] | None:
 
 
 def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
-    access = normalize_access(str(user.get("access") or "local"))
-    workspace = str(user.get("workspace") or "").strip()
     person = str(user.get("person") or "").strip()
+    workspaces_raw = user.get("workspaces")
+    if isinstance(workspaces_raw, list):
+        workspaces = [str(w).strip() for w in workspaces_raw if str(w).strip()]
+    else:
+        workspaces = parse_workspaces(str(user.get("workspace") or ""))
+    access = normalize_access(deduce_access(person=person, workspaces=workspaces))
     selected = str(user.get("selected_workspace") or "").strip()
+    username = str(user.get("username") or "").strip()
+
+    if access == ACCESS_PERSONAL:
+        workspace = workspaces[0] if workspaces else parse_workspaces(str(user.get("workspace") or ""))[0]
+    elif access == ACCESS_LOCAL:
+        workspace = workspaces[0]
+    else:
+        workspace = selected or (workspaces[0] if workspaces else "")
+
     return {
-        "username": str(user.get("username") or "").strip(),
+        "username": username,
         "access": access,
         "workspace": workspace,
+        "workspaces": workspaces,
         "person": person,
         "selected_workspace": selected,
     }
