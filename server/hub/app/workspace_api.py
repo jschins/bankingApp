@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Iterator
 
 from app import store
@@ -525,7 +526,137 @@ def refresh_person(
     }
 
 
-_DEFAULT_REDIRECT = "https://deoudegracht.nl/banking-callback.html"
+
+# Seed password for new personal logins created by add-person (must match client users.json).
+_DEFAULT_PERSONAL_PASSWORD_HASH = (
+    "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ"
+)
+
+
+def _users_json_targets() -> list[Path]:
+    """Hub + client copies of users.json that should receive new personal logins."""
+    from app.runtime import data_root
+    from app.upload_acl import users_json_path
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (
+        users_json_path(),
+        data_root() / "users.json",
+        data_root().parent / "client" / "dist" / "users.json",
+    ):
+        key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(candidate)
+    return paths
+
+
+def ensure_personal_login_user(*, workspace: str, person: str) -> dict[str, Any]:
+    """Upsert a personal login (username=person, password changeme) into users.json copies."""
+    ws = _clean_ws(workspace)
+    folder = _valid_folder_name(person)
+    username = folder
+    entry = {
+        "username": username,
+        "password_hash": _DEFAULT_PERSONAL_PASSWORD_HASH,
+        "access": "personal",
+        "workspace": ws,
+        "person": folder,
+    }
+    written: list[str] = []
+    for path in _users_json_targets():
+        try:
+            if path.is_file():
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                raw = {"users": []}
+        except (OSError, json.JSONDecodeError):
+            raw = {"users": []}
+        if not isinstance(raw, dict):
+            raw = {"users": []}
+        users = raw.get("users")
+        if not isinstance(users, list):
+            users = []
+        updated = False
+        next_users: list[Any] = []
+        for item in users:
+            if not isinstance(item, dict):
+                next_users.append(item)
+                continue
+            same_user = str(item.get("username") or "").strip().lower() == username.lower()
+            same_person = (
+                str(item.get("person") or "").strip().lower() == folder.lower()
+                and str(item.get("workspace") or "").strip().lower() == ws.lower()
+            )
+            if same_user or same_person:
+                next_users.append({**item, **entry})
+                updated = True
+            else:
+                next_users.append(item)
+        if not updated:
+            next_users.append(entry)
+        raw["users"] = next_users
+        path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        written.append(str(path))
+    return {
+        "username": username,
+        "password": "changeme",
+        "workspace": ws,
+        "person": folder,
+        "users_json": written,
+    }
+
+
+def _pem_profile_template(
+    *,
+    person: str,
+    country: str,
+    aspsp: str,
+    app_id: str = "",
+) -> dict[str, Any]:
+    """Canonical profile shape: ``person`` + ``connections[]`` only (see anton_schins)."""
+    conn: dict[str, Any] = {
+        "aspsp": aspsp,
+        "country": country,
+        "accounts": [],
+    }
+    app_id = str(app_id or "").strip()
+    if app_id:
+        conn = {"app_id": app_id, **conn}
+    return {"person": person, "connections": [conn]}
+
+
+def _set_profile_app_id(profile: dict[str, Any], app_id: str) -> dict[str, Any]:
+    connections = profile.get("connections")
+    if not isinstance(connections, list):
+        connections = []
+    aspsp = ""
+    country = ""
+    conn: dict[str, Any] | None = None
+    for item in connections:
+        if not isinstance(item, dict):
+            continue
+        item_aspsp = str(item.get("aspsp") or "").strip()
+        item_country = str(item.get("country") or "").strip()
+        if item_aspsp and item_country:
+            aspsp, country = item_aspsp, item_country
+            conn = item
+            break
+    if not aspsp:
+        aspsp = str(profile.get("aspsp") or "ING")
+    if not country:
+        country = str(profile.get("country") or "NL")
+    if conn is None:
+        conn = {"aspsp": aspsp, "country": country, "accounts": []}
+        connections.append(conn)
+    conn["app_id"] = app_id
+    profile["connections"] = connections
+    for key in ("app_id", "key_file", "redirect_url", "aspsp", "country", "account_name"):
+        profile.pop(key, None)
+    return profile
 
 
 _FOLDER_NAME_MAX = 40
@@ -548,11 +679,10 @@ def create_person(
     workspace: str,
     *,
     folder: str,
-    account_name: str,
+    account_name: str = "",
     mode: str = "pem",
     country: str = "NL",
     aspsp: str = "ING",
-    redirect_url: str | None = None,
     initial_balance: str | None = None,
     account_number: str | None = None,
 ) -> dict[str, Any]:
@@ -569,8 +699,6 @@ def create_person(
     if mode_s not in {"pem", "excel"}:
         raise ValueError("mode must be 'pem' or 'excel'")
     holder = (account_name or "").strip()
-    if mode_s == "pem" and not holder:
-        raise ValueError("account holder name is required")
     if mode_s == "excel" and not holder:
         raise ValueError("account holder name is required")
     account_no = (account_number or "").strip()
@@ -580,9 +708,6 @@ def create_person(
     aspsp_s = (aspsp or "ING").strip()
     if not aspsp_s:
         raise ValueError("aspsp is required")
-    redirect = (redirect_url or _DEFAULT_REDIRECT).strip()
-    if mode_s == "pem" and not redirect.startswith("https://"):
-        raise ValueError("redirect_url must be https://…")
 
     with _workspace_scope(workspace) as ws:
         root = store.require_workspace_dir(ws)
@@ -603,8 +728,6 @@ def create_person(
         )
         if mode_s == "excel":
             # Excel mode: no secret folder; keep zeroed categories and seed opening balance.
-            import json
-
             amount_text = str(initial_balance or "0").strip().replace(",", ".")
             try:
                 amount = float(amount_text)
@@ -635,6 +758,7 @@ def create_person(
             totals["account_balances"] = balances
             totals_path.write_text(json.dumps(totals, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             refresh_people()
+            login = ensure_personal_login_user(workspace=ws, person=folder_name)
             return {
                 "ok": True,
                 "workspace": ws,
@@ -644,25 +768,23 @@ def create_person(
                 "account_holder": holder,
                 "account_number": account_no or "onbekend",
                 "initial_balance": f"{amount:.2f}",
+                "login": login,
             }
 
         secret_dir = target / "secret"
         secret_dir.mkdir(parents=True, exist_ok=False)
         (secret_dir / store.PERSONAL_CATEGORIES).write_text("{}\n", encoding="utf-8")
-        profile = {
-            "person": folder_name,
-            "app_id": "",
-            "key_file": "",
-            "country": country_s,
-            "aspsp": aspsp_s,
-            "redirect_url": redirect,
-            "account_name": holder,
-        }
+        profile = _pem_profile_template(
+            person=folder_name,
+            country=country_s,
+            aspsp=aspsp_s,
+        )
         (secret_dir / "profile.json").write_text(
             json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         refresh_people()
+        login = ensure_personal_login_user(workspace=ws, person=folder_name)
 
     return {
         "ok": True,
@@ -670,8 +792,8 @@ def create_person(
         "folder": folder_name,
         "person": folder_name,
         "mode": "pem",
-        "account_name": holder,
         "profile": profile,
+        "login": login,
         "enable_banking_url": "https://enablebanking.com/cp/applications",
     }
 
@@ -715,8 +837,7 @@ def upload_person_pem(
         if not isinstance(profile, dict):
             profile = {}
         profile["person"] = person
-        profile["app_id"] = stem
-        profile["key_file"] = pem_path.name
+        profile = _set_profile_app_id(profile, stem)
         profile_path.write_text(
             json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

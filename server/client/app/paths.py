@@ -5,7 +5,7 @@ import json
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from app.runtime import app_root
 from app.yearpath import current_year
@@ -64,7 +64,30 @@ def _read_person_short(profile_path: Path) -> str:
     return person
 
 
-def _resolve_private_key(secret_dir: Path) -> Path:
+def app_id_from_profile_data(data: dict[str, Any]) -> str:
+    """Application id from ``connections[]`` (preferred) or legacy top-level ``app_id``."""
+    connections = data.get("connections")
+    if isinstance(connections, list):
+        for conn in connections:
+            if not isinstance(conn, dict):
+                continue
+            app_id = str(conn.get("app_id") or "").strip()
+            if app_id:
+                return app_id
+    return str(data.get("app_id") or "").strip()
+
+
+def _resolve_private_key(secret_dir: Path, profile_path: Path | None = None) -> Path:
+    if profile_path is not None and profile_path.is_file():
+        try:
+            data = json.loads(profile_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        app_id = app_id_from_profile_data(data if isinstance(data, dict) else {})
+        if app_id:
+            candidate = secret_dir / f"{app_id}.pem"
+            if candidate.is_file():
+                return candidate.resolve()
     pem_files = sorted(secret_dir.glob("*.pem"))
     if len(pem_files) == 1:
         return pem_files[0].resolve()

@@ -394,7 +394,6 @@ class CreatePersonRequest(BaseModel):
     mode: str = "pem"
     country: str = "NL"
     aspsp: str = "ING"
-    redirect_url: str | None = None
     initial_balance: str | None = None
     account_number: str | None = None
 
@@ -696,11 +695,26 @@ def consent_callback(
 
     if error:
         detail = error_description or error
+        hint = ""
+        if str(error or "").strip().lower() == "invalid_request":
+            hint = (
+                "<p>For a new Enable Banking application, verify in "
+                "<a href='https://enablebanking.com/cp/applications'>Enable Banking Control Panel</a>:</p>"
+                "<ul>"
+                "<li>Redirect URL is exactly "
+                "<code>https://deoudegracht.nl/banking-callback.html</code> "
+                "(not localhost, no trailing slash)</li>"
+                "<li>ING (Netherlands) is linked with usage type <code>personal</code></li>"
+                "</ul>"
+                "<p>Then return to Boekhouding, get a <strong>new</strong> authorization link, "
+                "and try again (old links expire).</p>"
+            )
         return HTMLResponse(
             content=(
                 "<!doctype html><html><head><meta charset='utf-8'>"
                 "<title>Bank consent failed</title></head><body>"
                 f"<h1>Bank consent failed</h1><p>{detail}</p>"
+                f"{hint}"
                 "<p>You can close this tab and return to Boekhouding.</p>"
                 "</body></html>"
             ),
@@ -820,7 +834,6 @@ def api_create_person(
             mode=body.mode,
             country=body.country,
             aspsp=body.aspsp,
-            redirect_url=body.redirect_url,
             initial_balance=body.initial_balance,
             account_number=body.account_number,
         )
@@ -1182,19 +1195,28 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
         <ol>
           <li>Save the <code>.pem</code> on this laptop (do not rename if possible — stem becomes <code>app_id</code>).</li>
           <li>Return to this wizard and choose the file below.</li>
-          <li>Click <strong>Upload PEM &amp; fetch YTD</strong>.</li>
+          <li>Click <strong>Upload PEM</strong> — this only stores the key. Bank consent and download happen after personal login.</li>
         </ol>
       </div>
 
       <p style="margin-top:1rem">Upload the downloaded <code>.pem</code> (filename should be the Application ID):</p>
       <input id="pemFile" type="file" accept=".pem,application/x-pem-file,application/octet-stream"/>
       <div class="actions">
-        <button type="button" id="btnPem">Upload PEM &amp; fetch YTD</button>
+        <button type="button" id="btnPem">Upload PEM</button>
       </div>
     </div>
 
     <div id="step3" class="step">
       <p class="ok" id="doneMsg">Done.</p>
+      <div id="loginBox" class="remind" style="display:none;margin-top:0.75rem">
+        <h2>Next: personal login</h2>
+        <p class="note" style="margin-top:0">Open the client and sign in with:</p>
+        <dl>
+          <dt>Username</dt><dd><code id="loginUser">…</code></dd>
+          <dt>Password</dt><dd><code>changeme</code></dd>
+        </dl>
+        <p class="note">After login, start bank consent (authorization URL), then fetch transactions from 1 January of the current year.</p>
+      </div>
       <pre id="fetchOut" style="white-space:pre-wrap;font-size:0.8rem;background:#f8fafc;padding:0.75rem;overflow:auto"></pre>
     </div>
 
@@ -1234,6 +1256,7 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
 
     function applyModeUi() {
       const excel = mode() === "excel";
+      document.getElementById("rowHolder").style.display = excel ? "" : "none";
       document.getElementById("rowAccountNumber").style.display = excel ? "" : "none";
       document.getElementById("rowInitial").style.display = excel ? "" : "none";
       document.getElementById("pemReference").style.display = excel ? "none" : "";
@@ -1259,24 +1282,38 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
       }
     }
 
+    function showLoginHint(payload) {
+      const login = payload && payload.login;
+      const box = document.getElementById("loginBox");
+      const userEl = document.getElementById("loginUser");
+      if (!login) {
+        box.style.display = "none";
+        return;
+      }
+      userEl.textContent = login.username || payload.folder || "";
+      box.style.display = "";
+    }
+
     document.getElementById("btnCreate").onclick = async () => {
       errEl.textContent = "";
       const workspace = document.getElementById("workspace").value;
       const modeValue = mode();
       const folder = document.getElementById("folder").value.trim();
-      const holder = document.getElementById("accountHolder").value.trim();
       const body = {
         folder,
         mode: modeValue,
-        account_name: holder,
-        initial_balance: modeValue === "excel" ? document.getElementById("initialBalance").value : null,
-        account_number: modeValue === "excel" ? document.getElementById("accountNumber").value.trim() : null,
       };
+      if (modeValue === "excel") {
+        body.account_name = document.getElementById("accountHolder").value.trim();
+        body.initial_balance = document.getElementById("initialBalance").value;
+        body.account_number = document.getElementById("accountNumber").value.trim();
+      }
       try {
         created = await api("POST", `/api/local/${encodeURIComponent(workspace)}/people/create`, body);
         if (modeValue === "excel") {
           document.getElementById("doneMsg").textContent =
             `Excel person created: ${created.folder} (${created.workspace}), opening balance ${created.initial_balance}.`;
+          showLoginHint(created);
           document.getElementById("fetchOut").textContent = JSON.stringify(created, null, 2);
           showStep("step3");
           return;
@@ -1315,14 +1352,14 @@ Terms of service URL:  https://deoudegracht.nl/terms.html</pre>
         try { upData = upText ? JSON.parse(upText) : {}; } catch (_) { upData = { detail: upText }; }
         if (!up.ok) throw new Error(upData.detail || upText || up.statusText);
 
-        const fetchResult = await api(
-          "POST",
-          `/api/local/${encodeURIComponent(workspace)}/people/${encodeURIComponent(short)}/bootstrap-fetch`,
-          {}
-        );
         document.getElementById("doneMsg").textContent =
-          `PEM saved as ${upData.key_file}. Bootstrap fetch finished for ${short}.`;
-        document.getElementById("fetchOut").textContent = JSON.stringify(fetchResult, null, 2);
+          `PEM saved as ${upData.key_file}. Setup is complete — no download yet.`;
+        showLoginHint(created);
+        document.getElementById("fetchOut").textContent = JSON.stringify(
+          { pem: upData, login: created.login || null },
+          null,
+          2
+        );
         showStep("step3");
       } catch (e) {
         errEl.textContent = String(e.message || e);

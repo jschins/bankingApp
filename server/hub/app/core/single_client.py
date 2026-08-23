@@ -26,6 +26,8 @@ from shared.enable_banking.transactions import (
 
 import app.paths as paths
 
+DEFAULT_REDIRECT = "https://deoudegracht.nl/banking-callback.html"
+
 AIB_HISTORICAL_YEARS = 2
 AIB_ROLLING_DAYS = 90
 AIB_TZ = ZoneInfo("Europe/Dublin")
@@ -137,23 +139,45 @@ class FetchResult:
     account_errors: list[str] = field(default_factory=list)
 
 
+def _profile_bank_pair(profile: dict[str, Any]) -> tuple[str, str]:
+    """Bank ASPSP + country from ``connections[]`` (preferred) or legacy top-level keys."""
+    connections = profile.get("connections")
+    if isinstance(connections, list):
+        for conn in connections:
+            if not isinstance(conn, dict):
+                continue
+            aspsp = str(conn.get("aspsp") or "").strip()
+            country = str(conn.get("country") or "").strip()
+            if aspsp and country:
+                return aspsp, country
+    return str(profile.get("aspsp") or "").strip(), str(profile.get("country") or "").strip()
+
+
 class SingleDockerClient(EnableBankingClient):
     """Enable Banking client extended with AIB-aware transaction fetching."""
 
     @classmethod
     def from_profile(cls, profile: dict[str, Any]) -> SingleDockerClient:
-        app_id = str(profile.get("app_id") or "")
-        if not paths.PRIVATE_KEY_PATH.exists():
-            raise EnableBankingError(f"Private key file not found: {paths.PRIVATE_KEY_PATH}")
-        return cls(app_id, paths.PRIVATE_KEY_PATH.read_bytes())
+        app_id = profile_app_id(profile)
+        if not app_id:
+            raise EnableBankingError("profile.json connections[].app_id is required")
+        key_path = profile_pem_path(profile)
+        if not key_path.is_file():
+            raise EnableBankingError(f"Private key file not found: {key_path}")
+        return cls(app_id, key_path.read_bytes())
 
     def start_authorization(
         self, profile: dict[str, Any], valid_until: str, state: str | None = None
     ) -> dict[str, Any]:
+        aspsp, country = _profile_bank_pair(profile)
+        if not aspsp or not country:
+            raise EnableBankingError(
+                "profile.json connections[].aspsp and country are required"
+            )
         return super().start_authorization(
-            aspsp_name=profile["aspsp"],
-            country=profile["country"],
-            redirect_url=profile["redirect_url"],
+            aspsp_name=aspsp,
+            country=country,
+            redirect_url=DEFAULT_REDIRECT,
             valid_until=valid_until,
             state=state,
         )
@@ -199,11 +223,113 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def profile_app_id(profile: dict[str, Any]) -> str:
+    return paths.app_id_from_profile_data(profile)
+
+
+def profile_pem_path(profile: dict[str, Any]) -> Path:
+    app_id = profile_app_id(profile)
+    if app_id:
+        return paths.PROFILE_PATH.parent / f"{app_id}.pem"
+    return paths.PRIVATE_KEY_PATH
+
+
+def _find_connection_dict(
+    connections: list[dict[str, Any]], aspsp: str, country: str
+) -> dict[str, Any] | None:
+    key = _connection_key(aspsp, country)
+    for conn in connections:
+        if not isinstance(conn, dict):
+            continue
+        if _connection_key(str(conn.get("aspsp") or ""), str(conn.get("country") or "")) == key:
+            return conn
+    return None
+
+
+def _migrate_profile(raw: dict[str, Any], profile_path: Path) -> tuple[dict[str, Any], bool]:
+    profile = dict(raw)
+    changed = False
+    consent_path = profile_path.parent / "consent.json"
+    if consent_path.is_file():
+        try:
+            consent = _read_json(consent_path)
+        except (OSError, json.JSONDecodeError):
+            consent = {}
+        if isinstance(consent, dict):
+            if not profile.get("connections") and isinstance(consent.get("connections"), list):
+                profile["connections"] = consent["connections"]
+                changed = True
+            for key in ("last_redirect_input", "last_redirect_code", "last_redirect_code_at"):
+                if key in consent and key not in profile:
+                    profile[key] = consent[key]
+                    changed = True
+
+    legacy_app_id = str(profile.pop("app_id", "") or "").strip()
+    if profile.pop("key_file", None) is not None:
+        changed = True
+    if profile.pop("redirect_url", None) is not None:
+        changed = True
+
+    connections_raw = profile.get("connections")
+    connections: list[dict[str, Any]] = [
+        dict(item) for item in connections_raw if isinstance(item, dict)
+    ] if isinstance(connections_raw, list) else []
+
+    if legacy_app_id:
+        aspsp_hint, country_hint = _profile_bank_pair(profile)
+        conn = _find_connection_dict(connections, aspsp_hint, country_hint)
+        if conn is None:
+            connections.append(
+                {
+                    "app_id": legacy_app_id,
+                    "aspsp": aspsp_hint or None,
+                    "country": country_hint or None,
+                    "accounts": [],
+                }
+            )
+            changed = True
+        elif not str(conn.get("app_id") or "").strip():
+            conn["app_id"] = legacy_app_id
+            changed = True
+
+    top_aspsp = profile.pop("aspsp", None)
+    top_country = profile.pop("country", None)
+    if profile.pop("account_name", None) is not None:
+        changed = True
+    if top_aspsp or top_country:
+        changed = True
+        target = None
+        if connections and isinstance(connections[0], dict):
+            target = connections[0]
+        elif top_aspsp and top_country:
+            target = {"aspsp": top_aspsp, "country": top_country, "accounts": []}
+            connections.append(target)
+        if target is not None:
+            if top_aspsp and not target.get("aspsp"):
+                target["aspsp"] = top_aspsp
+            if top_country and not target.get("country"):
+                target["country"] = top_country
+
+    if connections != connections_raw:
+        profile["connections"] = connections
+        changed = True
+    elif "connections" not in profile:
+        profile["connections"] = []
+        changed = True
+
+    return profile, changed
+
+
 def load_profile() -> dict[str, Any]:
     if not paths.PROFILE_PATH.exists():
         raise EnableBankingError(f"Profile not found: {paths.PROFILE_PATH}")
-    profile = _read_json(paths.PROFILE_PATH)
-    country = str(profile.get("country") or "")
+    raw = _read_json(paths.PROFILE_PATH)
+    if not isinstance(raw, dict):
+        raise EnableBankingError(f"Profile is not a JSON object: {paths.PROFILE_PATH}")
+    profile, changed = _migrate_profile(raw, paths.PROFILE_PATH)
+    if changed:
+        _write_json(paths.PROFILE_PATH, profile)
+    _, country = _profile_bank_pair(profile)
     if country and len(country) != 2:
         raise EnableBankingError(
             f"profile.json country must be ISO 3166-1 alpha-2 (e.g. IE, NL), not {country!r}"
@@ -362,6 +488,7 @@ def _normalize_connection(conn: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict) and item.get("uid"):
                 accounts.append(_normalize_account(item))
     return {
+        "app_id": conn.get("app_id"),
         "aspsp": conn.get("aspsp"),
         "country": conn.get("country"),
         "session_id": conn.get("session_id"),
@@ -423,18 +550,40 @@ def _normalize_consent(record: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _consent_subset(profile: dict[str, Any]) -> dict[str, Any]:
+    connections = profile.get("connections") if isinstance(profile.get("connections"), list) else []
+    payload: dict[str, Any] = {
+        "person": profile.get("person", "unknown"),
+        "connections": connections,
+    }
+    for key in ("last_redirect_input", "last_redirect_code", "last_redirect_code_at"):
+        value = profile.get(key)
+        if value:
+            payload[key] = value
+    return _normalize_consent(payload)
+
+
+def _apply_consent_subset(profile: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_consent(record)
+    out: dict[str, Any] = {
+        "person": profile.get("person") or normalized.get("person", "unknown"),
+        "connections": normalized["connections"],
+    }
+    for key in ("last_redirect_input", "last_redirect_code", "last_redirect_code_at"):
+        if key in normalized:
+            out[key] = normalized[key]
+    return out
+
+
 def _load_consent() -> dict[str, Any]:
-    if not paths.CONSENT_PATH.exists():
+    if not paths.PROFILE_PATH.exists():
         return {"person": "unknown", "connections": []}
-    raw = _read_json(paths.CONSENT_PATH)
-    record = _normalize_consent(raw)
-    if "connections" not in raw or "enabled_account_uids" in raw or raw.get("aspsp"):
-        _save_consent(record)
-    return record
+    return _consent_subset(load_profile())
 
 
 def _save_consent(record: dict[str, Any]) -> None:
-    _write_json(paths.CONSENT_PATH, _normalize_consent(record))
+    profile = load_profile()
+    _write_json(paths.PROFILE_PATH, _apply_consent_subset(profile, record))
 
 
 def _find_connection(record: dict[str, Any], aspsp: str, country: str) -> dict[str, Any] | None:
@@ -483,10 +632,17 @@ def _build_connection(profile: dict[str, Any], session: dict[str, Any]) -> dict[
         for acc in session.get("accounts", [])
         if isinstance(acc, dict) and acc.get("uid")
     ]
+    existing = _profile_connection(_consent_subset(profile), profile)
+    app_id = str((existing or {}).get("app_id") or profile_app_id(profile) or "")
+    aspsp, country = _profile_bank_pair(profile)
+    if existing:
+        aspsp = str(existing.get("aspsp") or aspsp)
+        country = str(existing.get("country") or country)
     return _normalize_connection(
         {
-            "aspsp": profile["aspsp"],
-            "country": profile["country"],
+            "app_id": app_id or None,
+            "aspsp": aspsp,
+            "country": country,
             "session_id": session.get("session_id"),
             "valid_until": valid_until,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -496,7 +652,20 @@ def _build_connection(profile: dict[str, Any], session: dict[str, Any]) -> dict[
 
 
 def _profile_connection(record: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any] | None:
-    return _find_connection(record, str(profile.get("aspsp") or ""), str(profile.get("country") or ""))
+    aspsp, country = _profile_bank_pair(profile)
+    if aspsp and country:
+        found = _find_connection(record, aspsp, country)
+        if found is not None:
+            return found
+    app_id = profile_app_id(profile)
+    if app_id:
+        for conn in record.get("connections", []):
+            if isinstance(conn, dict) and str(conn.get("app_id") or "") == app_id:
+                return conn
+    for conn in record.get("connections", []):
+        if isinstance(conn, dict):
+            return conn
+    return None
 
 
 def _consent_person_matches(record: dict[str, Any], profile: dict[str, Any]) -> bool:
@@ -509,8 +678,8 @@ def _consent_person_matches(record: dict[str, Any], profile: dict[str, Any]) -> 
 
 
 def needs_consent_renewal() -> bool:
-    """True when the profile bank has no valid connection (for the consent banner)."""
-    if not paths.CONSENT_PATH.exists():
+    """True when the profile bank has no usable session (first consent or renewal)."""
+    if not paths.PROFILE_PATH.exists():
         return True
     try:
         profile = load_profile()
@@ -521,6 +690,13 @@ def needs_consent_renewal() -> bool:
         return True
     connection = _profile_connection(record, profile)
     if connection is None:
+        return True
+    if not str(connection.get("session_id") or "").strip():
+        return True
+    accounts = connection.get("accounts")
+    if not isinstance(accounts, list) or not any(
+        isinstance(acc, dict) and acc.get("uid") for acc in accounts
+    ):
         return True
     return _connection_expired(connection)
 
@@ -725,6 +901,28 @@ def _is_already_authorized_error(exc: EnableBankingError) -> bool:
     return "ALREADY_AUTHORIZED" in str(exc)
 
 
+def _reject_non_bank_auth_url(url: str) -> None:
+    """Ensure Enable Banking returned a bank login URL, not our callback (with or without error)."""
+    lower = url.lower()
+    if (
+        "127.0.0.1" in lower
+        or "localhost" in lower
+        or "/api/consent/callback" in lower
+        or "banking-callback.html" in lower
+        or "error=" in lower
+        or not lower.startswith("https://")
+    ):
+        hint = (
+            "Check the Enable Banking application for this person: redirect URL must be "
+            f"exactly {DEFAULT_REDIRECT!r}, ING (NL) must be linked as personal, "
+            "then request a fresh authorization link."
+        )
+        raise EnableBankingError(
+            "Enable Banking did not return a bank authorization URL "
+            f"(got {url!r}). {hint}"
+        )
+
+
 def get_authorization_url(
     *,
     workspace: str | None = None,
@@ -743,17 +941,7 @@ def get_authorization_url(
     url = str(auth.get("url") or "").strip()
     if not url:
         raise EnableBankingError("Enable Banking did not return an authorization URL.")
-    lower = url.lower()
-    if (
-        "127.0.0.1" in lower
-        or "localhost" in lower
-        or "/api/consent/callback" in lower
-        or not lower.startswith("https://")
-    ):
-        raise EnableBankingError(
-            "Enable Banking did not return a bank authorization URL "
-            f"(got {url!r}). Check redirect_url in profile.json."
-        )
+    _reject_non_bank_auth_url(url)
 
     ws = (workspace or active_workspace() or "").strip()
     short = (person_short or str(profile.get("person") or "").strip() or "").strip()
@@ -785,7 +973,7 @@ def _linked_accounts(
     renewed = False
 
     # A fresh redirect code must always create/save a session — do not skip when
-    # an older still-fetchable connection exists in consent.json.
+    # an older still-fetchable connection exists in profile.json.
     if redirect_code:
         try:
             session = client.create_session(_extract_code(redirect_code))
@@ -828,7 +1016,7 @@ def _linked_accounts(
 
 
 def complete_authorization(redirect_code: str) -> dict[str, Any]:
-    """Exchange a redirect code for a session and overwrite consent.json."""
+    """Exchange a redirect code for a session and update profile.json connections."""
     profile = load_profile()
     client = SingleDockerClient.from_profile(profile)
     try:

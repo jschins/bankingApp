@@ -47,7 +47,7 @@ def list_people(root: Path | None = None, *, year: str | None = None) -> list[Pe
 
         if secret.is_dir():
             try:
-                private_key = _resolve_private_key(secret)
+                private_key = _resolve_private_key(secret, profile if profile.is_file() else None)
             except (OSError, FileNotFoundError, ValueError):
                 private_key = _MISSING
 

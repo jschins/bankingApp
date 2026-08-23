@@ -56,10 +56,21 @@ type StoredRefreshStatus = {
   warnings: string[];
 };
 
-function loadStoredRefreshStatus(): StoredRefreshStatus | null {
+type RefreshStatusScope = {
+  workspace: string;
+  person: string;
+};
+
+function refreshStatusStorageKey(scope?: RefreshStatusScope | null): string {
+  if (scope?.workspace && scope?.person) {
+    return `${REFRESH_STATUS_KEY}:${scope.workspace}:${scope.person}`;
+  }
+  return REFRESH_STATUS_KEY;
+}
+
+function parseStoredRefreshStatus(raw: string | null): StoredRefreshStatus | null {
+  if (!raw) return null;
   try {
-    const raw = sessionStorage.getItem(REFRESH_STATUS_KEY);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredRefreshStatus | string;
     // Older builds stored a plain string summary.
     if (typeof parsed === "string") {
@@ -77,17 +88,78 @@ function loadStoredRefreshStatus(): StoredRefreshStatus | null {
   return null;
 }
 
-function saveStoredRefreshStatus(payload: StoredRefreshStatus): void {
+function storedRefreshMatchesPerson(
+  stored: StoredRefreshStatus | null,
+  person: string,
+): boolean {
+  if (!stored || !person) return false;
+  const needle = person.trim().toLowerCase();
+  if (!needle) return false;
+  if (!stored.results.length && !stored.warnings.length) return false;
+  const resultsOk = stored.results.every(
+    (r) => String(r.short || "").trim().toLowerCase() === needle
+  );
+  const warningsOk = stored.warnings.every((w) => {
+    const lower = w.toLowerCase();
+    return lower.startsWith(`${needle}:`) || lower.startsWith(`${needle} (`);
+  });
+  return resultsOk && warningsOk && (stored.results.length > 0 || stored.warnings.length > 0);
+}
+
+function filterRefreshStatusForPerson(
+  stored: StoredRefreshStatus | null,
+  person: string,
+): StoredRefreshStatus | null {
+  if (!stored || !person) return stored;
+  const needle = person.trim().toLowerCase();
+  return {
+    results: stored.results.filter(
+      (r) => String(r.short || "").trim().toLowerCase() === needle
+    ),
+    warnings: stored.warnings.filter((w) => {
+      const lower = w.toLowerCase();
+      return lower.startsWith(`${needle}:`) || lower.startsWith(`${needle} (`);
+    }),
+  };
+}
+
+function loadStoredRefreshStatus(scope?: RefreshStatusScope | null): StoredRefreshStatus | null {
   try {
-    sessionStorage.setItem(REFRESH_STATUS_KEY, JSON.stringify(payload));
+    const scoped = parseStoredRefreshStatus(
+      sessionStorage.getItem(refreshStatusStorageKey(scope))
+    );
+    if (scoped) return scoped;
+    if (scope?.person) {
+      // Drop stale global status from another personal login in the same tab.
+      sessionStorage.removeItem(REFRESH_STATUS_KEY);
+    }
+    return parseStoredRefreshStatus(sessionStorage.getItem(REFRESH_STATUS_KEY));
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveStoredRefreshStatus(
+  payload: StoredRefreshStatus,
+  scope?: RefreshStatusScope | null,
+): void {
+  try {
+    sessionStorage.setItem(refreshStatusStorageKey(scope), JSON.stringify(payload));
+    if (scope?.workspace && scope?.person) {
+      sessionStorage.removeItem(REFRESH_STATUS_KEY);
+    }
   } catch {
     /* ignore */
   }
 }
 
-function clearStoredRefreshStatus(): void {
+function clearStoredRefreshStatus(scope?: RefreshStatusScope | null): void {
   try {
-    sessionStorage.removeItem(REFRESH_STATUS_KEY);
+    sessionStorage.removeItem(refreshStatusStorageKey(scope));
+    if (!scope) {
+      sessionStorage.removeItem(REFRESH_STATUS_KEY);
+    }
   } catch {
     /* ignore */
   }
@@ -801,7 +873,10 @@ function LoginScreen({ onSuccess }: { onSuccess: (username: string) => void }) {
     setBusy(true);
     setError(null);
     login(username.trim(), password)
-      .then(() => onSuccess(username.trim()))
+      .then(() => {
+        clearStoredRefreshStatus();
+        onSuccess(username.trim());
+      })
       .catch((err: Error) => {
         setError(err.message.includes("401") ? "Invalid username or password" : err.message);
       })
@@ -862,9 +937,8 @@ function MainApp({
   const [fetchingShort, setFetchingShort] = useState<string | null>(null);
   const [personNewYear, setPersonNewYear] = useState<Record<string, boolean>>({});
   const [consentReady, setConsentReady] = useState<Record<string, boolean>>({});
-  const [refreshStatus, setRefreshStatus] = useState<StoredRefreshStatus | null>(() =>
-    loadStoredRefreshStatus()
-  );
+  const [refreshScope, setRefreshScope] = useState<RefreshStatusScope | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<StoredRefreshStatus | null>(null);
   const [hasSecrets, setHasSecrets] = useState(false);
   const [canAddPerson, setCanAddPerson] = useState(false);
   const [addPersonUrl, setAddPersonUrl] = useState<string | null>(null);
@@ -894,6 +968,43 @@ function MainApp({
           setAddPersonUrl(`${hub}/add-person`);
         } else {
           setAddPersonUrl(null);
+        }
+        // Personal login with PEM: probe refresh so first-time consent URL appears.
+        const person = (s.person || "").trim();
+        const scope =
+          scoped && ws && person ? { workspace: ws, person } : null;
+        setRefreshScope(scope);
+        const stored = loadStoredRefreshStatus(scope);
+        const scopedStored =
+          scope?.person ? filterRefreshStatusForPerson(stored, scope.person) : stored;
+        setRefreshStatus(scopedStored);
+        if (scoped && s.has_secrets && person && !storedRefreshMatchesPerson(stored, person)) {
+          const ytdFrom = `${new Date().getFullYear()}-01-01`;
+          setDateFrom(ytdFrom);
+          setDateTo(isoDate(new Date()));
+          setPersonNewYear((prev) => ({ ...prev, [person]: true }));
+          beginRefreshBusy();
+          setFetchingShort(person);
+          refreshPerson(person, {
+            date_from: ytdFrom,
+            date_to: isoDate(new Date()),
+            new_year: true,
+          })
+            .then((res) => {
+              if (res.matrix) setMatrix(res.matrix);
+              const nextResult = (res.results || [])[0];
+              const payload: StoredRefreshStatus = {
+                results: nextResult ? [nextResult] : [],
+                warnings: res.warnings || [],
+              };
+              saveStoredRefreshStatus(payload, scope);
+              setRefreshStatus(payload);
+            })
+            .catch((e: Error) => setError(e.message))
+            .finally(() => {
+              setFetchingShort(null);
+              endRefreshBusy();
+            });
         }
       })
       .catch(() => {
@@ -1116,7 +1227,7 @@ function MainApp({
       setPersonNewYear({});
       setConsentReady({});
     });
-    clearStoredRefreshStatus();
+    clearStoredRefreshStatus(refreshScope);
     afterPaint(() => {
       refreshAll({
         date_from: dateFrom || undefined,
@@ -1128,7 +1239,7 @@ function MainApp({
             results: res.results || [],
             warnings: res.warnings || [],
           };
-          saveStoredRefreshStatus(payload);
+          saveStoredRefreshStatus(payload, refreshScope);
           setRefreshStatus(payload);
           setSelection(null);
           setDetail(null);
@@ -1169,7 +1280,7 @@ function MainApp({
             ...(res.warnings || []),
           ];
           const payload: StoredRefreshStatus = { results, warnings };
-          saveStoredRefreshStatus(payload);
+          saveStoredRefreshStatus(payload, refreshScope);
           setRefreshStatus(payload);
           setSelection(null);
           setDetail(null);
@@ -1277,7 +1388,7 @@ function MainApp({
                           <>
                             {!awaitingPostConsentFetch ? (
                               <span>
-                                {r.short}: consent renewal required
+                                {r.short}: bank consent required
                                 {!r.authorization_url && !consentReady[r.short]
                                   ? " (no authorization URL)"
                                   : ""}
@@ -1294,7 +1405,7 @@ function MainApp({
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 >
-                                  {`renew ${r.short}`}
+                                  {`authorize ${r.short}`}
                                 </a>
                               </div>
                             ) : null}

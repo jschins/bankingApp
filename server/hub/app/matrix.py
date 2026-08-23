@@ -163,7 +163,8 @@ def recalculate_all(person_folders: list[str] | None = None) -> dict[str, Any]:
         else:
             to_run = packs
         for pack in to_run:
-            if not pack.has_secret_folder:
+            # Recategorize anyone with year data — not only Enable Banking (.pem) packs.
+            if not pack.categorized_path.is_file() and not pack.totals_path.is_file():
                 continue
             with bind_person(pack):
                 recategorize_transactions()
