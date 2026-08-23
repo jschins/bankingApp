@@ -88,24 +88,6 @@ function parseStoredRefreshStatus(raw: string | null): StoredRefreshStatus | nul
   return null;
 }
 
-function storedRefreshMatchesPerson(
-  stored: StoredRefreshStatus | null,
-  person: string,
-): boolean {
-  if (!stored || !person) return false;
-  const needle = person.trim().toLowerCase();
-  if (!needle) return false;
-  if (!stored.results.length && !stored.warnings.length) return false;
-  const resultsOk = stored.results.every(
-    (r) => String(r.short || "").trim().toLowerCase() === needle
-  );
-  const warningsOk = stored.warnings.every((w) => {
-    const lower = w.toLowerCase();
-    return lower.startsWith(`${needle}:`) || lower.startsWith(`${needle} (`);
-  });
-  return resultsOk && warningsOk && (stored.results.length > 0 || stored.warnings.length > 0);
-}
-
 function filterRefreshStatusForPerson(
   stored: StoredRefreshStatus | null,
   person: string,
@@ -156,9 +138,20 @@ function saveStoredRefreshStatus(
 
 function clearStoredRefreshStatus(scope?: RefreshStatusScope | null): void {
   try {
-    sessionStorage.removeItem(refreshStatusStorageKey(scope));
-    if (!scope) {
-      sessionStorage.removeItem(REFRESH_STATUS_KEY);
+    if (scope?.workspace && scope?.person) {
+      sessionStorage.removeItem(refreshStatusStorageKey(scope));
+      return;
+    }
+    // Clear every refresh-status key so one login cannot leak into the next.
+    const doomed: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (key && (key === REFRESH_STATUS_KEY || key.startsWith(`${REFRESH_STATUS_KEY}:`))) {
+        doomed.push(key);
+      }
+    }
+    for (const key of doomed) {
+      sessionStorage.removeItem(key);
     }
   } catch {
     /* ignore */
@@ -829,9 +822,11 @@ export default function App() {
           ? () => {
               logout()
                 .then(() => {
+                  clearStoredRefreshStatus();
                   setAuthenticated(false);
                 })
                 .catch(() => {
+                  clearStoredRefreshStatus();
                   setAuthenticated(false);
                 });
             }
@@ -957,43 +952,18 @@ function MainApp({
         } else {
           setAddPersonUrl(null);
         }
-        // Personal login with PEM: probe refresh so first-time consent URL appears.
+        // Personal login: restore this person's refresh status only (no auto-fetch).
         const person = (s.person || "").trim();
         const scope =
           scoped && ws && person ? { workspace: ws, person } : null;
         setRefreshScope(scope);
+        const defaults = previousMonthRange();
+        setDateFrom(defaults.from);
+        setDateTo(defaults.to);
         const stored = loadStoredRefreshStatus(scope);
         const scopedStored =
           scope?.person ? filterRefreshStatusForPerson(stored, scope.person) : stored;
         setRefreshStatus(scopedStored);
-        if (scoped && s.has_secrets && person && !storedRefreshMatchesPerson(stored, person)) {
-          const ytdFrom = `${new Date().getFullYear()}-01-01`;
-          setDateFrom(ytdFrom);
-          setDateTo(isoDate(new Date()));
-          setPersonNewYear((prev) => ({ ...prev, [person]: true }));
-          beginRefreshBusy();
-          setFetchingShort(person);
-          refreshPerson(person, {
-            date_from: ytdFrom,
-            date_to: isoDate(new Date()),
-            new_year: true,
-          })
-            .then((res) => {
-              if (res.matrix) setMatrix(res.matrix);
-              const nextResult = (res.results || [])[0];
-              const payload: StoredRefreshStatus = {
-                results: nextResult ? [nextResult] : [],
-                warnings: res.warnings || [],
-              };
-              saveStoredRefreshStatus(payload, scope);
-              setRefreshStatus(payload);
-            })
-            .catch((e: Error) => setError(e.message))
-            .finally(() => {
-              setFetchingShort(null);
-              endRefreshBusy();
-            });
-        }
       })
       .catch(() => {
         setHasSecrets(false);

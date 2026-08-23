@@ -725,6 +725,9 @@ def create_person(
         )
         refresh_people()
         login = ensure_personal_login_user(workspace=ws, person=folder_name)
+        from app import user_store
+
+        user_store.set_user_format(username=folder_name, format=user_store.FORMAT_SECRET)
 
     return {
         "ok": True,

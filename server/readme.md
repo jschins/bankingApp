@@ -63,29 +63,29 @@ Do **not** copy xlsx, transactions, or last year’s `files` list.
 
 ## User store `format` (bank upload layout)
 
-Personal users in `workspaces/users.db` have a **`format`** column. It records how uploads for that person are laid out under their year folder.
+Column on personal rows in `workspaces/users.db`. Non-personal logins always leave it **empty**.
 
-### 1. `format` is empty / NULL
+| Value | Meaning |
+|-------|---------|
+| *(empty)* | Non-personal, or personal not yet classified |
+| `secret` | Person has a `secret/` folder (Enable Banking / PEM) |
+| `multiple` | Year folder has **multiple** bank/format subfolders |
+| other (e.g. `natwest-csv`, `bos-csv`) | **Single** flat layout: all uploads in the year folder used this CSV format |
 
-Means the person is **not** on a single flat CSV layout yet. Either:
+### Split when a second format arrives
 
-- **1a.** there are already **multiple bank/format subfolders** under the year folder, or  
-- **1b.** the person has a **`secret/`** folder (Enable Banking / PEM flow).
+Only when `format` is a **concrete bank CSV value** (not empty / `secret` / `multiple`): if a new upload’s detected format **differs**:
 
-### 2. `format` has a single value (e.g. `ing`, `natwest`)
-
-Means: all existing uploads in the year folder (which has **no** bank subfolders) were loaded with that format.
-
-If a **new** file is uploaded whose detected format **differs** from the stored `format`:
-
-1. **2a.** Create a subfolder named after the **existing** format; move all current files from the year folder into it.  
-2. **2b.** Create a subfolder named after the **newly detected** format; write the new upload there.  
-3. Write **consolidated** results of the two folders back into the year folder (matrix / totals / categorized store at the year root).
+1. Create a subfolder named for the **existing** format; move all current files from the year folder into it.  
+2. Create a subfolder named for the **new** format; write the new upload there.  
+3. Set `format` to `multiple`.  
+4. Write **consolidated** results of the two folders into the year folder root.
 
 ### First upload and add-person
 
-- **First upload** for a person with empty `format` and a flat year folder: detect the file’s format and **write it into `users.db.format`**.  
-- **Add person**: insert a **new row** in `users.db` (personal login: `username` = person folder, `workspace` = center, `person` set, `format` empty until first upload).
+- **First CSV upload** with empty `format` and a flat year folder → store the detected format.  
+- **Add person (PEM)** → insert user row and set `format` to `secret`.  
+- **Add person (Excel)** → insert user row with empty `format` until first upload.
 
 ### Password
 

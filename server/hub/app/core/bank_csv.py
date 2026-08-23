@@ -253,6 +253,23 @@ def pack_for_bank_view(
 
 
 def person_uses_bank_subfolders(person: str, center: str) -> bool:
+    """True when the person stores CSV under ``YYYY/<bank>/`` subfolders.
+
+    Prefers ``users.db.format``: ``multiple`` → True; a single bank format or
+    ``secret`` → False. Falls back to discovering multiple bank folders on disk.
+    """
+    try:
+        from app import user_store
+
+        user = user_store.find_user(person)
+        if user is not None:
+            fmt = str(user.get("format") or "").strip().lower()
+            if fmt == user_store.FORMAT_MULTIPLE:
+                return True
+            if fmt == user_store.FORMAT_SECRET or user_store.is_single_bank_format(fmt):
+                return False
+    except Exception:  # noqa: BLE001
+        pass
     return len(person_csv_banks(person, center)) > 1
 
 

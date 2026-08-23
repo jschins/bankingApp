@@ -544,6 +544,8 @@ def save_upload(
         if not sheet_year:
             raise ValueError("No dated transaction entry found in CSV")
         y = parse_year(sheet_year)
+        grant = _split_flat_year_if_format_changed(grant, year=y, new_fmt=grant_fmt)
+        grant_fmt = grant.normalized_format()
         dest = grant_csv_data_rel(grant, y, safe_name)
         year_path = person_folder / y
         data_path = grant_csv_data_dir(grant, y)
@@ -739,20 +741,70 @@ def _maybe_record_first_upload_format(grant: UploadGrant) -> None:
     from app import user_store
 
     fmt = grant.normalized_format()
-    if not fmt:
+    if not fmt or not user_store.is_single_bank_format(fmt):
         return
     user = user_store.find_user(grant.person)
     if user is None:
         return
-    if str(user.get("format") or "").strip():
+    stored = str(user.get("format") or "").strip()
+    if stored:
         return
-    # Only set when year folder is still flat (no bank subfolders) — empty format
-    # otherwise means multi-folder or secret (see server/readme.md).
     from app.core.bank_csv import person_uses_bank_subfolders
 
     if person_uses_bank_subfolders(grant.person, grant.center):
         return
     user_store.set_user_format(username=grant.person, format=fmt)
+
+
+def _split_flat_year_if_format_changed(
+    grant: UploadGrant,
+    *,
+    year: str,
+    new_fmt: str,
+) -> UploadGrant:
+    """If DB format is a single bank CSV and upload differs, create two subfolders.
+
+    Moves existing year-root files into the old-format folder, points the grant at
+    the new-format folder, and sets ``users.db.format`` to ``multiple``.
+    """
+    from app import user_store
+    from app.core.bank_csv import (
+        default_bank_folder_for_format,
+        normalize_upload_format,
+    )
+
+    user = user_store.find_user(grant.person)
+    if user is None:
+        return grant
+    stored = str(user.get("format") or "").strip()
+    if not user_store.is_single_bank_format(stored):
+        return grant
+    old_fmt = normalize_upload_format(stored)
+    incoming = normalize_upload_format(new_fmt)
+    if not incoming or incoming == old_fmt:
+        return grant
+
+    old_folder = default_bank_folder_for_format(old_fmt)
+    new_folder = default_bank_folder_for_format(incoming)
+    year_path = resolve_under_data_root(grant.year_folder(year))
+    if not year_path.is_dir():
+        return grant
+
+    old_dir = year_path / old_folder
+    new_dir = year_path / new_folder
+    old_dir.mkdir(parents=True, exist_ok=True)
+    new_dir.mkdir(parents=True, exist_ok=True)
+
+    for child in list(year_path.iterdir()):
+        if not child.is_file() or child.name.startswith(".") or child.name.startswith("~$"):
+            continue
+        target = old_dir / child.name
+        if target.exists():
+            target = old_dir / f"{child.stem}_moved{child.suffix}"
+        child.rename(target)
+
+    user_store.set_user_format(username=grant.person, format=user_store.FORMAT_MULTIPLE)
+    return replace(grant, bank=new_folder, csv_format=incoming)
 
 
 def ensure_example_acl() -> Path:

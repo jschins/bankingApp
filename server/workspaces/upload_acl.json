@@ -1,107 +1,50 @@
 {
-
-  "countries": {
-
-    "netherlands": ["dkg", "jl"],
-
-    "united kingdom": ["gph", "brk"],
-
-    "sweden": [],
-
-    "ireland": []
-
-  },
-
   "bank modalities": {
-
     "BoS": "BoS-csv",
-
     "Natwest": "Natwest-csv",
-
     "RBS": "RBS-csv",
-
     "LLOYDS": "LLOYDS-csv"
-
   },
 
   "mappings": {
-
     "juleon prive": "192.168.1.107",
-
     "juleon ydigital": {
-
       "LAN dkg": "192.168.1.188",
-
       "LAN mamma": "192.168.178.49",
-
       "LAN admin": "192.168.20.33",
-
       "name": "desktop-sb23t6s",
-
       "tailscale": "100.87.15.71"
-
     },
-
     "anton prive": "192.168.1.53",
-
     "anton kantoor": "192.168.1.111",
-
     "mamma's laoptop": {
-
       "LAN admin": "192.168.178.16",
-
       "name": "laptop-aoa5ncau",
-
       "tailscale": "100.73.243.59"
-
     },
-
     "server": {
-
       "LAN dkg": "192.168.178.48",
-
       "name": "desktop-8bimc9l",
-
       "tailscale": "100.116.99.89"
-
     },
-
     "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write). Upload tokens are password_hash values from users.db (matched by person + workspace).",
-
     "upload_url": "https://desktop-sb23t6s.tail59b1e5.ts.net/upload?t=<password_hash>"
-
   },
-
   "hub_ips": [
-
     "10.240.128.31",
-
     "100.87.15.71",
-
     "100.73.243.59",
-
     "100.116.99.89",
-
     "192.168.20.33",
-
     "192.168.1.48",
-
     "192.168.7.230",
-
     "192.168.1.107",
-
     "192.168.1.111",
-
     "192.168.1.53",
-
     "192.168.178.16",
-
     "100.119.129.119",
-
     "192.168.1.188"
-
   ]
-
 }
 
 

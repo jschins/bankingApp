@@ -16,6 +16,9 @@ USERS_DB_FILENAME = "users.db"
 _LOCK = threading.RLock()
 _CONN: sqlite3.Connection | None = None
 
+FORMAT_SECRET = "secret"
+FORMAT_MULTIPLE = "multiple"
+
 # Stable upload-grant token (legacy scrypt string still accepted by /upload?t=…).
 DEFAULT_UPLOAD_TOKEN = (
     "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ"
@@ -47,6 +50,16 @@ def users_db_path() -> Path:
 def password_for_username(username: str) -> str:
     """Login password is identical to the username (temporary hard-coded rule)."""
     return str(username or "").strip()
+
+
+def is_single_bank_format(fmt: str | None) -> bool:
+    """True when ``format`` is a concrete bank CSV layout (not empty/secret/multiple)."""
+    value = str(fmt or "").strip().lower()
+    if not value or value in (FORMAT_SECRET, FORMAT_MULTIPLE):
+        return False
+    from app.core.bank_csv import is_csv_bank_format
+
+    return is_csv_bank_format(value)
 
 
 def _utc_now() -> str:
