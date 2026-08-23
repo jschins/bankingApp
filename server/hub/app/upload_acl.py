@@ -129,31 +129,10 @@ def load_acl_document() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-def _load_users_document() -> dict[str, Any]:
-    path = users_json_path()
-    if not path.is_file():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return raw if isinstance(raw, dict) else {}
-
-
 def _password_hash_by_person_center() -> dict[tuple[str, str], str]:
-    users = _load_users_document().get("users")
-    if not isinstance(users, list):
-        return {}
-    out: dict[tuple[str, str], str] = {}
-    for item in users:
-        if not isinstance(item, dict):
-            continue
-        person = str(item.get("person") or "").strip()
-        center = str(item.get("workspace") or "").strip()
-        token = str(item.get("password_hash") or "").strip()
-        if person and center and token:
-            out[(person, center)] = token
-    return out
+    from app import user_store
+
+    return user_store.password_hash_by_person_center()
 
 
 def discover_workspace_persons() -> list[tuple[str, str]]:
@@ -225,7 +204,7 @@ def hub_allowed_ips() -> frozenset[str]:
 
 
 def load_grants(*, force: bool = False) -> list[UploadGrant]:
-    """Build upload grants from workspace folders + ``users.json`` password hashes."""
+    """Build upload grants from workspace folders + user-store password hashes."""
     from app.core.bank_csv import discover_person_banks
 
     del force

@@ -66,7 +66,7 @@
 
     },
 
-    "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write). Upload tokens are password_hash values from users.json (matched by person + workspace).",
+    "info": "hub_ips lists IPs with full hub access; any IP may open /upload (token required to write). Upload tokens are password_hash values from users.db (matched by person + workspace).",
 
     "upload_url": "https://desktop-sb23t6s.tail59b1e5.ts.net/upload?t=<password_hash>"
 

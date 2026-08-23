@@ -1,4 +1,4 @@
-"""Print a scrypt password_hash for users.json.
+"""Print a scrypt password_hash for the hub user store.
 
 Usage:
   uv run python scripts/hash_password.py mypassword
@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT.parent.parent / "shared"))
 
-from app.auth import hash_password  # noqa: E402
+from shared.passwords import hash_password  # noqa: E402
 
 
 def main() -> None:

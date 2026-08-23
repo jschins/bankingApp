@@ -527,86 +527,30 @@ def refresh_person(
 
 
 
-# Seed password for new personal logins created by add-person (must match client users.json).
+# Seed password for new personal logins created by add-person.
 _DEFAULT_PERSONAL_PASSWORD_HASH = (
     "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ"
 )
 
 
-def _users_json_targets() -> list[Path]:
-    """Hub + client copies of users.json that should receive new personal logins."""
-    from app.runtime import data_root
-    from app.upload_acl import users_json_path
-
-    paths: list[Path] = []
-    seen: set[str] = set()
-    for candidate in (
-        users_json_path(),
-        data_root() / "users.json",
-        data_root().parent / "client" / "dist" / "users.json",
-    ):
-        key = str(candidate.resolve()) if candidate.exists() else str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        paths.append(candidate)
-    return paths
-
-
 def ensure_personal_login_user(*, workspace: str, person: str) -> dict[str, Any]:
-    """Upsert a personal login (username=person, password changeme) into users.json copies."""
+    """Upsert a personal login (username=person, password changeme) in users.db."""
+    from app import user_store
+
     ws = _clean_ws(workspace)
     folder = _valid_folder_name(person)
-    username = folder
-    entry = {
-        "username": username,
-        "password_hash": _DEFAULT_PERSONAL_PASSWORD_HASH,
-        "access": "personal",
-        "workspace": ws,
-        "person": folder,
-    }
-    written: list[str] = []
-    for path in _users_json_targets():
-        try:
-            if path.is_file():
-                raw = json.loads(path.read_text(encoding="utf-8"))
-            else:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                raw = {"users": []}
-        except (OSError, json.JSONDecodeError):
-            raw = {"users": []}
-        if not isinstance(raw, dict):
-            raw = {"users": []}
-        users = raw.get("users")
-        if not isinstance(users, list):
-            users = []
-        updated = False
-        next_users: list[Any] = []
-        for item in users:
-            if not isinstance(item, dict):
-                next_users.append(item)
-                continue
-            same_user = str(item.get("username") or "").strip().lower() == username.lower()
-            same_person = (
-                str(item.get("person") or "").strip().lower() == folder.lower()
-                and str(item.get("workspace") or "").strip().lower() == ws.lower()
-            )
-            if same_user or same_person:
-                next_users.append({**item, **entry})
-                updated = True
-            else:
-                next_users.append(item)
-        if not updated:
-            next_users.append(entry)
-        raw["users"] = next_users
-        path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        written.append(str(path))
+    user_store.init_user_store()
+    public = user_store.upsert_personal_login(
+        workspace=ws,
+        person=folder,
+        password_hash=_DEFAULT_PERSONAL_PASSWORD_HASH,
+    )
     return {
-        "username": username,
+        "username": public["username"],
         "password": "changeme",
         "workspace": ws,
         "person": folder,
-        "users_json": written,
+        "users_db": str(user_store.users_db_path()),
     }
 
 

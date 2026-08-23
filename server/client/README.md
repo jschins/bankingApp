@@ -11,7 +11,7 @@ Thin BFF + frontend. All data comes from the hub (no local workspace copies). Se
 | `person` | Required when `access` is `personal` (folder name, e.g. `juleon_schins`) |
 | `server_url` | Hub URL |
 | `port` | Client listen port |
-| `auth_enabled` | When `true`, one shared client: users log in; profiles come from `users.json` |
+| `auth_enabled` | When `true`, one shared client: users log in; credentials live in hub `users.db` |
 | `session_secret` | Cookie signing secret (required for real deploys when auth is on) |
 
 ### Multi-user login (`auth_enabled`)
@@ -20,10 +20,18 @@ When `auth_enabled` is `true`, the client listens on **`0.0.0.0`** (all interfac
 
 Logged-in browser users appear on the hub `:8200` session list (hostname from reverse-DNS when possible, username, and client IP).
 
-See `dist/client_config.auth.example.json` and `dist/users.json`. Seed password for sample users is `changeme`. Hash new passwords with:
+Users are stored in **`server/workspaces/users.db`** on the hub (auto-imported from legacy `users.json` on first hub start). Seed password for sample users is `changeme`. Hash new passwords with:
 
 ```powershell
 uv run python scripts/hash_password.py yourpassword
+```
+
+Manage users on the hub:
+
+```powershell
+cd server\hub
+uv run python scripts/user_admin.py import-json
+uv run python scripts/user_admin.py list
 ```
 
 ## Run

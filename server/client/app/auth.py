@@ -6,35 +6,42 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
 import time
 from pathlib import Path
 from typing import Any
 
-from app.runtime import exe_dir, is_frozen, normalize_access, project_root
+from shared.passwords import hash_password, verify_password
+
+from app.runtime import normalize_access
 
 COOKIE_NAME = "boekhouding_session"
 SESSION_TTL_SEC = 12 * 3600
-_SCRYPT_N = 2**14
-_SCRYPT_R = 8
-_SCRYPT_P = 1
-_SCRYPT_DKLEN = 32
+
+# Re-export for scripts that import from app.auth.
+__all__ = [
+    "COOKIE_NAME",
+    "SESSION_TTL_SEC",
+    "auth_enabled",
+    "authenticate",
+    "cookie_kwargs",
+    "decode_session",
+    "encode_session",
+    "hash_password",
+    "profile_from_user",
+    "session_secret",
+    "verify_password",
+]
 
 
 def config_dir() -> Path:
+    from app.runtime import exe_dir, is_frozen, project_root
+
     env = os.environ.get("CLIENT_CONFIG", "").strip()
     if env:
         return Path(env).resolve().parent
     if is_frozen():
         return exe_dir()
     return project_root() / "dist"
-
-
-def users_path() -> Path:
-    env = os.environ.get("CLIENT_USERS", "").strip()
-    if env:
-        return Path(env)
-    return config_dir() / "users.json"
 
 
 def read_client_file_cfg() -> dict[str, Any]:
@@ -70,81 +77,26 @@ def session_secret() -> str:
     return "dev-insecure-boekhouding-session-secret"
 
 
-def hash_password(password: str, *, salt: bytes | None = None) -> str:
-    salt_bytes = salt if salt is not None else secrets.token_bytes(16)
-    dig = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt_bytes,
-        n=_SCRYPT_N,
-        r=_SCRYPT_R,
-        p=_SCRYPT_P,
-        dklen=_SCRYPT_DKLEN,
-    )
-    return "$".join(
-        [
-            "scrypt",
-            str(_SCRYPT_N),
-            str(_SCRYPT_R),
-            str(_SCRYPT_P),
-            base64.urlsafe_b64encode(salt_bytes).decode("ascii").rstrip("="),
-            base64.urlsafe_b64encode(dig).decode("ascii").rstrip("="),
-        ]
-    )
-
-
-def verify_password(password: str, encoded: str) -> bool:
-    try:
-        kind, n_s, r_s, p_s, salt_b64, hash_b64 = encoded.split("$", 5)
-        if kind != "scrypt":
-            return False
-        n, r, p = int(n_s), int(r_s), int(p_s)
-        salt = base64.urlsafe_b64decode(salt_b64 + "==")
-        expected = base64.urlsafe_b64decode(hash_b64 + "==")
-        got = hashlib.scrypt(
-            password.encode("utf-8"),
-            salt=salt,
-            n=n,
-            r=r,
-            p=p,
-            dklen=len(expected),
-        )
-        return hmac.compare_digest(got, expected)
-    except (ValueError, TypeError, OSError):
-        return False
-
-
-def load_users() -> list[dict[str, Any]]:
-    path = users_path()
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    users = data.get("users") if isinstance(data, dict) else None
-    if not isinstance(users, list):
-        return []
-    return [u for u in users if isinstance(u, dict)]
-
-
-def find_user(username: str) -> dict[str, Any] | None:
-    needle = username.strip().lower()
-    if not needle:
-        return None
-    for user in load_users():
-        if str(user.get("username") or "").strip().lower() == needle:
-            return user
-    return None
-
-
 def authenticate(username: str, password: str) -> dict[str, Any] | None:
-    user = find_user(username)
-    if user is None:
+    """Verify credentials against the hub SQLite user store."""
+    from app.centrale_sync import hub_request, load_base_settings
+
+    if not (username or "").strip() or not password:
         return None
-    encoded = str(user.get("password_hash") or "")
-    if not encoded or not verify_password(password, encoded):
+    base = load_base_settings()
+    if not base.get("enabled"):
         return None
-    return user
+    try:
+        data = hub_request(
+            "POST",
+            "/api/auth/login",
+            body={"username": username.strip(), "password": password},
+            timeout=15.0,
+        )
+    except RuntimeError:
+        return None
+    user = data.get("user") if isinstance(data, dict) else None
+    return user if isinstance(user, dict) else None
 
 
 def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:

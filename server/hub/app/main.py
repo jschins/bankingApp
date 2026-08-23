@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import zipfile
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -15,7 +16,17 @@ from app import store
 
 API_KEY = os.environ.get("CENTRALE_API_KEY", "").strip()
 
-app = FastAPI(title="boekhouding-hub", version="0.1")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    from app import user_store
+
+    path = user_store.init_user_store()
+    print(f"user store ready: {path}")
+    yield
+
+
+app = FastAPI(title="boekhouding-hub", version="0.1", lifespan=_lifespan)
 
 # Bank redirect hop must stay reachable even when hub_ips is set.
 _HUB_IP_EXEMPT_PREFIXES = (
@@ -115,6 +126,32 @@ def require_api_key(authorization: str | None = Header(default=None)) -> None:
     expected = f"Bearer {API_KEY}"
     if authorization != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+class AuthLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/login")
+def api_auth_login(
+    body: AuthLoginRequest,
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    from app import user_store
+
+    user = user_store.authenticate_public(body.username, body.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid username or password")
+    return {"user": user}
+
+
+@app.get("/api/auth/users")
+def api_auth_users(_: None = Depends(require_api_key)) -> dict[str, Any]:
+    from app import user_store
+
+    user_store.init_user_store(migrate_json=False)
+    return {"users": user_store.list_users()}
 
 
 class FilesPayload(BaseModel):
