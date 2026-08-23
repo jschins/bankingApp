@@ -1,0 +1,41 @@
+{
+  "users": [
+    {
+      "username": "regional",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "regional"
+    },
+    {
+      "username": "netherlands",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "netherlands"
+    },
+    {
+      "username": "jl_local",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "local",
+      "workspace": "jl"
+    },
+    {
+      "username": "mark",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "personal",
+      "workspace": "brk",
+      "person": "mark_fox"
+    },
+    {
+      "username": "juleon",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "personal",
+      "workspace": "jl",
+      "person": "juleon_schins"
+    },
+    {
+      "username": "xavier",
+      "password_hash": "scrypt$16384$8$1$DqM8xC0un6VYeM0i4FwKcQ$sUhw7V7Wfd4Rz0PB9RoWEHVIVcNpNId2GM5QIU-8_fQ",
+      "access": "personal",
+      "workspace": "gph",
+      "person": "xavier_bosch"
+    }
+  ]
+}

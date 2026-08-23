@@ -145,29 +145,65 @@ def default_bank_folder_for_format(fmt: str) -> str:
     }.get(normalized, "")
 
 
-def person_csv_banks(person: str, center: str) -> list[str]:
-    """Distinct bank subfolder names configured for ``person`` via upload grants."""
-    from app.upload_acl import load_grants
+def _matches_modality_folder(name: str, modalities: dict[str, str]) -> bool:
+    if name in modalities:
+        return True
+    return any(name == mod or name.startswith(f"{mod}_") for mod in modalities)
 
-    banks: list[str] = []
-    seen: set[str] = set()
-    for grant in load_grants():
-        if grant.person != person or grant.center != center:
-            continue
-        if grant.is_bank_grant():
-            for folder in grant.banks:
-                if folder not in seen:
-                    seen.add(folder)
-                    banks.append(folder)
-            continue
-        if not is_csv_bank_format(grant.format):
-            continue
-        folder = (grant.bank or default_bank_folder_for_format(grant.format)).strip()
-        if not folder or folder in seen:
-            continue
-        seen.add(folder)
-        banks.append(folder)
-    return banks
+
+def detect_csv_format_from_bytes(data: bytes) -> str | None:
+    """Return normalized csv format from file headers, or ``None``."""
+    from app.core.bos_lloyds_csv_import import read_csv_rows_bytes as read_debit_credit
+    from app.core.natwest_csv_import import read_csv_rows_bytes as read_value_balance
+
+    try:
+        read_debit_credit(data)
+        return "bos-csv"
+    except (ValueError, OSError, UnicodeDecodeError):
+        pass
+    try:
+        read_value_balance(data)
+        return "natwest-csv"
+    except (ValueError, OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
+def infer_bank_folder_from_csv(data: bytes) -> str:
+    """Guess bank subfolder from uploaded CSV headers when exactly one modality matches."""
+    fmt = detect_csv_format_from_bytes(data)
+    if not fmt:
+        return ""
+    modalities = bank_modalities()
+    if fmt == "bos-csv":
+        candidates = [name for name, mapped in modalities.items() if mapped in DEBIT_CREDIT_FORMATS]
+    else:
+        candidates = [name for name, mapped in modalities.items() if mapped in VALUE_BALANCE_FORMATS]
+    if len(candidates) == 1:
+        return candidates[0]
+    return ""
+
+
+def discover_person_banks(person: str, center: str) -> tuple[str, ...]:
+    """Bank subfolder names already present under ``YYYY/`` (directory names only)."""
+    from app.yearpath import list_year_names
+
+    person_folder = data_root() / center / person
+    if not person_folder.is_dir():
+        return ()
+    modalities = bank_modalities()
+    found: set[str] = set()
+    for year in list_year_names(person_folder):
+        year_path = person_folder / year
+        for sub in list_year_bank_folders(year_path):
+            if _matches_modality_folder(sub, modalities):
+                found.add(sub)
+    return tuple(sorted(found))
+
+
+def person_csv_banks(person: str, center: str) -> list[str]:
+    """Distinct bank subfolder names for ``person`` (from workspace layout)."""
+    return list(discover_person_banks(person, center))
 
 
 def list_year_bank_folders(year_path: Path) -> list[str]:
