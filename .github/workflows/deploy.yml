@@ -1,0 +1,41 @@
+name: Deploy Website to Lightsail
+
+# This tells GitHub to run this script only when you push to the "main" branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Grab the latest code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Securely copy the files to your Droplet
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # We specify exactly what to copy so we don't copy the hidden .git folders
+          source: "src/,Caddyfile,Dockerfile,docker-compose.yml"
+          target: "~/bankingApp/server/client"
+          overwrite: true
+
+      # 3. Securely log into the Droplet and run the Docker update command
+      - name: Rebuild and Restart Docker
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/bankingApp/server/client
+            sudo docker compose up -d --build
