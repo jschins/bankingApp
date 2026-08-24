@@ -24,7 +24,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # We specify exactly what to copy so we don't copy the hidden .git folders
-          source: "src/,Caddyfile,Dockerfile,docker-compose.yml"
+          source: "server/client/,Caddyfile,Dockerfile,docker-compose.yml"
           target: "~/bankingApp/server/client"
           overwrite: true
 
