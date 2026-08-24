@@ -138,6 +138,13 @@ def parse_excel_date(value: str) -> str | None:
     return None
 
 
+def _latest_iso_date(transactions: list[dict[str, Any]]) -> str | None:
+    """Newest transaction date as ``YYYY-MM-DD`` (for users.db ``updated_at``)."""
+    from app.user_store import latest_transaction_date
+
+    return latest_transaction_date(transactions)
+
+
 def parse_amount(value: str | None) -> float | None:
     text = str(value or "").strip().replace("\xa0", "").replace(" ", "")
     if not text:
@@ -541,6 +548,7 @@ def convert_excel_files(
         "balance_updated": bool(new_files),
         "balance": totals["account_balances"][0].get("balance"),
         "file_errors": file_errors,
+        "last_date": _latest_iso_date(transactions),
     }
     return categorized, totals, info
 

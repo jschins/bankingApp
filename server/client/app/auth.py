@@ -122,7 +122,6 @@ def profile_from_user(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "username": username,
         "access": access,
-        "title": str(user.get("title") or "").strip(),
         "workspace": workspace,
         "workspaces": workspaces,
         "person": person,

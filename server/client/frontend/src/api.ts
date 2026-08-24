@@ -153,8 +153,6 @@ export interface CentraleSyncStatus {
   author?: string;
   /** personal | local | regional_admin */
   access?: string;
-  /** UI title from hub user store ``title`` column. */
-  title?: string;
   /** Empty / omitted = all people; otherwise only this short is visible. */
   person?: string;
   username?: string;

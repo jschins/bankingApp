@@ -245,7 +245,6 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
 
     from app.runtime import (
         access_mode,
-        current_title,
         current_username,
         request_allowed_workspaces,
         request_person_key,
@@ -265,7 +264,6 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             person_key=request_person_key() or "",
             selected=selected_workspace(),
             username=current_username() or "",
-            title=current_title() or "",
             auth_required=True,
             apply_process_runtime=False,
             workspaces_allowlist=request_allowed_workspaces(),
@@ -357,7 +355,6 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
         or None
     )
     username = str(session.get("username") or "").strip()
-    title = str(session.get("title") or "").strip()
     workspaces_raw = session.get("workspaces")
     workspaces_allowlist: list[str] | None = None
     if isinstance(workspaces_raw, list):
@@ -373,7 +370,6 @@ def apply_session_profile(session: dict[str, Any]) -> HubConfig:
         person_key=person_key,
         selected=selected,
         username=username,
-        title=title,
         auth_required=True,
         apply_process_runtime=False,
         workspaces_allowlist=workspaces_allowlist,
@@ -624,7 +620,6 @@ def sync_status() -> dict[str, Any]:
         "person": cfg.person,
         "access": cfg.access,
         "username": cfg.username,
-        "title": cfg.title,
         "auth_required": cfg.auth_required,
         "centrale_url": cfg.url,
         "local_session_active": _hub_session_active,

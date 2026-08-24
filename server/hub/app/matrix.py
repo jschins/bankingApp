@@ -202,10 +202,14 @@ def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
         all_files: list[str] = []
         all_new: list[str] = []
         all_errors: list[str] = []
+        last_dates: list[str] = []
         for item in bank_results:
             all_files.extend(item.get("files") or [])
             all_new.extend(item.get("new_files") or [])
             all_errors.extend(item.get("file_errors") or [])
+            ld = str(item.get("last_date") or "").strip()
+            if ld:
+                last_dates.append(ld)
         return {
             "short": pack.short,
             "folder": pack.folder_name,
@@ -217,6 +221,7 @@ def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
             "files": all_files,
             "new_files": all_new,
             "file_errors": all_errors,
+            "last_date": max(last_dates) if last_dates else None,
         }
     if not list_xlsx_files(pack.data_dir):
         return {
@@ -238,6 +243,7 @@ def _excel_refresh_result(pack: PersonPack) -> dict[str, Any]:
         "balance_updated": bool(info.get("balance_updated")),
         "balance": info.get("balance"),
         "file_errors": info.get("file_errors") or [],
+        "last_date": info.get("last_date"),
     }
 
 
@@ -426,6 +432,19 @@ def _bank_refresh_one(
     return result, warnings
 
 
+def _record_user_updated_at(person: str, result: dict[str, Any]) -> None:
+    """Persist ``users.updated_at`` after a successful refresh (date only)."""
+    if result.get("skipped"):
+        return
+    from app import user_store
+
+    source = str(result.get("source") or "")
+    if source == "bank":
+        user_store.set_user_updated_at(username=person, date=result.get("date_to"))
+    else:
+        user_store.set_user_updated_at(username=person, date=result.get("last_date"))
+
+
 def _refresh_one_person(
     pack: PersonPack,
     *,
@@ -437,16 +456,19 @@ def _refresh_one_person(
 
     try:
         if pack.has_secret_folder:
-            return _bank_refresh_one(
+            result, extra = _bank_refresh_one(
                 pack, date_from=date_from, date_to=date_to, new_year=new_year
             )
-        excel = _excel_refresh_result(pack)
-        extra = [
-            f"{pack.short} ({pack.folder_name}): {err}"
-            for err in (excel.get("file_errors") or [])
-            if str(err).strip()
-        ]
-        return excel, extra
+        else:
+            excel = _excel_refresh_result(pack)
+            extra = [
+                f"{pack.short} ({pack.folder_name}): {err}"
+                for err in (excel.get("file_errors") or [])
+                if str(err).strip()
+            ]
+            result = excel
+        _record_user_updated_at(pack.folder_name, result)
+        return result, extra
     except EnableBankingError as exc:
         return (
             {

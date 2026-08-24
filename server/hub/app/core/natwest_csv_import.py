@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.excel_import import (
+    _latest_iso_date,
     _new_folder_files,
     _public_transaction,
     _recorded_files,
@@ -298,6 +299,7 @@ def convert_csv_files(
         "balance_updated": bool(new_files) and latest_balance is not None,
         "balance": totals["account_balances"][0].get("balance"),
         "file_errors": file_errors,
+        "last_date": _latest_iso_date(transactions),
     }
     return categorized, totals, info
 

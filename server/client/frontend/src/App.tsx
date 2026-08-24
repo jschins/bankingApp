@@ -202,10 +202,18 @@ function afterPaint(fn: () => void): () => void {
 type CellSelection = { short: string; category: string };
 
 function brandTitle(status: CentraleSyncStatus | null): string {
-  const title = (status?.title || "").trim();
-  if (title) return title;
-  const ws = (status?.workspace || "").trim();
-  return ws ? `Boekhouding ${ws}` : "Boekhouding";
+  const username = (status?.username || "").trim();
+  if (!username) return "Boekhouding";
+  if (username.includes("_")) {
+    const titled = username
+      .replace(/_/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+    return `Boekhouding ${titled}`;
+  }
+  return `Boekhouding ${username.toUpperCase()}`;
 }
 
 function WorkspaceSwitcher({

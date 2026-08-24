@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from shared.user_access import enrich_user_record, parse_workspaces
 
@@ -62,8 +62,50 @@ def is_single_bank_format(fmt: str | None) -> bool:
     return is_csv_bank_format(value)
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def as_date_only(value: str | None) -> str | None:
+    """Normalize a date/datetime string to ``YYYY-MM-DD``, or ``None`` if unusable."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    # ISO datetime / date
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        candidate = text[:10]
+        try:
+            date.fromisoformat(candidate)
+            return candidate
+        except ValueError:
+            pass
+    # App transaction dates DD-MM-YYYY
+    if len(text) >= 10 and text[2] == "-" and text[5] == "-":
+        day, month, year = text[0:2], text[3:5], text[6:10]
+        candidate = f"{year}-{month}-{day}"
+        try:
+            date.fromisoformat(candidate)
+            return candidate
+        except ValueError:
+            pass
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed.date().isoformat()
+    except ValueError:
+        return None
+
+
+def latest_transaction_date(transactions: Iterable[Any]) -> str | None:
+    """Latest ``date`` among transaction dicts, as ``YYYY-MM-DD``."""
+    best: str | None = None
+    for item in transactions:
+        if not isinstance(item, dict):
+            continue
+        iso = as_date_only(str(item.get("date") or ""))
+        if iso and (best is None or iso > best):
+            best = iso
+    return best
+
+
+def _utc_today() -> str:
+    """Calendar date in UTC as ``YYYY-MM-DD`` (for ``created_at`` on insert)."""
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def _row_to_user(row: sqlite3.Row) -> dict[str, Any]:
@@ -86,6 +128,24 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
     return enrich_user_record(user)
 
 
+def _strip_timestamps_to_dates(conn: sqlite3.Connection) -> None:
+    """Keep ``created_at`` / ``updated_at`` as date-only (``YYYY-MM-DD``)."""
+    conn.execute(
+        """
+        UPDATE users
+        SET created_at = substr(created_at, 1, 10)
+        WHERE created_at IS NOT NULL AND length(created_at) > 10
+        """
+    )
+    conn.execute(
+        """
+        UPDATE users
+        SET updated_at = substr(updated_at, 1, 10)
+        WHERE updated_at IS NOT NULL AND length(updated_at) > 10
+        """
+    )
+
+
 def _connect() -> sqlite3.Connection:
     global _CONN
     if _CONN is not None:
@@ -95,6 +155,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _strip_timestamps_to_dates(conn)
     conn.commit()
     _CONN = conn
     return conn
@@ -151,14 +212,14 @@ def upsert_user(
     workspace: str = "",
     person: str = "",
 ) -> dict[str, Any]:
-    """Insert or update a user. Does not change ``format`` on update."""
+    """Insert or update a user. Does not change ``format`` or ``updated_at`` on update."""
     name = (username or "").strip()
     if not name:
         raise ValueError("username is required")
     title_s = (title or "").strip() or None
     ws = (workspace or "").strip() or None
     person_s = (person or "").strip() or None
-    now = _utc_now()
+    today = _utc_today()
     with _LOCK:
         init_user_store()
         conn = _connect()
@@ -170,10 +231,10 @@ def upsert_user(
             conn.execute(
                 """
                 UPDATE users
-                SET title = ?, workspace = ?, person = ?, updated_at = ?
+                SET title = ?, workspace = ?, person = ?
                 WHERE id = ?
                 """,
-                (title_s, ws, person_s, now, int(row["id"])),
+                (title_s, ws, person_s, int(row["id"])),
             )
         else:
             conn.execute(
@@ -182,7 +243,7 @@ def upsert_user(
                     (username, title, workspace, person, format, created_at, updated_at)
                 VALUES (?, ?, ?, ?, NULL, ?, ?)
                 """,
-                (name, title_s, ws, person_s, now, now),
+                (name, title_s, ws, person_s, today, today),
             )
         conn.commit()
     user = find_user(name)
@@ -208,7 +269,7 @@ def upsert_personal_login(
 
 
 def set_user_format(*, username: str, format: str) -> dict[str, Any] | None:
-    """Set ``format`` for an existing user (e.g. after first upload)."""
+    """Set ``format`` for an existing user (does not change ``updated_at``)."""
     name = (username or "").strip()
     fmt = (format or "").strip()
     if not name or not fmt:
@@ -223,8 +284,32 @@ def set_user_format(*, username: str, format: str) -> dict[str, Any] | None:
         if not row:
             return None
         conn.execute(
-            "UPDATE users SET format = ?, updated_at = ? WHERE id = ?",
-            (fmt, _utc_now(), int(row["id"])),
+            "UPDATE users SET format = ? WHERE id = ?",
+            (fmt, int(row["id"])),
+        )
+        conn.commit()
+    user = find_user(name)
+    return _public_user(user) if user else None
+
+
+def set_user_updated_at(*, username: str, date: str | None) -> dict[str, Any] | None:
+    """Set ``updated_at`` to a date-only value after a successful refresh/upload."""
+    name = (username or "").strip()
+    iso = as_date_only(date)
+    if not name or not iso:
+        return None
+    with _LOCK:
+        init_user_store()
+        conn = _connect()
+        row = conn.execute(
+            "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
+            (name,),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "UPDATE users SET updated_at = ? WHERE id = ?",
+            (iso, int(row["id"])),
         )
         conn.commit()
     user = find_user(name)

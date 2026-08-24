@@ -91,6 +91,17 @@ Only when `format` is a **concrete bank CSV value** (not empty / `secret` / `mul
   `multiple`, and consolidate into the year folder root. A single enabled account
   still writes flat files in `YYYY/`.
 
+### `created_at` / `updated_at`
+
+Both are **date-only** (`YYYY-MM-DD`), never a time.
+
+| Field | When written |
+|-------|----------------|
+| `created_at` | On user insert only (UTC calendar date) |
+| `updated_at` | Only after a **successful** data refresh: PEM → fetch `date_to`; Excel/CSV upload or refresh → latest transaction date in the read file(s) |
+
+Profile edits, format changes, and failed/skipped refreshes do **not** change `updated_at`.
+
 ### Password
 
 Temporary rule: login password equals the **username** (e.g. user `regional_admin` → password `regional_admin`). There is **no** `password_hash` column.

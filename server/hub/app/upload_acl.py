@@ -398,6 +398,7 @@ def list_grant_xlsx_files(grant: UploadGrant, *, year: str | None = None) -> lis
 
 def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
     from app import store
+    from app import user_store
     from app import workspace_api
     from app.core.excel_import import import_person_excel
     from app.paths import shared_categories_path
@@ -405,6 +406,7 @@ def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dic
     y = parse_year(year)
     data_dir = resolve_under_data_root(grant.year_folder(y))
     info = import_person_excel(data_dir=data_dir, categories_path=shared_categories_path())
+    user_store.set_user_updated_at(username=grant.person, date=info.get("last_date"))
     with workspace_api._workspace_scope(grant.center) as ws:
         inputs = workspace_api._ingest_person_data_files(ws, folder_names=[grant.person], year=y)
     mut = store.mutate_and_recalculate(ws, inputs, source="central")
@@ -417,6 +419,7 @@ def _process_excel_upload(grant: UploadGrant, *, year: str | None = None) -> dic
 
 def _process_bank_csv_upload(grant: UploadGrant, *, year: str | None = None) -> dict[str, Any]:
     from app import store
+    from app import user_store
     from app import workspace_api
     from app.core.bank_csv import consolidate_person_year, import_bank_csv_dir, person_uses_bank_subfolders
     from app.paths import shared_categories_path
@@ -426,6 +429,7 @@ def _process_bank_csv_upload(grant: UploadGrant, *, year: str | None = None) -> 
     data_dir = grant_csv_data_dir(grant, y)
     categories_path = shared_categories_path()
     info = import_bank_csv_dir(data_dir, categories_path=categories_path, fmt=fmt)
+    user_store.set_user_updated_at(username=grant.person, date=info.get("last_date"))
     consolidation: dict[str, Any] = {"consolidated": False}
     if person_uses_bank_subfolders(grant.person, grant.center):
         person_folder = resolve_under_data_root(f"{grant.center}/{grant.person}")
