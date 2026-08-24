@@ -16,7 +16,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY shared/ ./shared/
 COPY server/client/ ./client/
-RUN pip install --no-cache-dir ./shared ./client
+RUN pip install --no-cache-dir setuptools wheel \
+    && pip install --no-cache-dir --no-build-isolation ./shared ./client
 COPY --from=frontend-build /build/frontend/dist/ ./client/frontend/dist/
 
 WORKDIR /app/client
