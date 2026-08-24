@@ -19,5 +19,6 @@ secret/
 data/
 server/client/dist/users.json
 server/client/dist/client_config.json
+server/client/.env
 server/workspaces/users.db
 server/workspaces/bankingApp.sqbpro

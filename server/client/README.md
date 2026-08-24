@@ -55,7 +55,12 @@ Output: `dist/boekhouding-client.exe` (+ `client_config.json` if missing).
 same server on port `8200` by default. Caddy needs ports `80` and `443` open,
 and the domain's DNS record must point to this server.
 
-On the production server, create `server/client/.env`:
+For an automatic GitHub Actions deployment, add a repository secret named
+`CLIENT_SESSION_SECRET` under **Settings > Secrets and variables > Actions**.
+The deploy workflow writes it to `server/client/.env` on the production server
+before starting Compose. Do not commit this file.
+
+For a manual deployment, create `server/client/.env`:
 
 ```dotenv
 CLIENT_SESSION_SECRET=replace-with-a-long-random-secret

@@ -36,6 +36,15 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: CLIENT_SESSION_SECRET
           script: |
             cd ~/bankingApp/server/client
+            if [ -z "$CLIENT_SESSION_SECRET" ]; then
+              echo "CLIENT_SESSION_SECRET is not configured in GitHub Actions secrets" >&2
+              exit 1
+            fi
+            umask 077
+            printf 'CLIENT_SESSION_SECRET=%s\n' "$CLIENT_SESSION_SECRET" > .env
             sudo docker compose up -d --build
+        env:
+          CLIENT_SESSION_SECRET: ${{ secrets.CLIENT_SESSION_SECRET }}
