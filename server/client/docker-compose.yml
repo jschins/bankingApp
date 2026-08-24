@@ -1,8 +1,8 @@
 services:
   client:
     build:
-      context: ..
-      dockerfile: client/Dockerfile
+      context: ../..
+      dockerfile: server/client/Dockerfile
     environment:
       SERVER_URL: ${SERVER_URL:-http://100.116.99.89:8200}
       CLIENT_AUTH: ${CLIENT_AUTH:-true}

@@ -1,9 +1,9 @@
 FROM node:22-alpine AS frontend-build
 
 WORKDIR /build/frontend
-COPY client/frontend/package.json client/frontend/package-lock.json ./
+COPY server/client/frontend/package.json server/client/frontend/package-lock.json ./
 RUN npm ci
-COPY client/frontend/ ./
+COPY server/client/frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim
@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 COPY shared/ ./shared/
-COPY client/ ./client/
+COPY server/client/ ./client/
 RUN pip install --no-cache-dir ./shared ./client
 COPY --from=frontend-build /build/frontend/dist/ ./client/frontend/dist/
 

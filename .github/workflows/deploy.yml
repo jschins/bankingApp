@@ -24,8 +24,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # We specify exactly what to copy so we don't copy the hidden .git folders
-          source: "server/client/,Caddyfile,Dockerfile,docker-compose.yml"
-          target: "~/bankingApp/server/client"
+          source: "shared/,server/client/"
+          target: "~/bankingApp"
           overwrite: true
 
       # 3. Securely log into the Droplet and run the Docker update command
