@@ -47,3 +47,31 @@ uv run python scripts/build_onefile.py
 ```
 
 Output: `dist/boekhouding-client.exe` (+ `client_config.json` if missing).
+
+## Production Docker + Caddy
+
+`docker-compose.yml` runs the client behind Caddy at
+`https://boekhouding.agrolav.nl`. The hub is expected to be running on the
+same server on port `8200` by default. Caddy needs ports `80` and `443` open,
+and the domain's DNS record must point to this server.
+
+On the production server, create `server/client/.env`:
+
+```dotenv
+CLIENT_SESSION_SECRET=replace-with-a-long-random-secret
+SERVER_URL=http://100.116.99.89:8200
+CLIENT_AUTH=true
+```
+
+Start or rebuild the deployment:
+
+```bash
+cd server/client
+docker-compose up -d --build
+```
+
+The `client` container is not published directly; Caddy is the public entry
+point and stores certificates in Docker volumes. `docker-compose up -d` alone
+does not rebuild an image after a source change. A push webhook or CI job must
+run `git pull` followed by `docker-compose up -d --build` on the production
+server for deployments to happen automatically.

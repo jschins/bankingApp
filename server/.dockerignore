@@ -1,0 +1,11 @@
+client/.venv
+client/frontend/node_modules
+client/frontend/dist
+client/build
+client/*.egg-info
+hub/.venv
+hub/build
+hub/*.egg-info
+workspaces
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,36 @@
+services:
+  client:
+    build:
+      context: ..
+      dockerfile: client/Dockerfile
+    environment:
+      SERVER_URL: ${SERVER_URL:-http://100.116.99.89:8200}
+      CLIENT_AUTH: ${CLIENT_AUTH:-true}
+      CLIENT_SESSION_SECRET: ${CLIENT_SESSION_SECRET:?Set CLIENT_SESSION_SECRET in .env}
+      CENTRALE_SYNC: ${CENTRALE_SYNC:-true}
+      HOST: 0.0.0.0
+      PORT: 8300
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    expose:
+      - "8300"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      client:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
