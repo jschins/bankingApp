@@ -2,8 +2,7 @@
 """PyInstaller onefile build for the identical boekhouding client.
 
 Bundles ``frontend/dist`` into ``boekhouding-client.exe`` (or ``boekhouding-client``
-on non-Windows). Output lands in ``client/dist/`` next to a default
-``client_config.json`` if one is not already there.
+on non-Windows). Output lands in ``client/dist/``.
 
 Reuse an existing frontend build unless ``--force-frontend`` / ``FORCE_FRONTEND=1``.
 """
@@ -52,32 +51,6 @@ def _ensure_frontend() -> None:
     _run([npm, "run", "build"], cwd=FRONTEND)
     if not (FRONTEND_DIST / "index.html").is_file():
         raise SystemExit(f"frontend build failed: {FRONTEND_DIST / 'index.html'} missing")
-
-
-def _ensure_deploy_config() -> None:
-    """Copy default client_config.json beside the exe when missing."""
-    dest = DEPLOY / "client_config.json"
-    if dest.is_file():
-        return
-    src = PROJECT / "client_config.json"
-    if src.is_file():
-        shutil.copy2(src, dest)
-        print(f"Copied {src.name} -> {dest}")
-        return
-    dest.write_text(
-        "{\n"
-        '  "server_url": "http://127.0.0.1:8200",\n'
-        '  "port": 8300,\n'
-        '  "access": "local",\n'
-        '  "workspace": "dkg",\n'
-        '  "person": "",\n'
-        '  "api_key": "",\n'
-        '  "enabled": true,\n'
-        '  "auth_enabled": true\n'
-        "}\n",
-        encoding="utf-8",
-    )
-    print(f"Wrote {dest}")
 
 
 def _target_exe() -> Path:
@@ -224,9 +197,8 @@ def main() -> int:
             "Stop the running client, then copy manually."
         ) from exc
 
-    _ensure_deploy_config()
     print(f"\nBuilt: {target}")
-    print("Place client_config.json next to the exe (server_url, port, workspace, access).")
+    print("Optional env: CLIENT_SESSION_SECRET, SERVER_URL, PORT, CLIENT_AUTH.")
     print("Hub must be running (default http://127.0.0.1:8200).")
     return 0
 

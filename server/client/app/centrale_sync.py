@@ -16,10 +16,7 @@ from typing import Any
 from shared.user_access import ACCESS_LOCAL, ACCESS_PERSONAL, ACCESS_REGIONAL_ADMIN, parse_workspaces
 
 from app.runtime import (
-    exe_dir,
-    is_frozen,
     is_regional_admin,
-    project_root,
     selected_workspace,
     set_runtime,
 )
@@ -57,57 +54,23 @@ class HubConfig:
     auth_required: bool = False
 
 
-def config_path() -> Path:
-    """``client_config.json`` next to the client project / exe."""
-    env = os.environ.get("CLIENT_CONFIG", "").strip()
-    if env:
-        return Path(env)
-    if is_frozen():
-        return exe_dir() / "client_config.json"
-    return project_root() / "dist" / "client_config.json"
-
-
-def _read_file_cfg() -> dict[str, Any]:
-    cfg_path = config_path()
-    if not cfg_path.is_file():
-        return {}
-    try:
-        file_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return file_cfg if isinstance(file_cfg, dict) else {}
-
-
 def load_base_settings(*, force_reload: bool = False) -> dict[str, Any]:
-    """Host settings from ``client_config.json`` (url, port, api_key, enabled, auth)."""
+    """Host settings from hardcoded defaults + environment variables (no config file)."""
     global _base_cache
     if _base_cache is not None and not force_reload:
         return _base_cache
 
-    file_cfg = _read_file_cfg()
-    url = (
-        os.environ.get("SERVER_URL", "").strip()
-        or str(file_cfg.get("server_url") or "").strip()
-        or "http://127.0.0.1:8200"
-    ).rstrip("/")
-    api_key = (
-        os.environ.get("CENTRALE_API_KEY", "").strip()
-        or str(file_cfg.get("api_key") or "").strip()
-    )
+    url = (os.environ.get("SERVER_URL", "").strip() or "http://127.0.0.1:8200").rstrip("/")
+    api_key = os.environ.get("CENTRALE_API_KEY", "").strip()
     enabled_raw = os.environ.get("CENTRALE_SYNC", "").strip().lower()
     if enabled_raw in ("0", "false", "off", "no"):
         enabled = False
-    elif enabled_raw in ("1", "true", "on", "yes"):
-        enabled = True
     else:
-        enabled = bool(file_cfg.get("enabled", True))
+        # Default on; only an explicit off disables hub sync.
+        enabled = True
 
     try:
-        port = int(
-            os.environ.get("PORT", "").strip()
-            or file_cfg.get("port")
-            or 8300
-        )
+        port = int(os.environ.get("PORT", "").strip() or "8300")
     except (TypeError, ValueError):
         port = 8300
 
@@ -119,7 +82,6 @@ def load_base_settings(*, force_reload: bool = False) -> dict[str, Any]:
         "enabled": enabled,
         "port": port,
         "auth_enabled": auth_enabled(),
-        "file_cfg": file_cfg,
     }
     return _base_cache
 
@@ -233,7 +195,7 @@ def _build_hub_config(
 
 
 def load_config(*, force_reload: bool = False) -> HubConfig:
-    """Resolve hub + access profile for the current request (or file when auth off)."""
+    """Resolve hub + access profile for the current request (defaults + env; login when auth on)."""
     global _file_profile_cache
     base = load_base_settings(force_reload=force_reload)
     url = str(base["url"])
@@ -241,7 +203,6 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
     enabled = bool(base["enabled"])
     port = int(base["port"])
     auth_on = bool(base["auth_enabled"])
-    file_cfg: dict[str, Any] = base["file_cfg"]  # type: ignore[assignment]
 
     from app.runtime import (
         access_mode,
@@ -271,7 +232,7 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
 
     # Auth on but no session: bootstrap for lifespan / health (no person scope).
     if auth_on:
-        bootstrap_ws = str(file_cfg.get("bootstrap_workspace") or file_cfg.get("workspace") or "").strip()
+        bootstrap_ws = os.environ.get("CLIENT_BOOTSTRAP_WORKSPACE", "").strip()
         if not bootstrap_ws:
             bootstrap_ws = _first_hub_workspace(url, api_key=api_key) or "dkg"
         return _build_hub_config(
@@ -307,23 +268,17 @@ def load_config(*, force_reload: bool = False) -> HubConfig:
             )
         return _file_profile_cache
 
-    access = _coerce_access(str(file_cfg.get("access") or "local"))
-    workspace_key = str(file_cfg.get("workspace") or "").strip()
-    person_key = (
-        os.environ.get("CLIENT_PERSON", "").strip()
-        or str(file_cfg.get("person") or "").strip()
-    )
+    # Auth off: identity from environment only (CLIENT_ACCESS / WORKSPACE / PERSON).
+    access = _coerce_access(os.environ.get("CLIENT_ACCESS", "").strip() or ACCESS_LOCAL)
+    workspace_key = os.environ.get("CLIENT_WORKSPACE", "").strip()
+    person_key = os.environ.get("CLIENT_PERSON", "").strip()
     default_port = (
         8300
         if access == ACCESS_REGIONAL_ADMIN
         else (8302 if workspace_key == "jl" else 8301)
     )
     try:
-        port = int(
-            os.environ.get("PORT", "").strip()
-            or file_cfg.get("port")
-            or default_port
-        )
+        port = int(os.environ.get("PORT", "").strip() or str(default_port))
     except (TypeError, ValueError):
         port = default_port
 
@@ -536,7 +491,7 @@ def hub_request(
 ) -> dict[str, Any]:
     cfg = load_config()
     if not cfg.enabled:
-        raise RuntimeError("hub sync disabled in client_config.json")
+        raise RuntimeError("hub sync disabled (set CENTRALE_SYNC=1 or unset it)")
     url = f"{cfg.url}{path}"
     data = None
     headers = {"Accept": "application/json"}
@@ -918,7 +873,7 @@ def start_session_and_pull() -> dict[str, Any]:
     cfg = load_config()
     if not cfg.enabled:
         _hub_session_active = False
-        return {"ok": False, "error": "hub sync disabled — enable client_config.enabled"}
+        return {"ok": False, "error": "hub sync disabled — unset CENTRALE_SYNC or set it to 1"}
     ws = cfg.workspace
     try:
         hub_request("GET", "/api/health", timeout=10.0)

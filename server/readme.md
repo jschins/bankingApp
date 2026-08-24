@@ -125,32 +125,35 @@ No extra UI: the upload **Year** field (placeholder = current year) and Refresh 
 
 The per-person **new year overwrite** checkbox is a same-year redo (wipe **this** year’s JSON and refetch — PEM bootstrap). It is not how a calendar year is opened and must not touch previous year folders.
 
-## Client roles (`client_config.json`)
+## Client roles (login + env; no `client_config.json`)
 
-| Role | Rights | Config | “Add person” | Title |
-|------|--------|--------|--------------|-------|
-| Central | All hub workspaces | `"access": "central"` | Shown | `Centrale Boekhouding` |
-| Local | One workspace, all people | `"access": "local"`, `"workspace": "<ws>"` | Shown | `Boekhouding {workspace}` |
-| Personal | One person only | `"access": "personal"`, `"workspace": "<ws>"`, `"person": "<short>"` | Hidden | `Boekhouding {workspace}/{person}` |
+Default: **browser login** (`CLIENT_AUTH` on). Access/person come from hub `users.db` after login. UI title is rebuilt from **username**.
 
-Config keys (no legacy aliases):
+| Role (from DB after login) | Rights | “Add person” |
+|----------------------------|--------|--------------|
+| `regional_admin` | All hub workspaces | Shown |
+| `local` | One workspace, all people | Shown |
+| `personal` | One person only | Hidden |
 
-| Key | Meaning |
-|-----|---------|
-| `server_url` | Hub base URL — use `http://127.0.0.1:8200` on the hub PC; LAN/Tailscale IP from other machines |
-| `port` | Client BFF listen port |
-| `access` | `central` \| `local` \| `personal` |
-| `workspace` | Required for local/personal; optional starting workspace for central |
-| `person` | Required when `access` is `personal` (person short) |
-| `api_key` | Optional hub Bearer token |
-| `enabled` | Hub sync on/off |
+Optional environment overrides (no config file):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SERVER_URL` | `http://127.0.0.1:8200` | Hub base URL |
+| `PORT` | `8300` | Client listen port |
+| `CLIENT_AUTH` | on | Set `0` to disable login |
+| `CLIENT_SESSION_SECRET` | insecure dev default | Cookie secret — set in production |
+| `CENTRALE_API_KEY` | empty | Optional hub Bearer token |
+| `CENTRALE_SYNC` | on | Set `0` to disable hub sync |
+
+When auth is off (`CLIENT_AUTH=0`), identity comes from `CLIENT_ACCESS` / `CLIENT_WORKSPACE` / `CLIENT_PERSON`.
 
 ## Processes
 
 | Process | Port | Config |
 |---------|------|--------|
 | Hub | 8200 | `CENTRALE_DATA_ROOT` → `server/workspaces` (default); Enable Banking callback |
-| Client | 8300 / 8301 / 8302 | `client_config.json` as above |
+| Client | 8300 | Defaults + env vars above (no `client_config.json`) |
 
 **Hub must be running** for the UI to load data. Clients never fall back to a local workspace copy.
 
@@ -158,11 +161,11 @@ Config keys (no legacy aliases):
 
 ## Network
 
-| Where the client runs | `server_url` |
+| Where the client runs | `SERVER_URL` |
 |-----------------------|--------------|
-| Same PC as the hub | `http://127.0.0.1:8200` |
-| Another PC on the home LAN | `http://<hub-lan-ip>:8200` (e.g. `http://192.168.1.188:8200`) |
-| Another PC via [Tailscale](https://tailscale.com/) | `http://<hub-tailscale-ip>:8200` or MagicDNS name |
+| Same PC as the hub | `http://127.0.0.1:8200` (default) |
+| Another PC on the home LAN | `http://<hub-lan-ip>:8200` |
+| Another PC via [Tailscale](https://tailscale.com/) | `http://<hub-tailscale-ip>:8200` |
 
 1. **Same machine:** use `127.0.0.1`, not the PC’s LAN address — see [Hub IP gate](#hub-ip-gate--scoped-upload) below.
 2. **Remote (no code change):** install Tailscale on hub + clients; repoint `server_url` to the hub’s Tailscale IP (still `http://…:8200`).

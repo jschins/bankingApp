@@ -149,7 +149,7 @@ export interface ConsentReadyPerson {
 export interface CentraleSyncStatus {
   enabled: boolean;
   workspace: string;
-  /** Fixed identity from client_config ``workspace`` (does not follow switcher). */
+  /** Fixed identity for the session (does not follow workspace switcher). */
   author?: string;
   /** personal | local | regional_admin */
   access?: string;

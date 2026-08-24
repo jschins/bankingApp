@@ -2,27 +2,30 @@
 
 Thin BFF + frontend. All data comes from the hub (no local workspace copies). See [`../readme.md`](../readme.md) for roles and the **Add person** hub wizard.
 
-## Config (`client_config.json`)
+## Configuration (no config file)
 
-| Key | Meaning |
-|-----|---------|
-| `access` | `regional_admin` (all workspaces) \| `local` (one workspace) \| `personal` (one person). Used when `auth_enabled` is false. |
-| `workspace` | **Required only for `local` and `personal`.** Ignored for `regional_admin` (use the UI switcher). |
-| `person` | Required when `access` is `personal` (folder name, e.g. `juleon_schins`) |
-| `server_url` | Hub URL |
-| `port` | Client listen port |
-| `auth_enabled` | When `true`, one shared client: users log in; credentials live in hub `users.db` |
-| `session_secret` | Cookie signing secret (required for real deploys when auth is on) |
+Defaults are hardcoded. Override only via environment variables when needed.
 
-### Multi-user login (`auth_enabled`)
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SERVER_URL` | `http://127.0.0.1:8200` | Hub base URL |
+| `PORT` | `8300` | Client listen port |
+| `CLIENT_AUTH` | on (`true`) | Browser login; set `0`/`false` to disable |
+| `CLIENT_SESSION_SECRET` | insecure dev string | Cookie signing secret — **set in production** |
+| `CENTRALE_API_KEY` | empty | Optional hub Bearer token |
+| `CENTRALE_SYNC` | on | Set `0`/`false` to disable hub sync |
+| `CLIENT_BOOTSTRAP_WORKSPACE` | first hub workspace / `dkg` | Workspace used before login (auth on) |
+| `CLIENT_ACCESS` | `local` | Only when auth off |
+| `CLIENT_WORKSPACE` | empty | Only when auth off |
+| `CLIENT_PERSON` | empty | Only when auth off |
 
-When `auth_enabled` is `true`, the client listens on **`0.0.0.0`** (all interfaces) so other PCs can open `http://<server-lan-ip>:8300`. Allow inbound TCP on that port in the host firewall. On the same machine as the hub, set `server_url` to `http://127.0.0.1:8200`.
+There is **no** `client_config.json`.
 
-Logged-in browser users appear on the hub `:8200` session list (hostname from reverse-DNS when possible, username, and client IP).
+### Multi-user login (default)
 
-Users are stored in **`server/workspaces/users.db`** on the hub. Login password equals the username (no `password_hash` column).
+The client listens on **`0.0.0.0`** when auth is on so other PCs can open `http://<server-lan-ip>:8300`. Allow inbound TCP on that port in the host firewall. On the same machine as the hub, leave `SERVER_URL` at `http://127.0.0.1:8200`.
 
-Manage users on the hub:
+Users live in hub **`workspaces/users.db`**. Login password equals the username.
 
 ```powershell
 cd server\hub
@@ -35,6 +38,8 @@ uv run python scripts/user_admin.py list
 # hub must be running on :8200 first
 cd server\client
 uv sync
+# optional for production:
+# $env:CLIENT_SESSION_SECRET = "long-random-string"
 uv run client
 ```
 
@@ -46,37 +51,8 @@ uv sync --group build
 uv run python scripts/build_onefile.py
 ```
 
-Output: `dist/boekhouding-client.exe` (+ `client_config.json` if missing).
+Output: `dist/boekhouding-client.exe`. Set `CLIENT_SESSION_SECRET` in the environment when running the exe.
 
-## Production Docker + Caddy
+## Production notes (Caddy / Tailscale)
 
-`docker-compose.yml` runs the client behind Caddy at
-`https://boekhouding.agrolav.nl`. The hub is expected to be running on the
-same server on port `8200` by default. Caddy needs ports `80` and `443` open,
-and the domain's DNS record must point to this server.
-
-For an automatic GitHub Actions deployment, add a repository secret named
-`CLIENT_SESSION_SECRET` under **Settings > Secrets and variables > Actions**.
-The deploy workflow writes it to `server/client/.env` on the production server
-before starting Compose. Do not commit this file.
-
-For a manual deployment, create `server/client/.env`:
-
-```dotenv
-CLIENT_SESSION_SECRET=replace-with-a-long-random-secret
-SERVER_URL=http://100.116.99.89:8200
-CLIENT_AUTH=true
-```
-
-Start or rebuild the deployment:
-
-```bash
-cd server/client
-docker-compose up -d --build
-```
-
-The `client` container is not published directly; Caddy is the public entry
-point and stores certificates in Docker volumes. `docker-compose up -d` alone
-does not rebuild an image after a source change. A push webhook or CI job must
-run `git pull` followed by `docker-compose up -d --build` on the production
-server for deployments to happen automatically.
+Public HTTPS is terminated by Caddy (e.g. Lightsail) and reverse-proxied to this client on `:8300`. Hub stays on the home server at `127.0.0.1:8200`. Set `CLIENT_SESSION_SECRET` on the host that runs the client.

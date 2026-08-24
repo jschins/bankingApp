@@ -7,7 +7,6 @@ import hmac
 import json
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 from shared.passwords import hash_password, verify_password
@@ -21,6 +20,7 @@ from shared.user_access import (
 
 COOKIE_NAME = "boekhouding_session"
 SESSION_TTL_SEC = 12 * 3600
+_DEFAULT_SESSION_SECRET = "dev-insecure-boekhouding-session-secret"
 
 __all__ = [
     "COOKIE_NAME",
@@ -37,47 +37,20 @@ __all__ = [
 ]
 
 
-def config_dir() -> Path:
-    from app.runtime import exe_dir, is_frozen, project_root
-
-    env = os.environ.get("CLIENT_CONFIG", "").strip()
-    if env:
-        return Path(env).resolve().parent
-    if is_frozen():
-        return exe_dir()
-    return project_root() / "dist"
-
-
-def read_client_file_cfg() -> dict[str, Any]:
-    from app.centrale_sync import config_path
-
-    path = config_path()
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def auth_enabled() -> bool:
+    """Browser login required. Default on; set CLIENT_AUTH=0 to disable."""
     raw = os.environ.get("CLIENT_AUTH", "").strip().lower()
-    if raw in ("1", "true", "on", "yes"):
-        return True
     if raw in ("0", "false", "off", "no"):
         return False
-    return bool(read_client_file_cfg().get("auth_enabled", False))
+    if raw in ("1", "true", "on", "yes"):
+        return True
+    return True
 
 
 def session_secret() -> str:
+    """Cookie signing secret from CLIENT_SESSION_SECRET (required for real deploys)."""
     env = os.environ.get("CLIENT_SESSION_SECRET", "").strip()
-    if env:
-        return env
-    secret = str(read_client_file_cfg().get("session_secret") or "").strip()
-    if secret:
-        return secret
-    return "dev-insecure-boekhouding-session-secret"
+    return env or _DEFAULT_SESSION_SECRET
 
 
 def authenticate(username: str, password: str) -> dict[str, Any] | None:
